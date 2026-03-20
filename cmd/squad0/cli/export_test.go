@@ -180,3 +180,8 @@ func CreateSlackBot(
 func DefaultStartDeps() StartDeps {
 	return defaultStartDeps()
 }
+
+// ReadFromTUI exports readFromTUI for testing.
+func ReadFromTUI(name string, input io.Reader) (string, error) {
+	return readFromTUI(name, input)
+}

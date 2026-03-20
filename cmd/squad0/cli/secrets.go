@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -90,7 +91,7 @@ func readSecretValue(deps *SecretsCommandDeps, name string) (string, error) {
 		return readFromStdin(stdinReader)
 	}
 
-	return readFromTUI(name)
+	return readFromTUI(name, os.Stdin)
 }
 
 func readFromStdin(reader io.Reader) (string, error) {
@@ -102,9 +103,9 @@ func readFromStdin(reader io.Reader) (string, error) {
 	return strings.TrimSpace(value), nil
 }
 
-func readFromTUI(name string) (string, error) {
+func readFromTUI(name string, input io.Reader) (string, error) {
 	model := tui.NewSecretInput(name)
-	result, err := tea.NewProgram(model).Run()
+	result, err := tea.NewProgram(model, tea.WithInput(input)).Run()
 	if err != nil {
 		return "", fmt.Errorf("input error: %w", err)
 	}
