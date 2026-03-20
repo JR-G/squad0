@@ -71,6 +71,11 @@ var migrations = []migration{
 		description: "initial schema",
 		apply:       applyInitialSchema,
 	},
+	{
+		version:     2,
+		description: "cognitive memory fields",
+		apply:       applyCognitiveMemoryMigration,
+	},
 }
 
 func closeDB(db *sql.DB) {
@@ -206,6 +211,24 @@ func applyInitialSchema(tx *sql.Tx) error {
 	for _, stmt := range statements {
 		if _, err := tx.Exec(stmt); err != nil {
 			return fmt.Errorf("executing %q: %w", stmt[:40], err)
+		}
+	}
+
+	return nil
+}
+
+func applyCognitiveMemoryMigration(tx *sql.Tx) error {
+	statements := []string{
+		`ALTER TABLE beliefs ADD COLUMN last_accessed_at TIMESTAMP`,
+		`ALTER TABLE beliefs ADD COLUMN access_count INTEGER DEFAULT 0`,
+		`ALTER TABLE beliefs ADD COLUMN source_outcome TEXT DEFAULT ''`,
+		`ALTER TABLE facts ADD COLUMN last_accessed_at TIMESTAMP`,
+		`ALTER TABLE facts ADD COLUMN access_count INTEGER DEFAULT 0`,
+	}
+
+	for _, stmt := range statements {
+		if _, err := tx.Exec(stmt); err != nil {
+			return fmt.Errorf("cognitive migration: %w", err)
 		}
 	}
 

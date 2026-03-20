@@ -65,7 +65,7 @@ func TestDecayBeliefs_WithOldLastConfirmedAt_Decays(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	cfg := memory.EvolutionConfig{DecayHalfLifeDays: 30.0, MinConfidence: 0.1}
+	cfg := memory.DefaultEvolutionConfig()
 	updated, err := memory.DecayBeliefs(ctx, factStore, cfg)
 
 	require.NoError(t, err)
@@ -73,7 +73,6 @@ func TestDecayBeliefs_WithOldLastConfirmedAt_Decays(t *testing.T) {
 
 	belief, err := factStore.GetBelief(ctx, beliefID)
 	require.NoError(t, err)
-	// 60 days with 30-day half life => ~0.25x original
 	assert.Less(t, belief.Confidence, 0.5)
 }
 
@@ -137,16 +136,17 @@ func TestDecayBeliefs_MultipleBeliefs_DecaysAll(t *testing.T) {
 		ids[idx] = id
 	}
 
-	// Age all beliefs
+	// Age all beliefs — set both created_at and last_confirmed_at to past
+	oldTime := time.Now().Add(-60 * 24 * time.Hour)
 	for _, id := range ids {
 		_, err := db.RawDB().ExecContext(ctx,
-			`UPDATE beliefs SET created_at = ? WHERE id = ?`,
-			time.Now().Add(-60*24*time.Hour), id,
+			`UPDATE beliefs SET created_at = ?, last_confirmed_at = ? WHERE id = ?`,
+			oldTime, oldTime, id,
 		)
 		require.NoError(t, err)
 	}
 
-	cfg := memory.EvolutionConfig{DecayHalfLifeDays: 30.0, MinConfidence: 0.1}
+	cfg := memory.DefaultEvolutionConfig()
 	updated, err := memory.DecayBeliefs(ctx, factStore, cfg)
 
 	require.NoError(t, err)

@@ -27,7 +27,7 @@ func TestDecayBeliefs_ReducesOldBeliefConfidence(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	cfg := memory.EvolutionConfig{DecayHalfLifeDays: 30.0, MinConfidence: 0.1}
+	cfg := memory.DefaultEvolutionConfig()
 	updated, err := memory.DecayBeliefs(ctx, factStore, cfg)
 
 	require.NoError(t, err)

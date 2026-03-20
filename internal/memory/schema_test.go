@@ -70,7 +70,7 @@ func TestOpen_SetsSchemaVersion(t *testing.T) {
 	var version int
 	err := db.RawDB().QueryRow(`SELECT version FROM schema_version`).Scan(&version)
 	require.NoError(t, err)
-	assert.Equal(t, 1, version)
+	assert.Equal(t, 2, version)
 }
 
 func TestOpen_IdempotentMigrations(t *testing.T) {

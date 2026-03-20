@@ -12,19 +12,30 @@ import (
 type EvolutionConfig struct {
 	DecayHalfLifeDays float64
 	MinConfidence     float64
+	DecayRate         float64
 }
 
 // DefaultEvolutionConfig returns sensible defaults for belief evolution.
 func DefaultEvolutionConfig() EvolutionConfig {
+	halfLife := 30.0
 	return EvolutionConfig{
-		DecayHalfLifeDays: 30.0,
+		DecayHalfLifeDays: halfLife,
 		MinConfidence:     0.1,
+		DecayRate:         math.Ln2 / halfLife,
 	}
 }
 
+// RetrievalScore computes the effective retrieval score for a belief,
+// incorporating confidence, temporal decay, and access frequency.
+// Formula: confidence × exp(-decay_rate × days_since_confirmed) × log(1 + access_count)
+func RetrievalScore(confidence, daysSinceConfirmed float64, accessCount int, decayRate float64) float64 {
+	decay := math.Exp(-decayRate * daysSinceConfirmed)
+	accessBoost := math.Log(float64(1 + accessCount + 1))
+	return confidence * decay * accessBoost
+}
+
 // DecayBeliefs reduces the confidence of beliefs that haven't been
-// confirmed recently. Uses exponential decay with the configured
-// half-life.
+// confirmed or accessed recently. Uses exponential decay.
 func DecayBeliefs(ctx context.Context, factStore *FactStore, cfg EvolutionConfig) (int, error) {
 	beliefs, err := factStore.TopBeliefs(ctx, 1000)
 	if err != nil {
@@ -35,18 +46,7 @@ func DecayBeliefs(ctx context.Context, factStore *FactStore, cfg EvolutionConfig
 	updated := 0
 
 	for _, belief := range beliefs {
-		lastConfirmed := belief.CreatedAt
-		if belief.LastConfirmedAt != nil {
-			lastConfirmed = *belief.LastConfirmedAt
-		}
-
-		daysSince := now.Sub(lastConfirmed).Hours() / 24.0
-		decayFactor := math.Pow(0.5, daysSince/cfg.DecayHalfLifeDays)
-		newConfidence := belief.Confidence * decayFactor
-
-		if newConfidence < cfg.MinConfidence {
-			newConfidence = cfg.MinConfidence
-		}
+		newConfidence := computeDecayedConfidence(belief, now, cfg)
 
 		if math.Abs(newConfidence-belief.Confidence) < 0.01 {
 			continue
@@ -63,6 +63,33 @@ func DecayBeliefs(ctx context.Context, factStore *FactStore, cfg EvolutionConfig
 	return updated, nil
 }
 
+func computeDecayedConfidence(belief Belief, now time.Time, cfg EvolutionConfig) float64 {
+	lastActivity := mostRecentActivity(belief)
+	daysSince := now.Sub(lastActivity).Hours() / 24.0
+	decayFactor := math.Exp(-cfg.DecayRate * daysSince)
+	newConfidence := belief.Confidence * decayFactor
+
+	if newConfidence < cfg.MinConfidence {
+		return cfg.MinConfidence
+	}
+
+	return newConfidence
+}
+
+func mostRecentActivity(belief Belief) time.Time {
+	latest := belief.CreatedAt
+
+	if belief.LastConfirmedAt != nil && belief.LastConfirmedAt.After(latest) {
+		latest = *belief.LastConfirmedAt
+	}
+
+	if belief.LastAccessedAt != nil && belief.LastAccessedAt.After(latest) {
+		latest = *belief.LastAccessedAt
+	}
+
+	return latest
+}
+
 func updateBeliefConfidence(ctx context.Context, factStore *FactStore, beliefID int64, confidence float64) error {
 	_, err := factStore.db.RawDB().ExecContext(ctx,
 		`UPDATE beliefs SET confidence = ? WHERE id = ?`,
@@ -73,7 +100,8 @@ func updateBeliefConfidence(ctx context.Context, factStore *FactStore, beliefID 
 
 // GeneratePersonalitySummary builds a summary section from an agent's
 // accumulated beliefs and facts, suitable for appending to their base
-// personality file.
+// personality file. During consolidation, it clusters related beliefs
+// and highlights the strongest patterns.
 func GeneratePersonalitySummary(ctx context.Context, factStore *FactStore, graphStore *GraphStore, topK int) (string, error) {
 	beliefs, err := factStore.TopBeliefs(ctx, topK)
 	if err != nil {
@@ -82,15 +110,29 @@ func GeneratePersonalitySummary(ctx context.Context, factStore *FactStore, graph
 
 	var builder strings.Builder
 
-	if len(beliefs) > 0 {
-		builder.WriteString("## Learned Beliefs\n\n")
-		builder.WriteString("These are things you've learned from experience:\n\n")
-
-		for _, belief := range beliefs {
-			fmt.Fprintf(&builder, "- (confidence: %.1f) %s\n", belief.Confidence, belief.Content)
-		}
-		builder.WriteString("\n")
+	if len(beliefs) == 0 {
+		return "", nil
 	}
 
+	builder.WriteString("## Learned Beliefs\n\n")
+	builder.WriteString("These are things you've learned from experience:\n\n")
+
+	for _, belief := range beliefs {
+		strength := describeStrength(belief)
+		fmt.Fprintf(&builder, "- %s %s\n", strength, belief.Content)
+	}
+	builder.WriteString("\n")
+
 	return builder.String(), nil
+}
+
+func describeStrength(belief Belief) string {
+	switch {
+	case belief.Confidence >= 0.8:
+		return "(strong)"
+	case belief.Confidence >= 0.5:
+		return "(moderate)"
+	default:
+		return "(weak)"
+	}
 }

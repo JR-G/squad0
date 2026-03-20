@@ -31,6 +31,8 @@ type Fact struct {
 	SourceEpisodeID *int64
 	CreatedAt       time.Time
 	InvalidatedAt   *time.Time
+	LastAccessedAt  *time.Time
+	AccessCount     int
 }
 
 // Belief represents a causal belief that evolves with evidence.
@@ -42,6 +44,9 @@ type Belief struct {
 	Contradictions  int
 	LastConfirmedAt *time.Time
 	CreatedAt       time.Time
+	LastAccessedAt  *time.Time
+	AccessCount     int
+	SourceOutcome   string
 }
 
 // FactStore provides CRUD operations for facts and beliefs.
@@ -95,10 +100,12 @@ func (store *FactStore) CreateFact(ctx context.Context, fact Fact) (int64, error
 func (store *FactStore) GetFact(ctx context.Context, id int64) (Fact, error) {
 	var fact Fact
 	err := store.db.RawDB().QueryRowContext(ctx,
-		`SELECT id, entity_id, content, fact_type, confidence, confirmations, source_episode_id, created_at, invalidated_at
+		`SELECT id, entity_id, content, fact_type, confidence, confirmations, source_episode_id, created_at, invalidated_at,
+		 last_accessed_at, access_count
 		 FROM facts WHERE id = ?`, id,
 	).Scan(&fact.ID, &fact.EntityID, &fact.Content, &fact.Type, &fact.Confidence,
-		&fact.Confirmations, &fact.SourceEpisodeID, &fact.CreatedAt, &fact.InvalidatedAt)
+		&fact.Confirmations, &fact.SourceEpisodeID, &fact.CreatedAt, &fact.InvalidatedAt,
+		&fact.LastAccessedAt, &fact.AccessCount)
 	if err != nil {
 		return Fact{}, fmt.Errorf("getting fact %d: %w", id, err)
 	}
@@ -110,7 +117,8 @@ func (store *FactStore) GetFact(ctx context.Context, id int64) (Fact, error) {
 // entity, ordered by confidence descending.
 func (store *FactStore) FactsByEntity(ctx context.Context, entityID int64) ([]Fact, error) {
 	rows, err := store.db.RawDB().QueryContext(ctx,
-		`SELECT id, entity_id, content, fact_type, confidence, confirmations, source_episode_id, created_at, invalidated_at
+		`SELECT id, entity_id, content, fact_type, confidence, confirmations, source_episode_id, created_at, invalidated_at,
+		 last_accessed_at, access_count
 		 FROM facts WHERE entity_id = ? AND invalidated_at IS NULL ORDER BY confidence DESC`, entityID,
 	)
 	if err != nil {
@@ -188,10 +196,12 @@ func (store *FactStore) CreateBelief(ctx context.Context, belief Belief) (int64,
 func (store *FactStore) GetBelief(ctx context.Context, id int64) (Belief, error) {
 	var belief Belief
 	err := store.db.RawDB().QueryRowContext(ctx,
-		`SELECT id, content, confidence, confirmations, contradictions, last_confirmed_at, created_at
+		`SELECT id, content, confidence, confirmations, contradictions, last_confirmed_at, created_at,
+		 last_accessed_at, access_count, source_outcome
 		 FROM beliefs WHERE id = ?`, id,
 	).Scan(&belief.ID, &belief.Content, &belief.Confidence, &belief.Confirmations,
-		&belief.Contradictions, &belief.LastConfirmedAt, &belief.CreatedAt)
+		&belief.Contradictions, &belief.LastConfirmedAt, &belief.CreatedAt,
+		&belief.LastAccessedAt, &belief.AccessCount, &belief.SourceOutcome)
 	if err != nil {
 		return Belief{}, fmt.Errorf("getting belief %d: %w", id, err)
 	}
@@ -233,7 +243,8 @@ func (store *FactStore) ContradictBelief(ctx context.Context, id int64) error {
 // TopBeliefs returns the N highest-confidence beliefs.
 func (store *FactStore) TopBeliefs(ctx context.Context, limit int) ([]Belief, error) {
 	rows, err := store.db.RawDB().QueryContext(ctx,
-		`SELECT id, content, confidence, confirmations, contradictions, last_confirmed_at, created_at
+		`SELECT id, content, confidence, confirmations, contradictions, last_confirmed_at, created_at,
+		 last_accessed_at, access_count, source_outcome
 		 FROM beliefs ORDER BY confidence DESC LIMIT ?`, limit,
 	)
 	if err != nil {
@@ -242,6 +253,42 @@ func (store *FactStore) TopBeliefs(ctx context.Context, limit int) ([]Belief, er
 	defer func() { _ = rows.Close() }()
 
 	return scanBeliefs(rows)
+}
+
+// RecordFactAccess bumps the access count and last_accessed_at for a fact.
+func (store *FactStore) RecordFactAccess(ctx context.Context, id int64) error {
+	_, err := store.db.RawDB().ExecContext(ctx,
+		`UPDATE facts SET access_count = access_count + 1, last_accessed_at = CURRENT_TIMESTAMP WHERE id = ?`, id,
+	)
+	if err != nil {
+		return fmt.Errorf("recording fact access %d: %w", id, err)
+	}
+	return nil
+}
+
+// RecordBeliefAccess bumps the access count and last_accessed_at for a belief.
+func (store *FactStore) RecordBeliefAccess(ctx context.Context, id int64) error {
+	_, err := store.db.RawDB().ExecContext(ctx,
+		`UPDATE beliefs SET access_count = access_count + 1, last_accessed_at = CURRENT_TIMESTAMP WHERE id = ?`, id,
+	)
+	if err != nil {
+		return fmt.Errorf("recording belief access %d: %w", id, err)
+	}
+	return nil
+}
+
+// EmotionalSalienceMultiplier returns the confidence multiplier based on
+// whether the belief was formed from a failed or successful session.
+// Failed sessions produce stronger initial memories (1.4x).
+func EmotionalSalienceMultiplier(outcome string) float64 {
+	switch outcome {
+	case "failure":
+		return 1.4
+	case "partial":
+		return 1.2
+	default:
+		return 1.0
+	}
 }
 
 func scanFacts(rows interface {
@@ -254,7 +301,8 @@ func scanFacts(rows interface {
 	for rows.Next() {
 		var fact Fact
 		if err := rows.Scan(&fact.ID, &fact.EntityID, &fact.Content, &fact.Type, &fact.Confidence,
-			&fact.Confirmations, &fact.SourceEpisodeID, &fact.CreatedAt, &fact.InvalidatedAt); err != nil {
+			&fact.Confirmations, &fact.SourceEpisodeID, &fact.CreatedAt, &fact.InvalidatedAt,
+			&fact.LastAccessedAt, &fact.AccessCount); err != nil {
 			return nil, fmt.Errorf("scanning fact: %w", err)
 		}
 		facts = append(facts, fact)
@@ -272,7 +320,8 @@ func scanBeliefs(rows interface {
 	for rows.Next() {
 		var belief Belief
 		if err := rows.Scan(&belief.ID, &belief.Content, &belief.Confidence, &belief.Confirmations,
-			&belief.Contradictions, &belief.LastConfirmedAt, &belief.CreatedAt); err != nil {
+			&belief.Contradictions, &belief.LastConfirmedAt, &belief.CreatedAt,
+			&belief.LastAccessedAt, &belief.AccessCount, &belief.SourceOutcome); err != nil {
 			return nil, fmt.Errorf("scanning belief: %w", err)
 		}
 		beliefs = append(beliefs, belief)

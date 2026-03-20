@@ -94,6 +94,8 @@ func (handler *MemoryHandler) handleRecall(ctx context.Context, args map[string]
 		return toolError(fmt.Sprintf("recall failed: %v", err))
 	}
 
+	handler.recordAccessForResults(ctx, memCtx)
+
 	return toolText(formatRetrievalContext(memCtx))
 }
 
@@ -196,6 +198,16 @@ func (handler *MemoryHandler) handleRecallEntity(ctx context.Context, args map[s
 	}
 
 	return toolText(formatEntityKnowledge(entity, facts, related))
+}
+
+func (handler *MemoryHandler) recordAccessForResults(ctx context.Context, memCtx memory.RetrievalContext) {
+	for _, fact := range memCtx.Facts {
+		_ = handler.factStore.RecordFactAccess(ctx, fact.ID)
+	}
+
+	for _, belief := range memCtx.Beliefs {
+		_ = handler.factStore.RecordBeliefAccess(ctx, belief.ID)
+	}
 }
 
 func memoryTools() []ToolDefinition {
