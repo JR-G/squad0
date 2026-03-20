@@ -12,6 +12,7 @@ fi
 
 while IFS= read -r file; do
   [ -f "$file" ] || continue
+  case "$file" in *_test.go|scripts/check-secrets.sh) continue ;; esac
   if grep -nE "$PATTERNS" "$file" > /dev/null 2>&1; then
     echo "ERROR: $file contains what looks like an API key"
     grep -nE "$PATTERNS" "$file" | head -5

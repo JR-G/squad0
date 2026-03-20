@@ -17,14 +17,29 @@ type MessageSender interface {
 	PostThreadReply(ctx context.Context, channel, threadTS, text string, persona Persona) error
 }
 
+// IncomingMessage represents a message received from Slack.
+type IncomingMessage struct {
+	Channel   string
+	ChannelID string
+	User      string
+	Text      string
+	ThreadTS  string
+	IsDM      bool
+}
+
+// MessageHandler is called when a message is received from Slack.
+type MessageHandler func(ctx context.Context, msg IncomingMessage)
+
 // Bot manages the Slack connection, message sending with rate limiting,
 // and socket mode event handling for CEO commands.
 type Bot struct {
-	client   *slackapi.Client
-	socket   *socketmode.Client
-	limiter  *RateLimiter
-	personas map[agent.Role]Persona
-	channels map[string]string
+	client          *slackapi.Client
+	socket          *socketmode.Client
+	limiter         *RateLimiter
+	personas        map[agent.Role]Persona
+	channels        map[string]string
+	reverseChannels map[string]string
+	onMessage       MessageHandler
 }
 
 // BotConfig holds the configuration needed to create a Bot.
@@ -49,13 +64,30 @@ func NewBot(cfg BotConfig) *Bot {
 		socketmode.OptionLog(nil),
 	)
 
-	return &Bot{
-		client:   client,
-		socket:   socket,
-		limiter:  NewRateLimiter(cfg.MinSpacing),
-		personas: cfg.Personas,
-		channels: cfg.Channels,
+	reverse := make(map[string]string, len(cfg.Channels))
+	for name, channelID := range cfg.Channels {
+		reverse[channelID] = name
 	}
+
+	return &Bot{
+		client:          client,
+		socket:          socket,
+		limiter:         NewRateLimiter(cfg.MinSpacing),
+		personas:        cfg.Personas,
+		channels:        cfg.Channels,
+		reverseChannels: reverse,
+	}
+}
+
+// OnMessage registers a handler for incoming messages.
+func (bot *Bot) OnMessage(handler MessageHandler) {
+	bot.onMessage = handler
+}
+
+// UpdatePersonas replaces the current persona map. Called when agents
+// choose or update their names.
+func (bot *Bot) UpdatePersonas(personas map[agent.Role]Persona) {
+	bot.personas = personas
 }
 
 // PostMessage sends a message to the named channel as the given persona.
@@ -69,14 +101,7 @@ func (bot *Bot) PostMessage(ctx context.Context, channel, text string, persona P
 		return fmt.Errorf("rate limiter wait: %w", err)
 	}
 
-	opts := []slackapi.MsgOption{
-		slackapi.MsgOptionText(text, false),
-		slackapi.MsgOptionUsername(persona.Username),
-	}
-
-	if persona.IconURL != "" {
-		opts = append(opts, slackapi.MsgOptionIconURL(persona.IconURL))
-	}
+	opts := buildMessageOpts(text, persona)
 
 	_, _, err = bot.client.PostMessageContext(ctx, channelID, opts...)
 	if err != nil {
@@ -97,15 +122,8 @@ func (bot *Bot) PostThreadReply(ctx context.Context, channel, threadTS, text str
 		return fmt.Errorf("rate limiter wait: %w", err)
 	}
 
-	opts := []slackapi.MsgOption{
-		slackapi.MsgOptionText(text, false),
-		slackapi.MsgOptionUsername(persona.Username),
-		slackapi.MsgOptionTS(threadTS),
-	}
-
-	if persona.IconURL != "" {
-		opts = append(opts, slackapi.MsgOptionIconURL(persona.IconURL))
-	}
+	opts := buildMessageOpts(text, persona)
+	opts = append(opts, slackapi.MsgOptionTS(threadTS))
 
 	_, _, err = bot.client.PostMessageContext(ctx, channelID, opts...)
 	if err != nil {
@@ -117,18 +135,33 @@ func (bot *Bot) PostThreadReply(ctx context.Context, channel, threadTS, text str
 
 // PostAsRole sends a message as the given agent role's persona.
 func (bot *Bot) PostAsRole(ctx context.Context, channel, text string, role agent.Role) error {
-	persona := PersonaForRole(role, bot.personas)
+	persona := bot.personaForRole(role)
 	return bot.PostMessage(ctx, channel, text, persona)
 }
 
-// ChannelID returns the Slack channel ID for the given logical name.
-func (bot *Bot) ChannelID(name string) (string, error) {
-	return bot.resolveChannel(name)
+// PostThreadAsRole sends a threaded reply as the given agent role's persona.
+func (bot *Bot) PostThreadAsRole(ctx context.Context, channel, threadTS, text string, role agent.Role) error {
+	persona := bot.personaForRole(role)
+	return bot.PostThreadReply(ctx, channel, threadTS, text, persona)
+}
+
+// ChannelName returns the logical channel name for a Slack channel ID.
+func (bot *Bot) ChannelName(channelID string) (string, bool) {
+	name, ok := bot.reverseChannels[channelID]
+	return name, ok
 }
 
 // SocketClient returns the socket mode client for event handling.
 func (bot *Bot) SocketClient() *socketmode.Client {
 	return bot.socket
+}
+
+func (bot *Bot) personaForRole(role agent.Role) Persona {
+	persona, ok := bot.personas[role]
+	if !ok {
+		return Persona{Role: role, Name: string(role), IconURL: GenerateIdenticonURL(string(role))}
+	}
+	return persona
 }
 
 func (bot *Bot) resolveChannel(name string) (string, error) {
@@ -137,4 +170,17 @@ func (bot *Bot) resolveChannel(name string) (string, error) {
 		return "", fmt.Errorf("unknown channel %q", name)
 	}
 	return channelID, nil
+}
+
+func buildMessageOpts(text string, persona Persona) []slackapi.MsgOption {
+	opts := []slackapi.MsgOption{
+		slackapi.MsgOptionText(text, false),
+		slackapi.MsgOptionUsername(persona.Name),
+	}
+
+	if persona.IconURL != "" {
+		opts = append(opts, slackapi.MsgOptionIconURL(persona.IconURL))
+	}
+
+	return opts
 }
