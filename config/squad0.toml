@@ -1,0 +1,48 @@
+[project]
+name = "squad0"
+repo = "github.com/JR-G/squad0"
+target_repo = ""
+
+[linear]
+team_id = ""
+project_id = ""
+
+[slack]
+bot_token_env = "SLACK_BOT_TOKEN"
+app_token_env = "SLACK_APP_TOKEN"
+channels = ["feed", "engineering", "reviews", "triage", "standup", "commands"]
+
+[github]
+owner = "JR-G"
+
+[embeddings]
+provider = "ollama"
+model = "nomic-embed-text"
+ollama_url = "http://localhost:11434"
+
+[agents]
+max_parallel = 3
+cooldown_seconds = 300
+ticket_batch_size = 3
+personality_regen_every = 20
+
+[agents.models]
+pm = "claude-haiku-4-5-20251001"
+tech_lead = "claude-opus-4-6"
+engineer = "claude-sonnet-4-6"
+reviewer = "claude-opus-4-6"
+designer = "claude-sonnet-4-6"
+
+[quality]
+lint = "golangci-lint run"
+test = "go test -race ./..."
+coverage_threshold = 80
+
+[rituals]
+standup_cron = "0 9 * * *"
+retro_after_tickets = 10
+design_discussion_on_epics = true
+
+[worktree]
+base_dir = ".worktrees"
+auto_cleanup = true
