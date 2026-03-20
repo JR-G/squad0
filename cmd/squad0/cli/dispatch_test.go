@@ -391,6 +391,50 @@ func TestHandlePauseResume_AllError_ReturnsError(t *testing.T) {
 	assert.Contains(t, result, "Error")
 }
 
+func TestRouteCommand_StopCommand_PausesAll(t *testing.T) {
+	t.Parallel()
+
+	server := newTestSlackServer()
+	defer server.Close()
+
+	bot := newTestBot(server.URL)
+	orch, store := newTestOrchestrator(t, bot)
+
+	ctx := context.Background()
+	_ = store.Upsert(ctx, coordination.CheckIn{
+		Agent: agent.RoleEngineer1, Status: coordination.StatusWorking, FilesTouching: []string{},
+	})
+
+	dispatcher := cli.NewCommandDispatcher(orch, bot)
+	cmd := slack.Command{Name: "stop", Args: nil}
+
+	result := dispatcher.RouteCommand(ctx, cmd)
+
+	assert.Contains(t, result, "paused")
+}
+
+func TestRouteCommand_StartCommand_ResumesAll(t *testing.T) {
+	t.Parallel()
+
+	server := newTestSlackServer()
+	defer server.Close()
+
+	bot := newTestBot(server.URL)
+	orch, store := newTestOrchestrator(t, bot)
+
+	ctx := context.Background()
+	_ = store.Upsert(ctx, coordination.CheckIn{
+		Agent: agent.RoleEngineer1, Status: coordination.StatusIdle, FilesTouching: []string{},
+	})
+
+	dispatcher := cli.NewCommandDispatcher(orch, bot)
+	cmd := slack.Command{Name: "start", Args: nil}
+
+	result := dispatcher.RouteCommand(ctx, cmd)
+
+	assert.Contains(t, result, "resumed")
+}
+
 func TestHandlePauseResume_SingleError_ReturnsError(t *testing.T) {
 	t.Parallel()
 

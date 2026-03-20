@@ -53,6 +53,10 @@ func (dispatcher *commandDispatcher) routeCommand(ctx context.Context, cmd slack
 	switch slack.CommandType(cmd.Name) { //nolint:exhaustive // unimplemented commands get default
 	case slack.CommandStatus:
 		return dispatcher.handleStatus(ctx)
+	case slack.CommandStop:
+		return handlePauseResume(ctx, dispatcher.orch.PauseAgent, dispatcher.orch.PauseAll, nil, "paused")
+	case slack.CommandStart:
+		return handlePauseResume(ctx, dispatcher.orch.ResumeAgent, dispatcher.orch.ResumeAll, nil, "resumed")
 	case slack.CommandPause:
 		return handlePauseResume(ctx, dispatcher.orch.PauseAgent, dispatcher.orch.PauseAll, cmd.Args, "paused")
 	case slack.CommandResume:

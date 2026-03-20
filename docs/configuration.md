@@ -77,12 +77,46 @@ squad0 secrets verify                  # Checks all required secrets are present
 
 ## Deployment
 
-Squad0 is designed to run on an always-on macOS machine:
+Squad0 runs as a launchd service — starts on boot, auto-restarts on crash, runs 24/7 without intervention.
 
-1. Install Ollama and pull the embedding model: `ollama pull nomic-embed-text`
-2. Install Claude Code CLI
-3. Authenticate `gh` CLI: `gh auth login`
-4. Configure Linear MCP server (needs `bun` installed for `bunx`)
-5. Set up Slack app with bot token and app-level token
-6. Store secrets in Keychain
-7. Build and run: `./bin/squad0 start`
+### First-Time Setup
+
+```bash
+./scripts/install.sh           # Install dependencies, build, set up hooks
+squad0 secrets set SLACK_BOT_TOKEN
+squad0 secrets set SLACK_APP_TOKEN
+./scripts/install-service.sh   # Install as launchd service, starts immediately
+```
+
+### What install-service.sh Does
+
+1. Builds both binaries (`squad0` and `squad0-memory-mcp`)
+2. Copies everything to `/opt/squad0`
+3. Installs a launchd plist at `~/Library/LaunchAgents/com.squad0.agent.plist`
+4. Starts the service
+
+### Prerequisites
+
+- Ollama with `nomic-embed-text`: `ollama pull nomic-embed-text`
+- Claude Code CLI installed and authenticated
+- `gh` CLI authenticated: `gh auth login`
+- `bun` installed (for Linear MCP server)
+- Slack app with bot token (`chat:write`, `chat:write.customize`) and app-level token (socket mode)
+
+### Service Management
+
+```bash
+launchctl list | grep squad0                              # Check if running
+launchctl unload ~/Library/LaunchAgents/com.squad0.agent.plist   # Stop
+launchctl load ~/Library/LaunchAgents/com.squad0.agent.plist     # Start
+tail -f /opt/squad0/data/logs/launchd-stdout.log          # View logs
+```
+
+### Slack Control
+
+Once running, control everything from Slack:
+- `stop` — pause all agents
+- `start` — resume all agents
+- `status` — show current state
+- `pause engineer-1` — pause a specific agent
+- `health` — check agent health
