@@ -1,0 +1,41 @@
+version: '3'
+
+tasks:
+  build:
+    cmds:
+      - go build -tags sqlite_fts5 -o bin/squad0 ./cmd/squad0
+    sources:
+      - ./**/*.go
+
+  run:
+    deps: [build]
+    cmds:
+      - ./bin/squad0 start
+
+  test:
+    cmds:
+      - go test -race -tags sqlite_fts5 -v ./...
+
+  test-cover:
+    cmds:
+      - go test -race -tags sqlite_fts5 -coverprofile=coverage.out ./...
+      - go tool cover -func=coverage.out
+      - go tool cover -html=coverage.out -o coverage.html
+
+  lint:
+    cmds:
+      - golangci-lint run ./...
+
+  fmt:
+    cmds:
+      - gofumpt -l -w .
+
+  clean:
+    cmds:
+      - rm -rf bin/ coverage.out coverage.html
+
+  install-tools:
+    cmds:
+      - go install mvdan.cc/gofumpt@latest
+      - go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+      - go install github.com/evilmartians/lefthook@latest

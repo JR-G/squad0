@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Verifies test coverage meets the minimum threshold.
+set -euo pipefail
+
+MIN_COVERAGE=${1:-80}
+
+go test -tags sqlite_fts5 -coverprofile=coverage.out ./... > /dev/null 2>&1
+
+TOTAL=$(go tool cover -func=coverage.out | grep total | awk '{print $NF}' | tr -d '%')
+
+if [ -z "$TOTAL" ]; then
+  echo "ERROR: could not determine coverage"
+  exit 1
+fi
+
+TOTAL_INT=${TOTAL%.*}
+
+if [ "$TOTAL_INT" -lt "$MIN_COVERAGE" ]; then
+  echo "ERROR: coverage ${TOTAL}% is below minimum ${MIN_COVERAGE}%"
+  exit 1
+fi
+
+echo "Coverage: ${TOTAL}% (minimum: ${MIN_COVERAGE}%)"
+rm -f coverage.out
