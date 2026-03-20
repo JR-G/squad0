@@ -18,17 +18,37 @@ type MCPConfig struct {
 	MCPServers map[string]MCPServerConfig `json:"mcpServers"`
 }
 
-// DefaultMCPConfig returns the standard MCP configuration for agent
-// sessions, including the Linear MCP server.
-func DefaultMCPConfig() MCPConfig {
-	return MCPConfig{
-		MCPServers: map[string]MCPServerConfig{
-			"linear": {
-				Command: "bunx",
-				Args:    []string{"@linear/mcp-server"},
-			},
+// MCPOptions holds the paths needed to configure MCP servers for an
+// agent session.
+type MCPOptions struct {
+	MemoryBinaryPath string
+	AgentDBPath      string
+}
+
+// BuildMCPConfig returns the MCP configuration for an agent session,
+// including the Linear MCP server and the agent's personal memory server.
+func BuildMCPConfig(opts MCPOptions) MCPConfig {
+	servers := map[string]MCPServerConfig{
+		"linear": {
+			Command: "bunx",
+			Args:    []string{"@linear/mcp-server"},
 		},
 	}
+
+	if opts.MemoryBinaryPath != "" && opts.AgentDBPath != "" {
+		servers["memory"] = MCPServerConfig{
+			Command: opts.MemoryBinaryPath,
+			Args:    []string{"--db", opts.AgentDBPath},
+		}
+	}
+
+	return MCPConfig{MCPServers: servers}
+}
+
+// DefaultMCPConfig returns a minimal MCP configuration with only the
+// Linear MCP server. Use BuildMCPConfig for full configuration.
+func DefaultMCPConfig() MCPConfig {
+	return BuildMCPConfig(MCPOptions{})
 }
 
 // WriteMCPConfig writes the .mcp.json file to the given directory.
