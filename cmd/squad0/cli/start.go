@@ -24,12 +24,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// EventLoopFunc is the function that runs the blocking event loop.
+type EventLoopFunc func(ctx context.Context, bot *slack.Bot, sched *orchestrator.Scheduler, orch *orchestrator.Orchestrator) error
+
 // StartDeps holds injectable dependencies for the start command.
 type StartDeps struct {
 	SecretLoader   SecretLoader
 	Output         io.Writer
 	DataDir        string
 	PersonalityDir string
+	EventLoop      EventLoopFunc
 }
 
 // SecretLoader loads secrets from a backing store.
@@ -47,6 +51,7 @@ func defaultStartDeps() StartDeps {
 		Output:         os.Stdout,
 		DataDir:        "data",
 		PersonalityDir: "agents",
+		EventLoop:      runEventLoop,
 	}
 }
 
@@ -140,6 +145,20 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 
 	appLogger.Info("system", "startup", "orchestrator starting")
 
+	loop := deps.EventLoop
+	if loop == nil {
+		loop = runEventLoop
+	}
+
+	return loop(ctx, bot, scheduler, orch)
+}
+
+func runEventLoop(
+	ctx context.Context,
+	bot *slack.Bot,
+	scheduler *orchestrator.Scheduler,
+	orch *orchestrator.Orchestrator,
+) error {
 	errCh := make(chan error, 3)
 	go func() { errCh <- bot.ListenForEvents(ctx) }()
 	go func() { errCh <- scheduler.Run(ctx) }()

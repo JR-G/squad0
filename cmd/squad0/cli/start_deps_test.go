@@ -11,7 +11,9 @@ import (
 	"github.com/JR-G/squad0/cmd/squad0/cli"
 	"github.com/JR-G/squad0/internal/agent"
 	"github.com/JR-G/squad0/internal/config"
+	islack "github.com/JR-G/squad0/internal/integrations/slack"
 	"github.com/JR-G/squad0/internal/memory"
+	"github.com/JR-G/squad0/internal/orchestrator"
 	"github.com/JR-G/squad0/internal/secrets"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -94,15 +96,13 @@ func TestCreateSlackBot_ReturnsNonNilBot(t *testing.T) {
 	require.NotNil(t, bot)
 }
 
-func TestRunOrchestratorWithContext_ShortTimeout_ReturnsError(t *testing.T) {
+func TestRunOrchestratorWithContext_FullSetup_ReachesEventLoop(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := t.TempDir()
+	out := &bytes.Buffer{}
 
-	// Use a short timeout so the setup completes but the goroutines
-	// (orchestrator loop, scheduler, socket listener) exit promptly.
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	loader := &fakeSecretLoader{
 		secrets: secrets.Secrets{
@@ -113,18 +113,19 @@ func TestRunOrchestratorWithContext_ShortTimeout_ReturnsError(t *testing.T) {
 
 	deps := cli.StartDeps{
 		SecretLoader:   loader,
-		Output:         &bytes.Buffer{},
+		Output:         out,
 		DataDir:        tmpDir,
 		PersonalityDir: t.TempDir(),
+		EventLoop: func(_ context.Context, _ *islack.Bot, _ *orchestrator.Scheduler, _ *orchestrator.Orchestrator) error {
+			return nil
+		},
 	}
 
-	cfg := config.DefaultConfig()
+	err := cli.RunOrchestratorWithContext(ctx, config.DefaultConfig(), deps)
 
-	err := cli.RunOrchestratorWithContext(ctx, cfg, deps)
-
-	// Should return an error when the context times out or when a
-	// goroutine (e.g. socket listener with no real server) fails.
-	require.Error(t, err)
+	require.NoError(t, err)
+	assert.Contains(t, out.String(), "Squad0")
+	assert.Contains(t, out.String(), "All systems ready")
 }
 
 func TestRunOrchestratorWithContext_BadDataDir_ReturnsError(t *testing.T) {
@@ -201,34 +202,10 @@ func TestRunOrchestratorWithContext_LoggerFailure_ReturnsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "creating logger")
 }
 
-func TestRunOrchestratorWithContext_OutputContainsBanner(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	out := &bytes.Buffer{}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	loader := &fakeSecretLoader{
-		secrets: secrets.Secrets{
-			SlackBotToken: "xoxb-test",
-			SlackAppToken: "xapp-test",
-		},
-	}
-
-	deps := cli.StartDeps{
-		SecretLoader:   loader,
-		Output:         out,
-		DataDir:        tmpDir,
-		PersonalityDir: t.TempDir(),
-	}
-
-	_ = cli.RunOrchestratorWithContext(ctx, config.DefaultConfig(), deps)
-
-	assert.Contains(t, out.String(), "Squad0")
-	assert.Contains(t, out.String(), "All systems ready")
-}
+// NOTE: TestRunOrchestratorWithContext_OutputContainsBanner removed —
+// it starts real Slack websocket goroutines that hang in non-TTY
+// environments (git hooks, CI). Banner output is tested indirectly
+// via the TUI package tests.
 
 func TestCreateAgents_WithPersonalityDir_CreatesAll(t *testing.T) {
 	t.Parallel()
