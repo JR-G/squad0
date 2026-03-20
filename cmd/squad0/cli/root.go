@@ -23,8 +23,10 @@ func NewRootCommand() *cobra.Command {
 		"path to the configuration file")
 
 	rootCmd.AddCommand(
+		newStartCommand(&configPath),
 		newConfigCommand(&configPath),
 		newSecretsCommand(),
+		newStatusCommand(&configPath),
 		newVersionCommand(),
 	)
 

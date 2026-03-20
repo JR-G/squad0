@@ -7,7 +7,10 @@ import (
 	"io"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/JR-G/squad0/internal/secrets"
+	"github.com/JR-G/squad0/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -62,23 +65,11 @@ func newSecretsSetCommand(deps *SecretsCommandDeps) *cobra.Command {
 			ctx := context.Background()
 			mgr := resolveManager(deps)
 
-			_, err := fmt.Fprintf(cmd.ErrOrStderr(), "Enter value for %s: ", name)
+			value, err := readSecretValue(deps, name)
 			if err != nil {
-				return fmt.Errorf("writing prompt: %w", err)
+				return err
 			}
 
-			input := resolveStdin(deps)
-			if input == nil {
-				input = cmd.InOrStdin()
-			}
-
-			reader := bufio.NewReader(input)
-			value, err := reader.ReadString('\n')
-			if err != nil {
-				return fmt.Errorf("reading input: %w", err)
-			}
-
-			value = strings.TrimSpace(value)
 			if value == "" {
 				return fmt.Errorf("secret value must not be empty")
 			}
@@ -87,10 +78,47 @@ func newSecretsSetCommand(deps *SecretsCommandDeps) *cobra.Command {
 				return err
 			}
 
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Secret %s stored successfully.\n", name)
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "\n%s\n", tui.StepDone(fmt.Sprintf("%s saved", name)))
 			return err
 		},
 	}
+}
+
+func readSecretValue(deps *SecretsCommandDeps, name string) (string, error) {
+	stdinReader := resolveStdin(deps)
+	if stdinReader != nil {
+		return readFromStdin(stdinReader)
+	}
+
+	return readFromTUI(name)
+}
+
+func readFromStdin(reader io.Reader) (string, error) {
+	bufReader := bufio.NewReader(reader)
+	value, err := bufReader.ReadString('\n')
+	if err != nil {
+		return "", fmt.Errorf("reading input: %w", err)
+	}
+	return strings.TrimSpace(value), nil
+}
+
+func readFromTUI(name string) (string, error) {
+	model := tui.NewSecretInput(name)
+	result, err := tea.NewProgram(model).Run()
+	if err != nil {
+		return "", fmt.Errorf("input error: %w", err)
+	}
+
+	finalModel, ok := result.(tui.SecretInputModel)
+	if !ok {
+		return "", fmt.Errorf("unexpected model type")
+	}
+
+	if finalModel.Aborted() {
+		return "", fmt.Errorf("cancelled")
+	}
+
+	return finalModel.Value(), nil
 }
 
 func newSecretsListCommand(deps *SecretsCommandDeps) *cobra.Command {
@@ -106,17 +134,8 @@ func newSecretsListCommand(deps *SecretsCommandDeps) *cobra.Command {
 				return err
 			}
 
-			for _, name := range secrets.RequiredSecrets {
-				label := "[not set]"
-				if status[name] {
-					label = "[set]"
-				}
-				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "  %-20s %s\n", name, label); err != nil {
-					return err
-				}
-			}
-
-			return nil
+			_, err = fmt.Fprint(cmd.OutOrStdout(), tui.FormatSecretsList(status))
+			return err
 		},
 	}
 }

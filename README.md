@@ -1,6 +1,6 @@
 # Squad0
 
-An autonomous software engineering team. Agents with evolving personalities pull tickets from Linear, discuss approaches in Slack, implement in isolated git worktrees, review each other's work, and open PRs — all while the CEO sleeps.
+An autonomous software engineering team. Agents with evolving personalities pull tickets from Linear, discuss approaches in Slack, implement in isolated git worktrees, review each other's work, and open PRs.
 
 ## Quick Start
 

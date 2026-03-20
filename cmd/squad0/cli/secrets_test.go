@@ -82,7 +82,7 @@ func TestSecretsSet_ValidInput_StoresSecret(t *testing.T) {
 	err := rootCmd.Execute()
 
 	require.NoError(t, err)
-	assert.Contains(t, output.String(), "stored successfully")
+	assert.Contains(t, output.String(), "saved")
 }
 
 func TestSecretsSet_EmptyInput_ReturnsError(t *testing.T) {
@@ -138,9 +138,9 @@ func TestSecretsList_ShowsStatus(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Contains(t, output.String(), "SLACK_BOT_TOKEN")
-	assert.Contains(t, output.String(), "[set]")
+	assert.Contains(t, output.String(), "set")
 	assert.Contains(t, output.String(), "SLACK_APP_TOKEN")
-	assert.Contains(t, output.String(), "[not set]")
+	assert.Contains(t, output.String(), "not set")
 }
 
 func TestSecretsVerify_AllPresent_Succeeds(t *testing.T) {
