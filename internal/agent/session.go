@@ -77,7 +77,7 @@ func (session *Session) Run(ctx context.Context, cfg SessionConfig) (SessionResu
 	result.RawOutput = string(output)
 
 	if err != nil {
-		exitErr := extractExitError(err)
+		exitErr := ExtractExitError(err)
 		result.ExitCode = exitErr
 		result.Messages = parseStreamOutput(result.RawOutput)
 		result.Transcript = extractTranscript(result.Messages)
@@ -148,7 +148,9 @@ func extractTranscript(messages []StreamMessage) string {
 	return builder.String()
 }
 
-func extractExitError(err error) int {
+// ExtractExitError returns the exit code from an exec.ExitError, or 1
+// if the error is not an exit error.
+func ExtractExitError(err error) int {
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
 		return exitErr.ExitCode()

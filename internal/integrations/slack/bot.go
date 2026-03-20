@@ -51,14 +51,27 @@ type BotConfig struct {
 	MinSpacing time.Duration
 }
 
+const defaultSlackAPIURL = "https://slack.com/api/"
+
 // NewBot creates a Bot with the given configuration. The channels map
 // maps logical names (e.g. "feed", "engineering") to Slack channel IDs.
 func NewBot(cfg BotConfig) *Bot {
-	client := slackapi.New(
-		cfg.BotToken,
-		slackapi.OptionAppLevelToken(cfg.AppToken),
-	)
+	return NewBotWithURL(cfg, defaultSlackAPIURL)
+}
 
+// NewBotWithURL creates a Bot pointing at a custom Slack API URL. Pass
+// an httptest server URL to test without a real Slack connection.
+func NewBotWithURL(cfg BotConfig, apiURL string) *Bot {
+	opts := []slackapi.Option{slackapi.OptionAPIURL(apiURL)}
+
+	if apiURL == defaultSlackAPIURL {
+		opts = append(opts, slackapi.OptionAppLevelToken(cfg.AppToken))
+	}
+
+	return newBot(cfg, slackapi.New(cfg.BotToken, opts...))
+}
+
+func newBot(cfg BotConfig, client *slackapi.Client) *Bot {
 	socket := socketmode.New(
 		client,
 		socketmode.OptionLog(nil),

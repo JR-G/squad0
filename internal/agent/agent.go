@@ -93,11 +93,11 @@ func (agent *Agent) assemblePrompt(ctx context.Context, taskDescription string, 
 }
 
 func (agent *Agent) storeEpisode(ctx context.Context, taskDescription string, result SessionResult) error {
-	outcome := determineOutcome(result)
+	outcome := DetermineOutcome(result)
 
 	episode := memory.Episode{
 		Agent:   string(agent.role),
-		Summary: truncateSummary(result.Transcript, 500),
+		Summary: TruncateSummary(result.Transcript, 500),
 		Outcome: outcome,
 	}
 
@@ -110,7 +110,9 @@ func (agent *Agent) storeEpisode(ctx context.Context, taskDescription string, re
 	return err
 }
 
-func determineOutcome(result SessionResult) memory.Outcome {
+// DetermineOutcome infers the session outcome from the exit code and
+// any error messages in the stream output.
+func DetermineOutcome(result SessionResult) memory.Outcome {
 	if result.ExitCode != 0 {
 		return memory.OutcomeFailure
 	}
@@ -133,7 +135,8 @@ func determineOutcome(result SessionResult) memory.Outcome {
 	return memory.OutcomeSuccess
 }
 
-func truncateSummary(text string, maxLen int) string {
+// TruncateSummary shortens text to the given maximum length.
+func TruncateSummary(text string, maxLen int) string {
 	if len(text) <= maxLen {
 		return text
 	}

@@ -2,12 +2,16 @@ package slack
 
 import (
 	"context"
-	"log"
 
 	slackapi "github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 	"github.com/slack-go/slack/socketmode"
 )
+
+// EventAcknowledger acknowledges socket mode events.
+type EventAcknowledger interface {
+	Ack(req socketmode.Request, payload ...interface{})
+}
 
 // ListenForEvents starts the socket mode event loop, dispatching incoming
 // messages to the registered handler. This blocks until the context is
@@ -23,40 +27,42 @@ func (bot *Bot) handleEvents(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case event := <-bot.socket.Events:
-			bot.dispatchEvent(ctx, event)
+			bot.DispatchSocketEvent(ctx, bot.socket, event)
 		}
 	}
 }
 
-func (bot *Bot) dispatchEvent(ctx context.Context, event socketmode.Event) {
-	switch event.Type { //nolint:exhaustive // only EventsAPI carries messages we need to handle
+// DispatchSocketEvent routes a socket mode event to the appropriate
+// handler and acknowledges the request.
+func (bot *Bot) DispatchSocketEvent(ctx context.Context, acker EventAcknowledger, event socketmode.Event) {
+	switch event.Type { //nolint:exhaustive // only EventsAPI carries messages we need
 	case socketmode.EventTypeEventsAPI:
-		bot.handleEventsAPI(ctx, event)
-	default:
-		if event.Request != nil {
-			bot.socket.Ack(*event.Request)
+		eventsAPIEvent, ok := event.Data.(slackevents.EventsAPIEvent)
+		if !ok {
+			AckRequest(acker, event.Request)
+			return
 		}
+		AckRequest(acker, event.Request)
+		bot.HandleEventsAPIEvent(ctx, eventsAPIEvent)
+	default:
+		AckRequest(acker, event.Request)
 	}
 }
 
-func (bot *Bot) handleEventsAPI(ctx context.Context, event socketmode.Event) {
-	eventsAPIEvent, ok := event.Data.(slackevents.EventsAPIEvent)
-	if !ok {
-		bot.socket.Ack(*event.Request)
+// HandleEventsAPIEvent processes a Slack Events API event. Use this to
+// dispatch events received outside of socket mode (e.g. HTTP webhooks).
+func (bot *Bot) HandleEventsAPIEvent(ctx context.Context, event slackevents.EventsAPIEvent) {
+	switch innerEvent := event.InnerEvent.Data.(type) {
+	case *slackevents.MessageEvent:
+		bot.HandleMessageEvent(ctx, innerEvent)
+	default:
 		return
 	}
-
-	bot.socket.Ack(*event.Request)
-
-	switch innerEvent := eventsAPIEvent.InnerEvent.Data.(type) {
-	case *slackevents.MessageEvent:
-		bot.handleMessageEvent(ctx, innerEvent)
-	default:
-		log.Printf("unhandled inner event type: %T", innerEvent)
-	}
 }
 
-func (bot *Bot) handleMessageEvent(ctx context.Context, event *slackevents.MessageEvent) {
+// HandleMessageEvent processes a single Slack message event, routing it
+// to the registered message handler.
+func (bot *Bot) HandleMessageEvent(ctx context.Context, event *slackevents.MessageEvent) {
 	if bot.onMessage == nil {
 		return
 	}
@@ -68,6 +74,10 @@ func (bot *Bot) handleMessageEvent(ctx context.Context, event *slackevents.Messa
 	channelName, known := bot.ChannelName(event.Channel)
 	isDM := isDirectMessage(event.ChannelType)
 
+	if !known && !isDM {
+		return
+	}
+
 	msg := IncomingMessage{
 		Channel:   channelName,
 		ChannelID: event.Channel,
@@ -77,11 +87,15 @@ func (bot *Bot) handleMessageEvent(ctx context.Context, event *slackevents.Messa
 		IsDM:      isDM,
 	}
 
-	if !known && !isDM {
+	bot.onMessage(ctx, msg)
+}
+
+// AckRequest acknowledges a socket mode request if non-nil.
+func AckRequest(acker EventAcknowledger, req *socketmode.Request) {
+	if req == nil {
 		return
 	}
-
-	bot.onMessage(ctx, msg)
+	acker.Ack(*req)
 }
 
 func isDirectMessage(channelType string) bool {

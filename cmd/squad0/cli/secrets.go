@@ -4,29 +4,55 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"os"
+	"io"
 	"strings"
 
 	"github.com/JR-G/squad0/internal/secrets"
 	"github.com/spf13/cobra"
 )
 
+// SecretsCommandDeps holds injectable dependencies for secrets commands.
+type SecretsCommandDeps struct {
+	Manager *secrets.Manager
+	Stdin   io.Reader
+}
+
 func newSecretsCommand() *cobra.Command {
+	return newSecretsCommandWith(nil)
+}
+
+func newSecretsCommandWith(deps *SecretsCommandDeps) *cobra.Command {
 	secretsCmd := &cobra.Command{
 		Use:   "secrets",
 		Short: "Manage secrets stored in macOS Keychain",
 	}
 
 	secretsCmd.AddCommand(
-		newSecretsSetCommand(),
-		newSecretsListCommand(),
-		newSecretsVerifyCommand(),
+		newSecretsSetCommand(deps),
+		newSecretsListCommand(deps),
+		newSecretsVerifyCommand(deps),
 	)
 
 	return secretsCmd
 }
 
-func newSecretsSetCommand() *cobra.Command {
+func resolveManager(deps *SecretsCommandDeps) *secrets.Manager {
+	if deps != nil && deps.Manager != nil {
+		return deps.Manager
+	}
+	runner := secrets.ExecRunner{}
+	kc := secrets.NewKeychain(secrets.ServiceName, runner)
+	return secrets.NewManager(kc)
+}
+
+func resolveStdin(deps *SecretsCommandDeps) io.Reader {
+	if deps != nil && deps.Stdin != nil {
+		return deps.Stdin
+	}
+	return nil
+}
+
+func newSecretsSetCommand(deps *SecretsCommandDeps) *cobra.Command {
 	return &cobra.Command{
 		Use:   "set <name>",
 		Short: "Store a secret in macOS Keychain",
@@ -34,14 +60,19 @@ func newSecretsSetCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			ctx := context.Background()
-			mgr := newSecretManager()
+			mgr := resolveManager(deps)
 
-			_, err := fmt.Fprintf(os.Stderr, "Enter value for %s: ", name)
+			_, err := fmt.Fprintf(cmd.ErrOrStderr(), "Enter value for %s: ", name)
 			if err != nil {
 				return fmt.Errorf("writing prompt: %w", err)
 			}
 
-			reader := bufio.NewReader(os.Stdin)
+			input := resolveStdin(deps)
+			if input == nil {
+				input = cmd.InOrStdin()
+			}
+
+			reader := bufio.NewReader(input)
 			value, err := reader.ReadString('\n')
 			if err != nil {
 				return fmt.Errorf("reading input: %w", err)
@@ -62,13 +93,13 @@ func newSecretsSetCommand() *cobra.Command {
 	}
 }
 
-func newSecretsListCommand() *cobra.Command {
+func newSecretsListCommand(deps *SecretsCommandDeps) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "Show which secrets are configured (names only, never values)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
-			mgr := newSecretManager()
+			mgr := resolveManager(deps)
 
 			status, err := mgr.List(ctx)
 			if err != nil {
@@ -90,13 +121,13 @@ func newSecretsListCommand() *cobra.Command {
 	}
 }
 
-func newSecretsVerifyCommand() *cobra.Command {
+func newSecretsVerifyCommand(deps *SecretsCommandDeps) *cobra.Command {
 	return &cobra.Command{
 		Use:   "verify",
 		Short: "Check all required secrets are present",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
-			mgr := newSecretManager()
+			mgr := resolveManager(deps)
 
 			_, err := mgr.Verify(ctx)
 			if err != nil {
@@ -107,10 +138,4 @@ func newSecretsVerifyCommand() *cobra.Command {
 			return err
 		},
 	}
-}
-
-func newSecretManager() *secrets.Manager {
-	runner := secrets.ExecRunner{}
-	kc := secrets.NewKeychain(secrets.ServiceName, runner)
-	return secrets.NewManager(kc)
 }

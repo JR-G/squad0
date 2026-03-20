@@ -2,7 +2,7 @@
 # Verifies test coverage meets the minimum threshold.
 set -euo pipefail
 
-MIN_COVERAGE=${1:-80}
+MIN_COVERAGE=${1:-95}
 
 go test -tags sqlite_fts5 -coverprofile=coverage.out ./... > /dev/null 2>&1
 
