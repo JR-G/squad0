@@ -1,6 +1,7 @@
 package cli_test
 
 import (
+	"bytes"
 	"context"
 	"path/filepath"
 	"testing"
@@ -63,22 +64,27 @@ func TestParseCronToInterval_IgnoresInput(t *testing.T) {
 func TestSetupLogger_ValidPath_ReturnsLogger(t *testing.T) {
 	t.Parallel()
 
-	logDir := filepath.Join(t.TempDir(), "logs")
+	dataDir := t.TempDir()
+	out := &bytes.Buffer{}
 
-	appLogger, err := cli.SetupLogger(logDir)
+	appLogger, err := cli.SetupLogger(dataDir, out)
 
 	require.NoError(t, err)
 	require.NotNil(t, appLogger)
+	assert.Contains(t, out.String(), "Logger started")
 	_ = appLogger.Close()
 }
 
 func TestSetupLogger_InvalidPath_ReturnsError(t *testing.T) {
 	t.Parallel()
 
-	appLogger, err := cli.SetupLogger("/dev/null/impossible/path")
+	out := &bytes.Buffer{}
+
+	appLogger, err := cli.SetupLogger("/dev/null/impossible/path", out)
 
 	assert.Error(t, err)
 	assert.Nil(t, appLogger)
+	assert.Contains(t, out.String(), "Logger failed")
 }
 
 func TestOpenAllDatabases_ValidPath_OpensAllDBs(t *testing.T) {
@@ -147,7 +153,7 @@ func TestCreateAgents_ValidDBs_CreatesAll(t *testing.T) {
 	embedder := memory.NewEmbedder("http://localhost:11434", "nomic-embed-text")
 	modelMap := cli.BuildModelMap(config.DefaultConfig())
 
-	agents, err := cli.CreateAgents(agentDBs, embedder, modelMap)
+	agents, err := cli.CreateAgents(agentDBs, embedder, modelMap, t.TempDir())
 
 	require.NoError(t, err)
 	assert.Len(t, agents, len(agent.AllRoles()))
@@ -165,7 +171,7 @@ func TestCreateAgents_MissingDB_ReturnsError(t *testing.T) {
 	embedder := memory.NewEmbedder("http://localhost:11434", "nomic-embed-text")
 	modelMap := cli.BuildModelMap(config.DefaultConfig())
 
-	agents, err := cli.CreateAgents(agentDBs, embedder, modelMap)
+	agents, err := cli.CreateAgents(agentDBs, embedder, modelMap, t.TempDir())
 
 	assert.Error(t, err)
 	assert.Nil(t, agents)
@@ -233,4 +239,32 @@ func TestBuildSingleAgent_ReturnsAgent(t *testing.T) {
 
 	require.NotNil(t, result)
 	assert.Equal(t, agent.RoleEngineer1, result.Role())
+}
+
+func TestCreateCoordinationStore_CancelledContext_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	store, db, err := cli.CreateCoordinationStore(ctx, tmpDir)
+
+	assert.Error(t, err)
+	assert.Nil(t, store)
+	assert.Nil(t, db)
+}
+
+func TestOpenAllDatabases_CancelledContext_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	projectDB, agentDBs, err := cli.OpenAllDatabases(ctx, tmpDir)
+
+	assert.Error(t, err)
+	assert.Nil(t, projectDB)
+	assert.Nil(t, agentDBs)
 }

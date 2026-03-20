@@ -17,9 +17,6 @@ pre-commit:
       run: scripts/check-secrets.sh
 
 pre-push:
-  parallel: true
   commands:
-    test:
-      run: go test -race -tags sqlite_fts5 ./...
     coverage:
       run: scripts/check-coverage.sh 95

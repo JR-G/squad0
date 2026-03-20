@@ -4,8 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/JR-G/squad0/internal/agent"
@@ -16,6 +16,7 @@ import (
 	"github.com/JR-G/squad0/internal/logging"
 	"github.com/JR-G/squad0/internal/memory"
 	"github.com/JR-G/squad0/internal/orchestrator"
+	"github.com/JR-G/squad0/internal/secrets"
 	"github.com/JR-G/squad0/internal/tui"
 	"github.com/spf13/cobra"
 )
@@ -30,40 +31,15 @@ func ParseCronToInterval(cron string) time.Duration {
 	return parseCronToInterval(cron)
 }
 
-// SetupLogger exports setupLogger for testing with a configurable path.
-func SetupLogger(logDir string) (*logging.Logger, error) {
-	appLogger, err := logging.NewLogger(logDir)
-	if err != nil {
-		return nil, fmt.Errorf("creating logger: %w", err)
-	}
-	return appLogger, nil
+// SetupLogger exports setupLogger for testing with a configurable data dir.
+func SetupLogger(dataDir string, out io.Writer) (*logging.Logger, error) {
+	return setupLogger(dataDir, out)
 }
 
 // OpenAllDatabases exports openAllDatabases for testing with a
 // configurable base directory.
 func OpenAllDatabases(ctx context.Context, baseDir string) (*memory.DB, map[agent.Role]*memory.DB, error) {
-	agentDir := filepath.Join(baseDir, "agents")
-	if err := os.MkdirAll(agentDir, 0o755); err != nil {
-		return nil, nil, fmt.Errorf("creating data directories: %w", err)
-	}
-
-	projectDB, err := memory.Open(ctx, filepath.Join(baseDir, "project.db"))
-	if err != nil {
-		return nil, nil, fmt.Errorf("opening project DB: %w", err)
-	}
-
-	agentDBs := make(map[agent.Role]*memory.DB, len(agent.AllRoles()))
-	for _, role := range agent.AllRoles() {
-		dbPath := filepath.Join(agentDir, string(role)+".db")
-		agentDB, dbErr := memory.Open(ctx, dbPath)
-		if dbErr != nil {
-			closeDatabases(projectDB, agentDBs)
-			return nil, nil, fmt.Errorf("opening DB for %s: %w", role, dbErr)
-		}
-		agentDBs[role] = agentDB
-	}
-
-	return projectDB, agentDBs, nil
+	return openAllDatabases(ctx, baseDir)
 }
 
 // CloseDatabases exports closeDatabases for testing.
@@ -76,8 +52,9 @@ func CreateAgents(
 	agentDBs map[agent.Role]*memory.DB,
 	embedder *memory.Embedder,
 	modelMap map[agent.Role]string,
+	personalityDir string,
 ) (map[agent.Role]*agent.Agent, error) {
-	return createAgents(agentDBs, embedder, modelMap)
+	return createAgents(agentDBs, embedder, modelMap, personalityDir)
 }
 
 // BuildSingleAgent exports buildSingleAgent for testing.
@@ -95,28 +72,7 @@ func BuildSingleAgent(
 // CreateCoordinationStore exports createCoordinationStore for testing
 // with a configurable base directory.
 func CreateCoordinationStore(ctx context.Context, baseDir string) (*coordination.CheckInStore, *sql.DB, error) {
-	if err := os.MkdirAll(baseDir, 0o755); err != nil {
-		return nil, nil, fmt.Errorf("creating data directory: %w", err)
-	}
-
-	dbPath := filepath.Join(baseDir, "coordination.db")
-	coordDB, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
-	if err != nil {
-		return nil, nil, fmt.Errorf("opening coordination DB: %w", err)
-	}
-
-	if err := coordDB.PingContext(ctx); err != nil {
-		_ = coordDB.Close()
-		return nil, nil, fmt.Errorf("pinging coordination DB: %w", err)
-	}
-
-	store := coordination.NewCheckInStore(coordDB)
-	if err := store.InitSchema(ctx); err != nil {
-		_ = coordDB.Close()
-		return nil, nil, fmt.Errorf("initialising coordination schema: %w", err)
-	}
-
-	return store, coordDB, nil
+	return createCoordinationStore(ctx, baseDir)
 }
 
 // CreateHealthMonitor exports createHealthMonitor for testing.
@@ -184,52 +140,6 @@ func ShowAgentStatusWithPath(cmd *cobra.Command, coordDBPath string) {
 	_, _ = fmt.Fprint(cmd.OutOrStdout(), tui.FormatAgentStatus(checkIns, nil))
 }
 
-// SetupLoggerDirect calls the production setupLogger with cwd set to
-// tmpDir. Must not be called in parallel.
-func SetupLoggerDirect(tmpDir string) (*logging.Logger, error) {
-	origDir, err := os.Getwd()
-	if err != nil {
-		return nil, err
-	}
-	if err := os.Chdir(tmpDir); err != nil {
-		return nil, err
-	}
-	defer func() { _ = os.Chdir(origDir) }()
-
-	return setupLogger()
-}
-
-// OpenAllDatabasesDirect calls the production openAllDatabases with cwd
-// set to tmpDir. Must not be called in parallel.
-func OpenAllDatabasesDirect(ctx context.Context, tmpDir string) (*memory.DB, map[agent.Role]*memory.DB, error) {
-	origDir, err := os.Getwd()
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := os.Chdir(tmpDir); err != nil {
-		return nil, nil, err
-	}
-	defer func() { _ = os.Chdir(origDir) }()
-
-	return openAllDatabases(ctx)
-}
-
-// CreateCoordinationStoreDirect calls the production
-// createCoordinationStore with cwd set to tmpDir. Must not be called
-// in parallel.
-func CreateCoordinationStoreDirect(ctx context.Context, tmpDir string) (*coordination.CheckInStore, *sql.DB, error) {
-	origDir, err := os.Getwd()
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := os.Chdir(tmpDir); err != nil {
-		return nil, nil, err
-	}
-	defer func() { _ = os.Chdir(origDir) }()
-
-	return createCoordinationStore(ctx)
-}
-
 // ShowAgentStatusDirect calls the production showAgentStatus with cwd
 // set to tmpDir. Must not be called in parallel.
 func ShowAgentStatusDirect(cmd *cobra.Command, tmpDir string) {
@@ -237,10 +147,36 @@ func ShowAgentStatusDirect(cmd *cobra.Command, tmpDir string) {
 	if err != nil {
 		return
 	}
-	if err := os.Chdir(tmpDir); err != nil {
+	if chErr := os.Chdir(tmpDir); chErr != nil {
 		return
 	}
 	defer func() { _ = os.Chdir(origDir) }()
 
 	showAgentStatus(context.Background(), cmd)
+}
+
+// LoadSecrets exports loadSecrets for testing.
+func LoadSecrets(ctx context.Context, loader SecretLoader, out io.Writer) (secrets.Secrets, error) {
+	return loadSecrets(ctx, loader, out)
+}
+
+// RunOrchestratorWithContext exports runOrchestratorWithContext for
+// testing.
+func RunOrchestratorWithContext(ctx context.Context, cfg config.Config, deps StartDeps) error {
+	return runOrchestratorWithContext(ctx, cfg, deps)
+}
+
+// CreateSlackBot exports createSlackBot for testing.
+func CreateSlackBot(
+	ctx context.Context,
+	cfg config.Config,
+	slackSecrets secrets.Secrets,
+	agentDBs map[agent.Role]*memory.DB,
+) *slack.Bot {
+	return createSlackBot(ctx, cfg, slackSecrets, agentDBs)
+}
+
+// DefaultStartDeps exports defaultStartDeps for testing.
+func DefaultStartDeps() StartDeps {
+	return defaultStartDeps()
 }

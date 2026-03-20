@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -23,6 +24,32 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// StartDeps holds injectable dependencies for the start command.
+type StartDeps struct {
+	SecretLoader   SecretLoader
+	Output         io.Writer
+	DataDir        string
+	PersonalityDir string
+}
+
+// SecretLoader loads secrets from a backing store.
+type SecretLoader interface {
+	LoadAll(ctx context.Context) (secrets.Secrets, error)
+}
+
+func defaultStartDeps() StartDeps {
+	runner := secrets.ExecRunner{}
+	kc := secrets.NewKeychain(secrets.ServiceName, runner)
+	mgr := secrets.NewManager(kc)
+
+	return StartDeps{
+		SecretLoader:   mgr,
+		Output:         os.Stdout,
+		DataDir:        "data",
+		PersonalityDir: "agents",
+	}
+}
+
 func newStartCommand(configPath *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "start",
@@ -32,53 +59,58 @@ func newStartCommand(configPath *string) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
-			return runOrchestrator(cfg)
+			return runOrchestrator(cfg, defaultStartDeps())
 		},
 	}
 }
 
-func runOrchestrator(cfg config.Config) error {
+func runOrchestrator(cfg config.Config, deps StartDeps) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	fmt.Print(tui.Banner())
+	return runOrchestratorWithContext(ctx, cfg, deps)
+}
 
-	appLogger, err := setupLogger()
+func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps StartDeps) error {
+	out := deps.Output
+
+	_, _ = fmt.Fprint(out, tui.Banner())
+
+	appLogger, err := setupLogger(deps.DataDir, out)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = appLogger.Close() }()
 
-	slackSecrets, err := loadSlackSecrets(ctx)
+	slackSecrets, err := loadSecrets(ctx, deps.SecretLoader, out)
 	if err != nil {
 		return err
 	}
-	fmt.Print(tui.StepDone("Secrets loaded"))
 
-	projectDB, agentDBs, err := openAllDatabases(ctx)
+	projectDB, agentDBs, err := openAllDatabases(ctx, deps.DataDir)
 	if err != nil {
 		return err
 	}
 	defer closeDatabases(projectDB, agentDBs)
-	fmt.Print(tui.StepDone("Databases opened"))
+	_, _ = fmt.Fprint(out, tui.StepDone("Databases opened"))
 
 	embedder := memory.NewEmbedder(cfg.Embeddings.OllamaURL, cfg.Embeddings.Model)
 	modelMap := buildModelMap(cfg)
-	agents, err := createAgents(agentDBs, embedder, modelMap)
+	agents, err := createAgents(agentDBs, embedder, modelMap, deps.PersonalityDir)
 	if err != nil {
 		return fmt.Errorf("creating agents: %w", err)
 	}
-	fmt.Print(tui.StepDone(fmt.Sprintf("%d agents created", len(agents))))
+	_, _ = fmt.Fprint(out, tui.StepDone(fmt.Sprintf("%d agents created", len(agents))))
 
 	bot := createSlackBot(ctx, cfg, slackSecrets, agentDBs)
-	fmt.Print(tui.StepDone("Slack bot connected"))
+	_, _ = fmt.Fprint(out, tui.StepDone("Slack bot connected"))
 
-	checkInStore, coordDB, err := createCoordinationStore(ctx)
+	checkInStore, coordDB, err := createCoordinationStore(ctx, deps.DataDir)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = coordDB.Close() }()
-	fmt.Print(tui.StepDone("Coordination DB ready"))
+	_, _ = fmt.Fprint(out, tui.StepDone("Coordination DB ready"))
 
 	monitor := createHealthMonitor()
 	alerter := health.NewAlerter(monitor, bot, "triage")
@@ -103,8 +135,8 @@ func runOrchestrator(cfg config.Config) error {
 	commandHandler := newCommandDispatcher(orch, bot)
 	bot.OnMessage(commandHandler.handleMessage)
 
-	fmt.Print(tui.StepDone("All systems ready"))
-	fmt.Println()
+	_, _ = fmt.Fprint(out, tui.StepDone("All systems ready"))
+	_, _ = fmt.Fprintln(out)
 
 	appLogger.Info("system", "startup", "orchestrator starting")
 
@@ -116,42 +148,41 @@ func runOrchestrator(cfg config.Config) error {
 	return <-errCh
 }
 
-func setupLogger() (*logging.Logger, error) {
-	appLogger, err := logging.NewLogger("data/logs")
+func setupLogger(dataDir string, out io.Writer) (*logging.Logger, error) {
+	logDir := filepath.Join(dataDir, "logs")
+	appLogger, err := logging.NewLogger(logDir)
 	if err != nil {
-		fmt.Print(tui.StepFail("Logger failed"))
+		_, _ = fmt.Fprint(out, tui.StepFail("Logger failed"))
 		return nil, fmt.Errorf("creating logger: %w", err)
 	}
-	fmt.Print(tui.StepDone("Logger started"))
+	_, _ = fmt.Fprint(out, tui.StepDone("Logger started"))
 	return appLogger, nil
 }
 
-func loadSlackSecrets(ctx context.Context) (secrets.Secrets, error) {
-	runner := secrets.ExecRunner{}
-	kc := secrets.NewKeychain(secrets.ServiceName, runner)
-	mgr := secrets.NewManager(kc)
-
-	slackSecrets, err := mgr.LoadAll(ctx)
+func loadSecrets(ctx context.Context, loader SecretLoader, out io.Writer) (secrets.Secrets, error) {
+	slackSecrets, err := loader.LoadAll(ctx)
 	if err != nil {
-		fmt.Print(tui.StepFail("Secrets missing"))
+		_, _ = fmt.Fprint(out, tui.StepFail("Secrets missing"))
 		return secrets.Secrets{}, fmt.Errorf("loading secrets: %w", err)
 	}
+	_, _ = fmt.Fprint(out, tui.StepDone("Secrets loaded"))
 	return slackSecrets, nil
 }
 
-func openAllDatabases(ctx context.Context) (*memory.DB, map[agent.Role]*memory.DB, error) {
-	if err := os.MkdirAll("data/agents", 0o755); err != nil {
+func openAllDatabases(ctx context.Context, dataDir string) (*memory.DB, map[agent.Role]*memory.DB, error) {
+	agentDir := filepath.Join(dataDir, "agents")
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
 		return nil, nil, fmt.Errorf("creating data directories: %w", err)
 	}
 
-	projectDB, err := memory.Open(ctx, "data/project.db")
+	projectDB, err := memory.Open(ctx, filepath.Join(dataDir, "project.db"))
 	if err != nil {
 		return nil, nil, fmt.Errorf("opening project DB: %w", err)
 	}
 
 	agentDBs := make(map[agent.Role]*memory.DB, len(agent.AllRoles()))
 	for _, role := range agent.AllRoles() {
-		dbPath := filepath.Join("data", "agents", string(role)+".db")
+		dbPath := filepath.Join(agentDir, string(role)+".db")
 		agentDB, dbErr := memory.Open(ctx, dbPath)
 		if dbErr != nil {
 			closeDatabases(projectDB, agentDBs)
@@ -188,8 +219,9 @@ func createAgents(
 	agentDBs map[agent.Role]*memory.DB,
 	embedder *memory.Embedder,
 	modelMap map[agent.Role]string,
+	personalityDir string,
 ) (map[agent.Role]*agent.Agent, error) {
-	loader := agent.NewPersonalityLoader("agents")
+	loader := agent.NewPersonalityLoader(personalityDir)
 	runner := agent.ExecProcessRunner{}
 	agents := make(map[agent.Role]*agent.Agent, len(agent.AllRoles()))
 
@@ -248,23 +280,22 @@ func createSlackBot(
 		channels[name] = name
 	}
 
-	bot := slack.NewBot(slack.BotConfig{
+	return slack.NewBot(slack.BotConfig{
 		BotToken:   slackSecrets.SlackBotToken,
 		AppToken:   slackSecrets.SlackAppToken,
 		Channels:   channels,
 		Personas:   personas,
 		MinSpacing: 2 * time.Second,
 	})
-
-	return bot
 }
 
-func createCoordinationStore(ctx context.Context) (*coordination.CheckInStore, *sql.DB, error) {
-	if err := os.MkdirAll("data", 0o755); err != nil {
+func createCoordinationStore(ctx context.Context, dataDir string) (*coordination.CheckInStore, *sql.DB, error) {
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return nil, nil, fmt.Errorf("creating data directory: %w", err)
 	}
 
-	coordDB, err := sql.Open("sqlite3", "data/coordination.db?_journal_mode=WAL&_busy_timeout=5000")
+	dbPath := filepath.Join(dataDir, "coordination.db")
+	coordDB, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
 	if err != nil {
 		return nil, nil, fmt.Errorf("opening coordination DB: %w", err)
 	}
