@@ -99,7 +99,7 @@ func (mgr *Manager) List(ctx context.Context) (map[string]bool, error) {
 
 // Set stores a secret value in the Keychain. The name must be one of the
 // recognised required secrets.
-func (mgr *Manager) Set(ctx context.Context, name string, value string) error {
+func (mgr *Manager) Set(ctx context.Context, name, value string) error {
 	if !slices.Contains(RequiredSecrets, name) {
 		return fmt.Errorf("unrecognised secret name %q; valid names: %s",
 			name, strings.Join(RequiredSecrets, ", "))

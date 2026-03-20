@@ -36,7 +36,10 @@ func newSecretsSetCommand() *cobra.Command {
 			ctx := context.Background()
 			mgr := newSecretManager()
 
-			fmt.Fprintf(os.Stderr, "Enter value for %s: ", name)
+			_, err := fmt.Fprintf(os.Stderr, "Enter value for %s: ", name)
+			if err != nil {
+				return fmt.Errorf("writing prompt: %w", err)
+			}
 
 			reader := bufio.NewReader(os.Stdin)
 			value, err := reader.ReadString('\n')
@@ -53,8 +56,8 @@ func newSecretsSetCommand() *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintf(os.Stdout, "Secret %s stored successfully.\n", name)
-			return nil
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Secret %s stored successfully.\n", name)
+			return err
 		},
 	}
 }
@@ -77,7 +80,9 @@ func newSecretsListCommand() *cobra.Command {
 				if status[name] {
 					label = "[set]"
 				}
-				fmt.Fprintf(os.Stdout, "  %-20s %s\n", name, label)
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "  %-20s %s\n", name, label); err != nil {
+					return err
+				}
 			}
 
 			return nil
@@ -98,8 +103,8 @@ func newSecretsVerifyCommand() *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintln(os.Stdout, "All required secrets are configured.")
-			return nil
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), "All required secrets are configured.")
+			return err
 		},
 	}
 }

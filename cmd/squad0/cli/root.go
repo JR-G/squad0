@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/JR-G/squad0/internal/config"
 	"github.com/spf13/cobra"
@@ -47,8 +46,8 @@ func newConfigCommand(configPath *string) *cobra.Command {
 				return fmt.Errorf("configuration invalid: %w", err)
 			}
 
-			fmt.Fprintln(os.Stdout, "Configuration valid.")
-			return nil
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), "Configuration valid.")
+			return err
 		},
 	}
 
@@ -60,8 +59,9 @@ func newVersionCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Show the squad0 version",
-		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Fprintf(cmd.OutOrStdout(), "squad0 version %s\n", version)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_, err := fmt.Fprintf(cmd.OutOrStdout(), "squad0 version %s\n", version)
+			return err
 		},
 	}
 }

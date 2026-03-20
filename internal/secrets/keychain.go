@@ -51,19 +51,20 @@ func (kc *Keychain) Get(ctx context.Context, key string) (string, error) {
 		"-a", key,
 		"-w",
 	)
-	if err != nil {
-		if isItemNotFound(err, output) {
-			return "", ErrSecretNotFound
-		}
-		return "", fmt.Errorf("keychain get %s: %w", key, err)
+	if err == nil {
+		return strings.TrimSpace(string(output)), nil
 	}
 
-	return strings.TrimSpace(string(output)), nil
+	if isItemNotFound(err, output) {
+		return "", ErrSecretNotFound
+	}
+
+	return "", fmt.Errorf("keychain get %s: %w", key, err)
 }
 
 // Set stores a secret value for the given key in the Keychain. If the key
 // already exists, it is updated.
-func (kc *Keychain) Set(ctx context.Context, key string, value string) error {
+func (kc *Keychain) Set(ctx context.Context, key, value string) error {
 	_, err := kc.runner.Run(ctx,
 		"security", "add-generic-password",
 		"-s", kc.serviceName,
@@ -86,14 +87,15 @@ func (kc *Keychain) Exists(ctx context.Context, key string) (bool, error) {
 		"-s", kc.serviceName,
 		"-a", key,
 	)
-	if err != nil {
-		if isItemNotFound(err, output) {
-			return false, nil
-		}
-		return false, fmt.Errorf("keychain exists %s: %w", key, err)
+	if err == nil {
+		return true, nil
 	}
 
-	return true, nil
+	if isItemNotFound(err, output) {
+		return false, nil
+	}
+
+	return false, fmt.Errorf("keychain exists %s: %w", key, err)
 }
 
 // Delete removes the secret with the given key from the Keychain.
@@ -104,14 +106,15 @@ func (kc *Keychain) Delete(ctx context.Context, key string) error {
 		"-s", kc.serviceName,
 		"-a", key,
 	)
-	if err != nil {
-		if isItemNotFound(err, output) {
-			return ErrSecretNotFound
-		}
-		return fmt.Errorf("keychain delete %s: %w", key, err)
+	if err == nil {
+		return nil
 	}
 
-	return nil
+	if isItemNotFound(err, output) {
+		return ErrSecretNotFound
+	}
+
+	return fmt.Errorf("keychain delete %s: %w", key, err)
 }
 
 func isItemNotFound(err error, output []byte) bool {
@@ -119,5 +122,6 @@ func isItemNotFound(err error, output []byte) bool {
 	if errors.As(err, &exitErr) && exitErr.ExitCode() == 44 {
 		return true
 	}
+
 	return strings.Contains(string(output), "could not be found")
 }

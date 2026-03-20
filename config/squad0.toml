@@ -36,7 +36,7 @@ designer = "claude-sonnet-4-6"
 [quality]
 lint = "golangci-lint run"
 test = "go test -race ./..."
-coverage_threshold = 80
+coverage_threshold = 95
 
 [rituals]
 standup_cron = "0 9 * * *"

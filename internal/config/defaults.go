@@ -34,11 +34,11 @@ func DefaultConfig() Config {
 		Quality: QualityConfig{
 			Lint:              "golangci-lint run",
 			Test:              "go test -race ./...",
-			CoverageThreshold: 80,
+			CoverageThreshold: 95,
 		},
 		Rituals: RitualsConfig{
-			StandupCron:            "0 9 * * *",
-			RetroAfterTickets:      10,
+			StandupCron:             "0 9 * * *",
+			RetroAfterTickets:       10,
 			DesignDiscussionOnEpics: true,
 		},
 		Worktree: WorktreeConfig{

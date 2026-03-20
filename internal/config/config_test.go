@@ -23,7 +23,7 @@ func TestLoad_ValidFile_ReturnsConfig(t *testing.T) {
 	assert.Equal(t, 3, cfg.Agents.MaxParallel)
 	assert.Equal(t, "claude-opus-4-6", cfg.Agents.Models.TechLead)
 	assert.Equal(t, "claude-sonnet-4-6", cfg.Agents.Models.Engineer)
-	assert.Equal(t, 80, cfg.Quality.CoverageThreshold)
+	assert.Equal(t, 95, cfg.Quality.CoverageThreshold)
 	assert.Equal(t, "ollama", cfg.Embeddings.Provider)
 	assert.Contains(t, cfg.Slack.Channels, "commands")
 }
@@ -63,7 +63,7 @@ name = "custom-project"
 	assert.Equal(t, "custom-project", cfg.Project.Name)
 	assert.Equal(t, 3, cfg.Agents.MaxParallel)
 	assert.Equal(t, "claude-opus-4-6", cfg.Agents.Models.TechLead)
-	assert.Equal(t, 80, cfg.Quality.CoverageThreshold)
+	assert.Equal(t, 95, cfg.Quality.CoverageThreshold)
 	assert.Equal(t, ".worktrees", cfg.Worktree.BaseDir)
 	assert.Equal(t, "ollama", cfg.Embeddings.Provider)
 	assert.Equal(t, "0 9 * * *", cfg.Rituals.StandupCron)
@@ -263,7 +263,7 @@ designer = "claude-sonnet-4-6"
 [quality]
 lint = "golangci-lint run"
 test = "go test -race ./..."
-coverage_threshold = 80
+coverage_threshold = 95
 
 [rituals]
 standup_cron = "0 9 * * *"

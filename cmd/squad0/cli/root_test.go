@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/JR-G/squad0/cmd/squad0/cli"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -14,8 +15,9 @@ func TestNewRootCommand_HasExpectedSubcommands(t *testing.T) {
 
 	rootCmd := cli.NewRootCommand()
 
-	var names []string
-	for _, cmd := range rootCmd.Commands() {
+	commands := rootCmd.Commands()
+	names := make([]string, 0, len(commands))
+	for _, cmd := range commands {
 		names = append(names, cmd.Name())
 	}
 
@@ -53,19 +55,25 @@ func TestSecretsCommand_HasExpectedSubcommands(t *testing.T) {
 	t.Parallel()
 
 	rootCmd := cli.NewRootCommand()
+	secretsCmd := findSubcommand(rootCmd, "secrets")
+	require.NotNil(t, secretsCmd, "secrets command not found")
 
-	for _, cmd := range rootCmd.Commands() {
-		if cmd.Name() == "secrets" {
-			var names []string
-			for _, sub := range cmd.Commands() {
-				names = append(names, sub.Name())
-			}
-			assert.Contains(t, names, "set")
-			assert.Contains(t, names, "list")
-			assert.Contains(t, names, "verify")
-			return
-		}
+	subcommands := secretsCmd.Commands()
+	names := make([]string, 0, len(subcommands))
+	for _, sub := range subcommands {
+		names = append(names, sub.Name())
 	}
 
-	t.Fatal("secrets command not found")
+	assert.Contains(t, names, "set")
+	assert.Contains(t, names, "list")
+	assert.Contains(t, names, "verify")
+}
+
+func findSubcommand(root *cobra.Command, name string) *cobra.Command {
+	for _, cmd := range root.Commands() {
+		if cmd.Name() == name {
+			return cmd
+		}
+	}
+	return nil
 }
