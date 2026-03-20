@@ -1,0 +1,9 @@
+bin/
+squad0
+data/
+coverage.out
+coverage.html
+.worktrees/
+*.db
+*.db-wal
+*.db-shm
