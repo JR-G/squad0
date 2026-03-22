@@ -33,7 +33,8 @@ When you open the PR, include:
 - Any testing notes
 `
 
-func buildImplementationPrompt(ticket, description string) string {
+// BuildImplementationPrompt creates the prompt for an engineer session.
+func BuildImplementationPrompt(ticket, description string) string {
 	return fmt.Sprintf(implementationPromptTemplate, ticket, description)
 }
 

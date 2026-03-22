@@ -188,7 +188,7 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 	}
 	defer workSession.Cleanup(ctx)
 
-	prompt := buildImplementationPrompt(assignment.Ticket, assignment.Description)
+	prompt := BuildImplementationPrompt(assignment.Ticket, assignment.Description)
 
 	result, err := agentInstance.ExecuteTask(ctx, prompt, nil, workSession.Dir())
 	if err != nil {
