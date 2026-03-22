@@ -134,14 +134,20 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	pmAgent := agents[agent.RolePM]
 	assigner := orchestrator.NewAssigner(pmAgent)
 
+	workEnabled := cfg.Linear.TeamID != ""
 	orch := orchestrator.NewOrchestrator(
 		orchestrator.Config{
 			PollInterval:  time.Duration(cfg.Agents.CooldownSeconds) * time.Second,
 			MaxParallel:   cfg.Agents.MaxParallel,
 			CooldownAfter: time.Duration(cfg.Agents.CooldownSeconds) * time.Second,
+			WorkEnabled:   workEnabled,
 		},
 		agents, checkInStore, bot, assigner,
 	)
+
+	if !workEnabled {
+		_, _ = fmt.Fprint(out, tui.StepWarn("Linear not configured — agents will chat but not work"))
+	}
 
 	agentFactStores := make(map[agent.Role]*memory.FactStore, len(agentDBs))
 	for role, db := range agentDBs {

@@ -29,6 +29,7 @@ type Config struct {
 	PollInterval  time.Duration
 	MaxParallel   int
 	CooldownAfter time.Duration
+	WorkEnabled   bool
 }
 
 // NewOrchestrator creates an Orchestrator with all dependencies injected.
@@ -90,6 +91,11 @@ func (orch *Orchestrator) initialiseCheckIns(ctx context.Context) error {
 }
 
 func (orch *Orchestrator) tick(ctx context.Context) {
+	if !orch.cfg.WorkEnabled {
+		orch.breakSilence(ctx)
+		return
+	}
+
 	idleRoles, err := orch.checkIns.IdleAgents(ctx)
 	if err != nil {
 		log.Printf("error checking idle agents: %v", err)

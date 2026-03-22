@@ -268,7 +268,7 @@ func TestOrchestrator_StartWork_WithBot_PostsWorkMessages(t *testing.T) {
 	}
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: 50 * time.Millisecond, MaxParallel: 3, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: 50 * time.Millisecond, MaxParallel: 3, CooldownAfter: time.Second, WorkEnabled: true},
 		agents, checkIns, bot, orchestrator.NewAssigner(pmAgent),
 	)
 
