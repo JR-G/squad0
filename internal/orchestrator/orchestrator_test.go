@@ -30,7 +30,7 @@ func setupOrchestrator(t *testing.T, pmRunner *fakeProcessRunner) (*orchestrator
 		agent.RoleEngineer1: setupEngineerAgent(t, agent.RoleEngineer1),
 	}
 
-	assigner := orchestrator.NewAssigner(pmAgent)
+	assigner := orchestrator.NewAssigner(pmAgent, "TEST")
 
 	orch := orchestrator.NewOrchestrator(
 		orchestrator.Config{

@@ -39,7 +39,7 @@ func setupOrchestratorWithEngineers(
 		agents[role] = setupAgentWithRole(t, runner, role)
 	}
 
-	assigner := orchestrator.NewAssigner(pmAgent)
+	assigner := orchestrator.NewAssigner(pmAgent, "TEST")
 
 	orch := orchestrator.NewOrchestrator(
 		orchestrator.Config{
@@ -126,7 +126,7 @@ func TestOrchestrator_Run_InitialiseCheckInsError_ReturnsError(t *testing.T) {
 
 	orch := orchestrator.NewOrchestrator(
 		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
-		agents, checkIns, nil, orchestrator.NewAssigner(pmAgent),
+		agents, checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
 
 	err = orch.Run(context.Background())

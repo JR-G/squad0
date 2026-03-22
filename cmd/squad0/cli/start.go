@@ -136,15 +136,18 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	})
 
 	pmAgent := agents[agent.RolePM]
-	assigner := orchestrator.NewAssigner(pmAgent)
+	assigner := orchestrator.NewAssigner(pmAgent, cfg.Linear.TeamID)
 
 	workEnabled := cfg.Linear.TeamID != ""
+	targetRepoDir := resolveTargetRepo(cfg.Project.TargetRepo)
+
 	orch := orchestrator.NewOrchestrator(
 		orchestrator.Config{
 			PollInterval:  time.Duration(cfg.Agents.CooldownSeconds) * time.Second,
 			MaxParallel:   cfg.Agents.MaxParallel,
 			CooldownAfter: time.Duration(cfg.Agents.CooldownSeconds) * time.Second,
 			WorkEnabled:   workEnabled,
+			TargetRepoDir: targetRepoDir,
 		},
 		agents, checkInStore, bot, assigner,
 	)
@@ -361,6 +364,20 @@ func createHealthMonitor() *health.Monitor {
 		MaxSessionTime:       30 * time.Minute,
 		MaxConsecutiveErrors: 3,
 	})
+}
+
+func resolveTargetRepo(targetRepo string) string {
+	if targetRepo == "" {
+		return ""
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+
+	repoName := filepath.Base(targetRepo)
+	return filepath.Join(home, "repos", repoName)
 }
 
 func parseCronToInterval(_ string) time.Duration {

@@ -32,6 +32,7 @@ type Config struct {
 	MaxParallel   int
 	CooldownAfter time.Duration
 	WorkEnabled   bool
+	TargetRepoDir string
 }
 
 // NewOrchestrator creates an Orchestrator with all dependencies injected.
@@ -173,24 +174,43 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 	role := agentInstance.Role()
 
 	orch.postAsRole(ctx, "engineering",
-		fmt.Sprintf("Starting work on %s: %s", assignment.Ticket, assignment.Description),
+		fmt.Sprintf("Picking up %s: %s", assignment.Ticket, assignment.Description),
 		role)
 
-	result, err := agentInstance.ExecuteTask(ctx, assignment.Description, nil, assignment.WorkingDir)
+	workSession, err := NewWorkSession(ctx, orch.cfg.TargetRepoDir, role, assignment.Ticket)
+	if err != nil {
+		log.Printf("worktree creation failed for %s: %v", role, err)
+		orch.postAsRole(ctx, "engineering",
+			fmt.Sprintf("Couldn't set up worktree for %s: %v", assignment.Ticket, err),
+			role)
+		_ = orch.checkIns.SetIdle(ctx, role)
+		return
+	}
+	defer workSession.Cleanup(ctx)
+
+	prompt := buildImplementationPrompt(assignment.Ticket, assignment.Description)
+
+	result, err := agentInstance.ExecuteTask(ctx, prompt, nil, workSession.Dir())
 	if err != nil {
 		log.Printf("session error for %s on %s: %v", role, assignment.Ticket, err)
 		orch.postAsRole(ctx, "engineering",
-			fmt.Sprintf("Hit an issue with %s: %v", assignment.Ticket, err),
+			fmt.Sprintf("Hit an issue with %s — will need to pick this up again", assignment.Ticket),
 			role)
+		_ = orch.checkIns.SetIdle(ctx, role)
+		return
 	}
 
-	if result.Transcript != "" {
-		orch.postAsRole(ctx, "engineering",
-			fmt.Sprintf("Finished %s.", assignment.Ticket),
-			role)
-	}
+	orch.postAsRole(ctx, "engineering",
+		fmt.Sprintf("Finished %s. PR should be up for review.", assignment.Ticket),
+		role)
+
+	orch.postAsRole(ctx, "reviews",
+		fmt.Sprintf("%s completed work on %s — please review", role, assignment.Ticket),
+		role)
 
 	_ = orch.checkIns.SetIdle(ctx, role)
+
+	_ = result
 }
 
 func (orch *Orchestrator) postAsRole(ctx context.Context, channel, text string, role agent.Role) {

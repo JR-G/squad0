@@ -21,7 +21,7 @@ func TestAssigner_RequestAssignments_MalformedJSON_ReturnsError(t *testing.T) {
 
 	runner := &fakeProcessRunner{output: []byte(pmOutput)}
 	pmAgent := setupPMAgent(t, runner)
-	assigner := orchestrator.NewAssigner(pmAgent)
+	assigner := orchestrator.NewAssigner(pmAgent, "TEST")
 
 	_, err = assigner.RequestAssignments(
 		context.Background(), []agent.Role{agent.RoleEngineer1},
@@ -41,7 +41,7 @@ func TestAssigner_RequestAssignments_NestedBrackets_ExtractsOutermost(t *testing
 
 	runner := &fakeProcessRunner{output: []byte(pmOutput)}
 	pmAgent := setupPMAgent(t, runner)
-	assigner := orchestrator.NewAssigner(pmAgent)
+	assigner := orchestrator.NewAssigner(pmAgent, "TEST")
 
 	result, err := assigner.RequestAssignments(
 		context.Background(), []agent.Role{agent.RoleEngineer1},
@@ -63,7 +63,7 @@ func TestAssigner_RequestAssignments_TextBeforeJSON_ParsesCorrectly(t *testing.T
 
 	runner := &fakeProcessRunner{output: []byte(pmOutput)}
 	pmAgent := setupPMAgent(t, runner)
-	assigner := orchestrator.NewAssigner(pmAgent)
+	assigner := orchestrator.NewAssigner(pmAgent, "TEST")
 
 	result, err := assigner.RequestAssignments(
 		context.Background(), []agent.Role{agent.RoleEngineer2},
@@ -84,7 +84,7 @@ func TestAssigner_RequestAssignments_OnlyOpenBracket_ReturnsError(t *testing.T) 
 
 	runner := &fakeProcessRunner{output: []byte(pmOutput)}
 	pmAgent := setupPMAgent(t, runner)
-	assigner := orchestrator.NewAssigner(pmAgent)
+	assigner := orchestrator.NewAssigner(pmAgent, "TEST")
 
 	result, err := assigner.RequestAssignments(
 		context.Background(), []agent.Role{agent.RoleEngineer1},
@@ -104,7 +104,7 @@ func TestAssigner_RequestAssignments_OnlyCloseBracket_ReturnsNil(t *testing.T) {
 
 	runner := &fakeProcessRunner{output: []byte(pmOutput)}
 	pmAgent := setupPMAgent(t, runner)
-	assigner := orchestrator.NewAssigner(pmAgent)
+	assigner := orchestrator.NewAssigner(pmAgent, "TEST")
 
 	result, err := assigner.RequestAssignments(
 		context.Background(), []agent.Role{agent.RoleEngineer1},
@@ -124,7 +124,7 @@ func TestAssigner_RequestAssignments_AllRolesInvalid_ReturnsEmpty(t *testing.T) 
 
 	runner := &fakeProcessRunner{output: []byte(pmOutput)}
 	pmAgent := setupPMAgent(t, runner)
-	assigner := orchestrator.NewAssigner(pmAgent)
+	assigner := orchestrator.NewAssigner(pmAgent, "TEST")
 
 	result, err := assigner.RequestAssignments(
 		context.Background(), []agent.Role{agent.RoleEngineer1, agent.RoleEngineer2},
@@ -144,7 +144,7 @@ func TestAssigner_RequestAssignments_MultipleEngineers(t *testing.T) {
 
 	runner := &fakeProcessRunner{output: []byte(pmOutput)}
 	pmAgent := setupPMAgent(t, runner)
-	assigner := orchestrator.NewAssigner(pmAgent)
+	assigner := orchestrator.NewAssigner(pmAgent, "TEST")
 
 	validRoles := []agent.Role{
 		agent.RoleEngineer1,

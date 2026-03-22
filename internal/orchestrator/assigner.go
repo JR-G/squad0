@@ -21,18 +21,18 @@ type Assignment struct {
 // engineers.
 type Assigner struct {
 	pmAgent *agent.Agent
+	teamKey string
 }
 
 // NewAssigner creates an Assigner backed by the given PM agent.
-func NewAssigner(pmAgent *agent.Agent) *Assigner {
-	return &Assigner{pmAgent: pmAgent}
+func NewAssigner(pmAgent *agent.Agent, teamKey string) *Assigner {
+	return &Assigner{pmAgent: pmAgent, teamKey: teamKey}
 }
 
 // RequestAssignments asks the PM to review the Linear board and assign
-// tickets to the given idle engineers. Returns the PM's assignment
-// decisions.
+// tickets to the given idle engineers.
 func (assigner *Assigner) RequestAssignments(ctx context.Context, idleEngineers []agent.Role) ([]Assignment, error) {
-	prompt := buildAssignmentPrompt(idleEngineers)
+	prompt := buildAssignmentPrompt(idleEngineers, assigner.teamKey)
 
 	result, err := assigner.pmAgent.ExecuteTask(ctx, prompt, nil, "")
 	if err != nil {
@@ -47,20 +47,23 @@ func (assigner *Assigner) RequestAssignments(ctx context.Context, idleEngineers 
 	return assignments, nil
 }
 
-func buildAssignmentPrompt(idleEngineers []agent.Role) string {
+func buildAssignmentPrompt(idleEngineers []agent.Role, teamKey string) string {
 	var builder strings.Builder
 
-	builder.WriteString("Review the Linear board for tickets with status 'Ready'.\n\n")
-	builder.WriteString("Available engineers:\n")
+	builder.WriteString("You are the PM. Your job is to check the Linear board and assign work.\n\n")
 
+	fmt.Fprintf(&builder, "Use the Linear MCP tools to find issues in the %s team that are ready to be worked on.\n", teamKey)
+	builder.WriteString("Look for issues with status 'Todo' or 'Ready' or 'Backlog' that haven't been assigned.\n\n")
+
+	builder.WriteString("Available engineers:\n")
 	for _, role := range idleEngineers {
 		fmt.Fprintf(&builder, "- %s\n", role)
 	}
 
-	builder.WriteString("\nAssign tickets to these engineers based on their strengths.\n")
-	builder.WriteString("Respond with a JSON array of assignments:\n")
-	builder.WriteString(`[{"role": "engineer-1", "ticket": "SQ-42", "description": "Brief task description"}]`)
-	builder.WriteString("\n\nOnly assign tickets that are ready. If no tickets are ready, return an empty array: []\n")
+	builder.WriteString("\nBased on the tickets you find, assign them to engineers.\n")
+	builder.WriteString("Respond with ONLY a JSON array — no explanation, no markdown, no code fences.\n")
+	builder.WriteString("Format: [{\"role\": \"engineer-1\", \"ticket\": \"JAM-42\", \"description\": \"Brief task description\"}]\n")
+	builder.WriteString("If no tickets are ready, respond with: []\n")
 
 	return builder.String()
 }

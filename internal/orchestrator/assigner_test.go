@@ -75,7 +75,7 @@ func TestAssigner_RequestAssignments_ParsesValidJSON(t *testing.T) {
 
 	runner := &fakeProcessRunner{output: []byte(pmOutput)}
 	pmAgent := setupPMAgent(t, runner)
-	assigner := orchestrator.NewAssigner(pmAgent)
+	assigner := orchestrator.NewAssigner(pmAgent, "TEST")
 
 	result, err := assigner.RequestAssignments(context.Background(), []agent.Role{agent.RoleEngineer1, agent.RoleEngineer2})
 
@@ -92,7 +92,7 @@ func TestAssigner_RequestAssignments_EmptyArray_ReturnsNil(t *testing.T) {
 	pmOutput := `{"type":"result","result":"[]"}` + "\n"
 	runner := &fakeProcessRunner{output: []byte(pmOutput)}
 	pmAgent := setupPMAgent(t, runner)
-	assigner := orchestrator.NewAssigner(pmAgent)
+	assigner := orchestrator.NewAssigner(pmAgent, "TEST")
 
 	result, err := assigner.RequestAssignments(context.Background(), []agent.Role{agent.RoleEngineer1})
 
@@ -109,7 +109,7 @@ func TestAssigner_RequestAssignments_FiltersInvalidRoles(t *testing.T) {
 
 	runner := &fakeProcessRunner{output: []byte(pmOutput)}
 	pmAgent := setupPMAgent(t, runner)
-	assigner := orchestrator.NewAssigner(pmAgent)
+	assigner := orchestrator.NewAssigner(pmAgent, "TEST")
 
 	result, err := assigner.RequestAssignments(context.Background(), []agent.Role{agent.RoleEngineer1})
 
@@ -124,7 +124,7 @@ func TestAssigner_RequestAssignments_NoJSON_ReturnsNil(t *testing.T) {
 	pmOutput := `{"type":"result","result":"No tickets ready right now."}` + "\n"
 	runner := &fakeProcessRunner{output: []byte(pmOutput)}
 	pmAgent := setupPMAgent(t, runner)
-	assigner := orchestrator.NewAssigner(pmAgent)
+	assigner := orchestrator.NewAssigner(pmAgent, "TEST")
 
 	result, err := assigner.RequestAssignments(context.Background(), []agent.Role{agent.RoleEngineer1})
 
@@ -140,7 +140,7 @@ func TestAssigner_RequestAssignments_PMError_ReturnsError(t *testing.T) {
 		err:    fmt.Errorf("exit status 1"),
 	}
 	pmAgent := setupPMAgent(t, runner)
-	assigner := orchestrator.NewAssigner(pmAgent)
+	assigner := orchestrator.NewAssigner(pmAgent, "TEST")
 
 	_, err := assigner.RequestAssignments(context.Background(), []agent.Role{agent.RoleEngineer1})
 

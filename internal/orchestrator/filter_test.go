@@ -66,7 +66,7 @@ func TestOrchestrator_Run_Tick_OnlyNonEngineerRolesIdle_SkipsTick(t *testing.T) 
 
 	orch := orchestrator.NewOrchestrator(
 		orchestrator.Config{PollInterval: 50 * time.Millisecond, MaxParallel: 3, CooldownAfter: time.Second},
-		agents, checkIns, nil, orchestrator.NewAssigner(pmAgent),
+		agents, checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)

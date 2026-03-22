@@ -66,7 +66,7 @@ func newTestOrchestrator(t *testing.T, bot *slack.Bot) (*orchestrator.Orchestrat
 	t.Cleanup(func() { _ = coordDB.Close() })
 
 	agents := map[agent.Role]*agent.Agent{}
-	assigner := orchestrator.NewAssigner(nil)
+	assigner := orchestrator.NewAssigner(nil, "TEST")
 
 	orch := orchestrator.NewOrchestrator(
 		orchestrator.Config{

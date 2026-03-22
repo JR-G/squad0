@@ -35,7 +35,7 @@ func TestRouteCommand_StatusError_ReturnsErrorMessage(t *testing.T) {
 
 	orch := orchestrator.NewOrchestrator(
 		orchestrator.Config{PollInterval: 10 * time.Second, MaxParallel: 3, CooldownAfter: 5 * time.Second},
-		map[agent.Role]*agent.Agent{}, store, bot, orchestrator.NewAssigner(nil),
+		map[agent.Role]*agent.Agent{}, store, bot, orchestrator.NewAssigner(nil, "TEST"),
 	)
 
 	dispatcher := cli.NewCommandDispatcher(orch, bot)
@@ -66,7 +66,7 @@ func TestHandlePauseResume_AllError_ReturnsError(t *testing.T) {
 	}
 	orch := orchestrator.NewOrchestrator(
 		orchestrator.Config{PollInterval: 10 * time.Second, MaxParallel: 3, CooldownAfter: 5 * time.Second},
-		agents, store, bot, orchestrator.NewAssigner(nil),
+		agents, store, bot, orchestrator.NewAssigner(nil, "TEST"),
 	)
 
 	dispatcher := cli.NewCommandDispatcher(orch, bot)
@@ -261,7 +261,7 @@ func TestHandlePauseResume_SingleError_ReturnsError(t *testing.T) {
 
 	orch := orchestrator.NewOrchestrator(
 		orchestrator.Config{PollInterval: 10 * time.Second, MaxParallel: 3, CooldownAfter: 5 * time.Second},
-		map[agent.Role]*agent.Agent{}, store, bot, orchestrator.NewAssigner(nil),
+		map[agent.Role]*agent.Agent{}, store, bot, orchestrator.NewAssigner(nil, "TEST"),
 	)
 
 	dispatcher := cli.NewCommandDispatcher(orch, bot)

@@ -34,7 +34,7 @@ func setupClosedDBOrch(t *testing.T) *orchestrator.Orchestrator {
 
 	return orchestrator.NewOrchestrator(
 		orchestrator.Config{PollInterval: time.Second, MaxParallel: 3, CooldownAfter: time.Second},
-		agents, checkIns, nil, orchestrator.NewAssigner(pmAgent),
+		agents, checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
 }
 

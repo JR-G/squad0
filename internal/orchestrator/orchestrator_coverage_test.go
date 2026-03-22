@@ -206,7 +206,7 @@ func TestOrchestrator_Run_WithBot_PostsStartupMessage(t *testing.T) {
 
 	orch := orchestrator.NewOrchestrator(
 		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
-		agents, checkIns, bot, orchestrator.NewAssigner(pmAgent),
+		agents, checkIns, bot, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -234,7 +234,7 @@ func TestOrchestrator_Tick_WorkDisabled_BreaksSilence(t *testing.T) {
 
 	orch := orchestrator.NewOrchestrator(
 		orchestrator.Config{PollInterval: 50 * time.Millisecond, MaxParallel: 3, CooldownAfter: time.Second, WorkEnabled: false},
-		agents, checkIns, nil, orchestrator.NewAssigner(pmAgent),
+		agents, checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
@@ -295,7 +295,7 @@ func TestOrchestrator_StartWork_WithBot_PostsWorkMessages(t *testing.T) {
 
 	orch := orchestrator.NewOrchestrator(
 		orchestrator.Config{PollInterval: 50 * time.Millisecond, MaxParallel: 3, CooldownAfter: time.Second, WorkEnabled: true},
-		agents, checkIns, bot, orchestrator.NewAssigner(pmAgent),
+		agents, checkIns, bot, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
