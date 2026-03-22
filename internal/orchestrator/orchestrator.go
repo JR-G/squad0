@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/JR-G/squad0/internal/agent"
@@ -22,6 +23,7 @@ type Orchestrator struct {
 	assigner     *Assigner
 	running      bool
 	conversation *ConversationEngine
+	wg           sync.WaitGroup
 }
 
 // Config holds orchestrator-level settings.
@@ -155,7 +157,16 @@ func (orch *Orchestrator) startWork(ctx context.Context, assignment Assignment) 
 		return
 	}
 
-	go orch.runSession(ctx, agentInstance, assignment)
+	orch.wg.Add(1)
+	go func() {
+		defer orch.wg.Done()
+		orch.runSession(ctx, agentInstance, assignment)
+	}()
+}
+
+// Wait blocks until all running sessions complete.
+func (orch *Orchestrator) Wait() {
+	orch.wg.Wait()
 }
 
 func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.Agent, assignment Assignment) {

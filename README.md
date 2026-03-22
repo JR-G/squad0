@@ -1,4 +1,4 @@
-# Squad0
+# squad0
 
 An autonomous software engineering team. Agents with evolving personalities pull tickets from Linear, discuss approaches in Slack, implement in isolated git worktrees, review each other's work, and open PRs.
 

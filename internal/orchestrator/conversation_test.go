@@ -3,6 +3,7 @@ package orchestrator_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/JR-G/squad0/internal/agent"
 	"github.com/JR-G/squad0/internal/memory"
@@ -97,7 +98,7 @@ func TestConversationEngine_NilBot_DoesNotPanic(t *testing.T) {
 	})
 }
 
-func TestConversationEngine_BreakSilence_DoesNotPanic(t *testing.T) {
+func TestConversationEngine_BreakSilence_RecentActivity_Skips(t *testing.T) {
 	t.Parallel()
 
 	engine := newTestConversationEngine(t)
@@ -105,6 +106,31 @@ func TestConversationEngine_BreakSilence_DoesNotPanic(t *testing.T) {
 	assert.NotPanics(t, func() {
 		engine.BreakSilence(context.Background())
 	})
+}
+
+func TestConversationEngine_BreakSilence_QuietChannel_TriggersResponse(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	runner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"Just thinking out loud."}` + "\n")}
+
+	agents := make(map[agent.Role]*agent.Agent, len(agent.AllRoles()))
+	factStores := make(map[agent.Role]*memory.FactStore, len(agent.AllRoles()))
+	for _, role := range agent.AllRoles() {
+		agents[role] = buildAgent(t, runner, role, db)
+		factStores[role] = memory.NewFactStore(db)
+	}
+
+	engine := orchestrator.NewConversationEngine(agents, factStores, nil)
+	engine.SetLastMessageTime("engineering", time.Now().Add(-15*time.Minute))
+
+	for range 20 {
+		engine.BreakSilence(ctx)
+	}
 }
 
 func TestConversationEngine_PASSResponse_NotPosted(t *testing.T) {

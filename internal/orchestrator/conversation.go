@@ -125,6 +125,16 @@ func (engine *ConversationEngine) ResetRound(channel string) {
 	state.roundCount = 0
 }
 
+// SetLastMessageTime sets the last message time for a channel. Used in
+// testing to simulate quiet periods.
+func (engine *ConversationEngine) SetLastMessageTime(channel string, lastMessage time.Time) {
+	engine.mu.Lock()
+	defer engine.mu.Unlock()
+
+	state := engine.getOrCreateChannel(channel)
+	state.lastMessage = lastMessage
+}
+
 func (engine *ConversationEngine) getOrCreateChannel(channel string) *channelState {
 	state, ok := engine.channels[channel]
 	if !ok {

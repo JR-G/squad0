@@ -217,6 +217,32 @@ func TestOrchestrator_Run_WithBot_PostsStartupMessage(t *testing.T) {
 	assert.Contains(t, postedText, "online")
 }
 
+func TestOrchestrator_Tick_WorkDisabled_BreaksSilence(t *testing.T) {
+	t.Parallel()
+
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(context.Background()))
+
+	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"PASS"}` + "\n")}
+	pmAgent := setupPMAgent(t, pmRunner)
+
+	agents := map[agent.Role]*agent.Agent{agent.RolePM: pmAgent}
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{PollInterval: 50 * time.Millisecond, MaxParallel: 3, CooldownAfter: time.Second, WorkEnabled: false},
+		agents, checkIns, nil, orchestrator.NewAssigner(pmAgent),
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	_ = orch.Run(ctx)
+}
+
 func TestOrchestrator_StartWork_WithBot_PostsWorkMessages(t *testing.T) {
 	t.Parallel()
 
@@ -276,6 +302,7 @@ func TestOrchestrator_StartWork_WithBot_PostsWorkMessages(t *testing.T) {
 	defer cancel()
 
 	_ = orch.Run(ctx)
+	orch.Wait()
 
 	// Should have posted startup, starting work, and finished messages
 	assert.GreaterOrEqual(t, len(messages), 2)
