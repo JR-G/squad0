@@ -31,7 +31,7 @@ func TestSession_Run_CapturesOutput(t *testing.T) {
 	t.Parallel()
 
 	output := `{"type":"assistant","content":"hello"}` + "\n" +
-		`{"type":"result","content":"done"}` + "\n"
+		`{"type":"result","result":"done"}` + "\n"
 	runner := &fakeProcessRunner{output: []byte(output)}
 	session := agent.NewSession(runner)
 
@@ -90,11 +90,10 @@ func TestSession_Run_ProcessError_ReturnsErrorWithResult(t *testing.T) {
 	assert.Len(t, result.Messages, 1)
 }
 
-func TestSession_Run_ExtractsTranscript(t *testing.T) {
+func TestSession_Run_ExtractsTranscript_FromResult(t *testing.T) {
 	t.Parallel()
 
-	output := `{"type":"assistant","content":"I will fix the bug."}` + "\n" +
-		`{"type":"result","content":"Bug fixed."}` + "\n"
+	output := `{"type":"result","result":"Bug fixed."}` + "\n"
 	runner := &fakeProcessRunner{output: []byte(output)}
 	session := agent.NewSession(runner)
 
@@ -103,8 +102,38 @@ func TestSession_Run_ExtractsTranscript(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	assert.Contains(t, result.Transcript, "I will fix the bug.")
-	assert.Contains(t, result.Transcript, "Bug fixed.")
+	assert.Equal(t, "Bug fixed.", result.Transcript)
+}
+
+func TestSession_Run_ExtractsTranscript_FromAssistant(t *testing.T) {
+	t.Parallel()
+
+	output := `{"type":"assistant","message":{"content":[{"type":"text","text":"I fixed it."}]}}` + "\n"
+	runner := &fakeProcessRunner{output: []byte(output)}
+	session := agent.NewSession(runner)
+
+	result, err := session.Run(context.Background(), agent.SessionConfig{
+		Role: agent.RoleEngineer1, Model: "claude-sonnet-4-6", Prompt: "fix bug",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "I fixed it.", result.Transcript)
+}
+
+func TestSession_Run_ExtractsTranscript_PrefersResult(t *testing.T) {
+	t.Parallel()
+
+	output := `{"type":"assistant","message":{"content":[{"type":"text","text":"Working on it."}]}}` + "\n" +
+		`{"type":"result","result":"Done."}` + "\n"
+	runner := &fakeProcessRunner{output: []byte(output)}
+	session := agent.NewSession(runner)
+
+	result, err := session.Run(context.Background(), agent.SessionConfig{
+		Role: agent.RoleEngineer1, Model: "claude-sonnet-4-6", Prompt: "fix bug",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "Done.", result.Transcript)
 }
 
 func TestSession_Run_EmptyOutput_ReturnsEmptyResult(t *testing.T) {
@@ -126,7 +155,7 @@ func TestSession_Run_InvalidJSON_SkipsLines(t *testing.T) {
 	t.Parallel()
 
 	output := "not json\n" +
-		`{"type":"result","content":"ok"}` + "\n" +
+		`{"type":"result","result":"ok"}` + "\n" +
 		"also not json\n"
 	runner := &fakeProcessRunner{output: []byte(output)}
 	session := agent.NewSession(runner)

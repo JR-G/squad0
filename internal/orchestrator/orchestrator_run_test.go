@@ -59,10 +59,10 @@ func TestOrchestrator_Run_TickAssignsWork(t *testing.T) {
 	assignmentJSON := `[{"role":"engineer-1","ticket":"SQ-42","description":"Fix the auth bug"}]`
 	contentBytes, err := json.Marshal(assignmentJSON)
 	require.NoError(t, err)
-	pmOutput := `{"type":"result","content":` + string(contentBytes) + `}` + "\n"
+	pmOutput := `{"type":"result","result":` + string(contentBytes) + `}` + "\n"
 
 	pmRunner := &fakeProcessRunner{output: []byte(pmOutput)}
-	engRunner := &fakeProcessRunner{output: []byte(`{"type":"result","content":"done"}` + "\n")}
+	engRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"done"}` + "\n")}
 
 	orch, checkIns := setupOrchestratorWithEngineers(t, pmRunner, map[agent.Role]*fakeProcessRunner{
 		agent.RoleEngineer1: engRunner,
@@ -82,7 +82,7 @@ func TestOrchestrator_Run_TickAssignsWork(t *testing.T) {
 func TestOrchestrator_Run_ContextCancelled_ReturnsError(t *testing.T) {
 	t.Parallel()
 
-	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","content":"[]"}` + "\n")}
+	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"[]"}` + "\n")}
 	orch, _ := setupOrchestrator(t, pmRunner)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -97,7 +97,7 @@ func TestOrchestrator_Run_ContextCancelled_ReturnsError(t *testing.T) {
 func TestOrchestrator_Run_SetsRunningFalseAfterReturn(t *testing.T) {
 	t.Parallel()
 
-	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","content":"[]"}` + "\n")}
+	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"[]"}` + "\n")}
 	orch, _ := setupOrchestrator(t, pmRunner)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -117,7 +117,7 @@ func TestOrchestrator_Run_InitialiseCheckInsError_ReturnsError(t *testing.T) {
 	checkIns := coordination.NewCheckInStore(db)
 	// Do NOT init schema so upsert will fail.
 
-	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","content":"[]"}` + "\n")}
+	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"[]"}` + "\n")}
 	pmAgent := setupPMAgent(t, pmRunner)
 
 	agents := map[agent.Role]*agent.Agent{
@@ -141,7 +141,7 @@ func TestOrchestrator_Run_NoIdleEngineers_DoesNotAssign(t *testing.T) {
 	t.Parallel()
 
 	// PM returns assignments but only non-engineer roles are idle.
-	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","content":"[]"}` + "\n")}
+	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"[]"}` + "\n")}
 	orch, checkIns := setupOrchestrator(t, pmRunner)
 
 	ctx := context.Background()
@@ -169,7 +169,7 @@ func TestOrchestrator_Run_SessionError_AgentReturnsToIdle(t *testing.T) {
 	assignmentJSON := `[{"role":"engineer-1","ticket":"SQ-42","description":"Fix bug"}]`
 	contentBytes, err := json.Marshal(assignmentJSON)
 	require.NoError(t, err)
-	pmOutput := `{"type":"result","content":` + string(contentBytes) + `}` + "\n"
+	pmOutput := `{"type":"result","result":` + string(contentBytes) + `}` + "\n"
 
 	pmRunner := &fakeProcessRunner{output: []byte(pmOutput)}
 	engRunner := &fakeProcessRunner{
@@ -199,12 +199,12 @@ func TestOrchestrator_Run_UnknownRole_InAssignment_Skipped(t *testing.T) {
 	assignmentJSON := `[{"role":"engineer-99","ticket":"SQ-42","description":"Fix bug"}]`
 	contentBytes, err := json.Marshal(assignmentJSON)
 	require.NoError(t, err)
-	pmOutput := `{"type":"result","content":` + string(contentBytes) + `}` + "\n"
+	pmOutput := `{"type":"result","result":` + string(contentBytes) + `}` + "\n"
 
 	pmRunner := &fakeProcessRunner{output: []byte(pmOutput)}
 
 	orch, _ := setupOrchestratorWithEngineers(t, pmRunner, map[agent.Role]*fakeProcessRunner{
-		agent.RoleEngineer1: {output: []byte(`{"type":"result","content":"done"}` + "\n")},
+		agent.RoleEngineer1: {output: []byte(`{"type":"result","result":"done"}` + "\n")},
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)

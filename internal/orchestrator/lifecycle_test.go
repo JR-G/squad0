@@ -24,7 +24,7 @@ func setupLifecycleOrch(t *testing.T) (*orchestrator.Orchestrator, *coordination
 	checkIns := coordination.NewCheckInStore(db)
 	require.NoError(t, checkIns.InitSchema(context.Background()))
 
-	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","content":"[]"}` + "\n")}
+	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"[]"}` + "\n")}
 	pmAgent := setupPMAgent(t, pmRunner)
 
 	agents := map[agent.Role]*agent.Agent{

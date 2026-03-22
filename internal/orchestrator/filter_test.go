@@ -27,7 +27,7 @@ func TestOrchestrator_Run_Tick_PMError_ContinuesLoop(t *testing.T) {
 	}
 
 	engRunner := &fakeProcessRunner{
-		output: []byte(`{"type":"result","content":"done"}` + "\n"),
+		output: []byte(`{"type":"result","result":"done"}` + "\n"),
 	}
 
 	orch, _ := setupOrchestratorWithEngineers(t, pmRunner, map[agent.Role]*fakeProcessRunner{
@@ -55,7 +55,7 @@ func TestOrchestrator_Run_Tick_OnlyNonEngineerRolesIdle_SkipsTick(t *testing.T) 
 	require.NoError(t, checkIns.InitSchema(context.Background()))
 
 	pmRunner := &fakeProcessRunner{
-		output: []byte(`{"type":"result","content":"[]"}` + "\n"),
+		output: []byte(`{"type":"result","result":"[]"}` + "\n"),
 	}
 	pmAgent := setupPMAgent(t, pmRunner)
 
@@ -85,11 +85,11 @@ func TestOrchestrator_Run_MultipleEngineersAssigned(t *testing.T) {
 	assignmentJSON := `[{"role":"engineer-1","ticket":"SQ-1","description":"Task A"},{"role":"engineer-2","ticket":"SQ-2","description":"Task B"}]`
 	contentBytes, err := json.Marshal(assignmentJSON)
 	require.NoError(t, err)
-	pmOutput := `{"type":"result","content":` + string(contentBytes) + `}` + "\n"
+	pmOutput := `{"type":"result","result":` + string(contentBytes) + `}` + "\n"
 
 	pmRunner := &fakeProcessRunner{output: []byte(pmOutput)}
-	eng1Runner := &fakeProcessRunner{output: []byte(`{"type":"result","content":"done A"}` + "\n")}
-	eng2Runner := &fakeProcessRunner{output: []byte(`{"type":"result","content":"done B"}` + "\n")}
+	eng1Runner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"done A"}` + "\n")}
+	eng2Runner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"done B"}` + "\n")}
 
 	orch, _ := setupOrchestratorWithEngineers(t, pmRunner, map[agent.Role]*fakeProcessRunner{
 		agent.RoleEngineer1: eng1Runner,
@@ -112,12 +112,12 @@ func TestOrchestrator_Run_SessionWithTranscript_PostsFinished(t *testing.T) {
 	assignmentJSON := `[{"role":"engineer-1","ticket":"SQ-42","description":"Add caching"}]`
 	contentBytes, err := json.Marshal(assignmentJSON)
 	require.NoError(t, err)
-	pmOutput := `{"type":"result","content":` + string(contentBytes) + `}` + "\n"
+	pmOutput := `{"type":"result","result":` + string(contentBytes) + `}` + "\n"
 
 	pmRunner := &fakeProcessRunner{output: []byte(pmOutput)}
 	// Return a result with non-empty transcript content.
 	engRunner := &fakeProcessRunner{
-		output: []byte(`{"type":"result","content":"Implemented caching layer"}` + "\n"),
+		output: []byte(`{"type":"result","result":"Implemented caching layer"}` + "\n"),
 	}
 
 	orch, _ := setupOrchestratorWithEngineers(t, pmRunner, map[agent.Role]*fakeProcessRunner{
@@ -138,7 +138,7 @@ func TestOrchestrator_PostAsRole_NilBot_DoesNotPanic(t *testing.T) {
 	t.Parallel()
 
 	// This test verifies that the nil bot guard in postAsRole works.
-	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","content":"[]"}` + "\n")}
+	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"[]"}` + "\n")}
 	orch, _ := setupOrchestrator(t, pmRunner)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)

@@ -17,7 +17,7 @@ func TestAssigner_RequestAssignments_MalformedJSON_ReturnsError(t *testing.T) {
 	// PM returns something that has brackets but is not valid JSON.
 	contentBytes, err := json.Marshal(`[{"role":"engineer-1" broken_json]`)
 	require.NoError(t, err)
-	pmOutput := `{"type":"result","content":` + string(contentBytes) + `}` + "\n"
+	pmOutput := `{"type":"result","result":` + string(contentBytes) + `}` + "\n"
 
 	runner := &fakeProcessRunner{output: []byte(pmOutput)}
 	pmAgent := setupPMAgent(t, runner)
@@ -37,7 +37,7 @@ func TestAssigner_RequestAssignments_NestedBrackets_ExtractsOutermost(t *testing
 	assignmentJSON := `Some text [{"role":"engineer-1","ticket":"SQ-42","description":"Fix [nested] brackets"}] more text`
 	contentBytes, err := json.Marshal(assignmentJSON)
 	require.NoError(t, err)
-	pmOutput := `{"type":"result","content":` + string(contentBytes) + `}` + "\n"
+	pmOutput := `{"type":"result","result":` + string(contentBytes) + `}` + "\n"
 
 	runner := &fakeProcessRunner{output: []byte(pmOutput)}
 	pmAgent := setupPMAgent(t, runner)
@@ -59,7 +59,7 @@ func TestAssigner_RequestAssignments_TextBeforeJSON_ParsesCorrectly(t *testing.T
 [{"role":"engineer-2","ticket":"SQ-100","description":"Add caching layer"}]`
 	contentBytes, err := json.Marshal(assignmentJSON)
 	require.NoError(t, err)
-	pmOutput := `{"type":"result","content":` + string(contentBytes) + `}` + "\n"
+	pmOutput := `{"type":"result","result":` + string(contentBytes) + `}` + "\n"
 
 	runner := &fakeProcessRunner{output: []byte(pmOutput)}
 	pmAgent := setupPMAgent(t, runner)
@@ -80,7 +80,7 @@ func TestAssigner_RequestAssignments_OnlyOpenBracket_ReturnsError(t *testing.T) 
 
 	contentBytes, err := json.Marshal(`Here is a bracket [ but no closing`)
 	require.NoError(t, err)
-	pmOutput := `{"type":"result","content":` + string(contentBytes) + `}` + "\n"
+	pmOutput := `{"type":"result","result":` + string(contentBytes) + `}` + "\n"
 
 	runner := &fakeProcessRunner{output: []byte(pmOutput)}
 	pmAgent := setupPMAgent(t, runner)
@@ -100,7 +100,7 @@ func TestAssigner_RequestAssignments_OnlyCloseBracket_ReturnsNil(t *testing.T) {
 
 	contentBytes, err := json.Marshal(`No open bracket ] here`)
 	require.NoError(t, err)
-	pmOutput := `{"type":"result","content":` + string(contentBytes) + `}` + "\n"
+	pmOutput := `{"type":"result","result":` + string(contentBytes) + `}` + "\n"
 
 	runner := &fakeProcessRunner{output: []byte(pmOutput)}
 	pmAgent := setupPMAgent(t, runner)
@@ -120,7 +120,7 @@ func TestAssigner_RequestAssignments_AllRolesInvalid_ReturnsEmpty(t *testing.T) 
 	assignmentJSON := `[{"role":"designer","ticket":"SQ-42","description":"Review UI"},{"role":"reviewer","ticket":"SQ-43","description":"Review code"}]`
 	contentBytes, err := json.Marshal(assignmentJSON)
 	require.NoError(t, err)
-	pmOutput := `{"type":"result","content":` + string(contentBytes) + `}` + "\n"
+	pmOutput := `{"type":"result","result":` + string(contentBytes) + `}` + "\n"
 
 	runner := &fakeProcessRunner{output: []byte(pmOutput)}
 	pmAgent := setupPMAgent(t, runner)
@@ -140,7 +140,7 @@ func TestAssigner_RequestAssignments_MultipleEngineers(t *testing.T) {
 	assignmentJSON := `[{"role":"engineer-1","ticket":"SQ-1","description":"Task A"},{"role":"engineer-2","ticket":"SQ-2","description":"Task B"},{"role":"engineer-3","ticket":"SQ-3","description":"Task C"}]`
 	contentBytes, err := json.Marshal(assignmentJSON)
 	require.NoError(t, err)
-	pmOutput := `{"type":"result","content":` + string(contentBytes) + `}` + "\n"
+	pmOutput := `{"type":"result","result":` + string(contentBytes) + `}` + "\n"
 
 	runner := &fakeProcessRunner{output: []byte(pmOutput)}
 	pmAgent := setupPMAgent(t, runner)

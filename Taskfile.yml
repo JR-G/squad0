@@ -2,40 +2,68 @@ version: '3'
 
 tasks:
   build:
+    desc: Build the squad0 binary
     cmds:
       - go build -tags sqlite_fts5 -o bin/squad0 ./cmd/squad0
+      - go build -tags sqlite_fts5 -o bin/squad0-memory-mcp ./cmd/squad0-memory-mcp
     sources:
       - ./**/*.go
 
-  run:
+  start:
+    desc: Build and start squad0
     deps: [build]
     cmds:
       - ./bin/squad0 start
 
+  restart:
+    desc: Rebuild, kill existing process, and start fresh
+    cmds:
+      - go build -tags sqlite_fts5 -o bin/squad0 ./cmd/squad0
+      - pkill squad0 2>/dev/null || true
+      - sleep 1
+      - ./bin/squad0 start
+
+  stop:
+    desc: Stop the running squad0 process
+    cmds:
+      - pkill squad0 2>/dev/null || true
+
+  status:
+    desc: Show agent statuses
+    cmds:
+      - ./bin/squad0 status
+
   test:
+    desc: Run all tests with race detector
     cmds:
       - go test -race -tags sqlite_fts5 -v ./...
 
-  test-cover:
+  cover:
+    desc: Run tests with coverage report
     cmds:
       - go test -race -tags sqlite_fts5 -coverprofile=coverage.out ./...
       - go tool cover -func=coverage.out
       - go tool cover -html=coverage.out -o coverage.html
 
   lint:
+    desc: Run linter
     cmds:
       - golangci-lint run ./...
 
   fmt:
+    desc: Format all Go files
     cmds:
       - gofumpt -l -w .
 
   clean:
+    desc: Remove build artefacts
     cmds:
       - rm -rf bin/ coverage.out coverage.html
 
-  install-tools:
+  setup:
+    desc: Install all development tools
     cmds:
       - go install mvdan.cc/gofumpt@latest
       - go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
       - go install github.com/evilmartians/lefthook@latest
+      - lefthook install

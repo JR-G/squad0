@@ -71,7 +71,7 @@ func TestAssigner_RequestAssignments_ParsesValidJSON(t *testing.T) {
 
 	assignmentJSON := `[{"role":"engineer-1","ticket":"SQ-42","description":"Fix auth bug"},{"role":"engineer-2","ticket":"SQ-43","description":"Add pagination"}]`
 	contentBytes, _ := json.Marshal(assignmentJSON)
-	pmOutput := `{"type":"result","content":` + string(contentBytes) + `}` + "\n"
+	pmOutput := `{"type":"result","result":` + string(contentBytes) + `}` + "\n"
 
 	runner := &fakeProcessRunner{output: []byte(pmOutput)}
 	pmAgent := setupPMAgent(t, runner)
@@ -89,7 +89,7 @@ func TestAssigner_RequestAssignments_ParsesValidJSON(t *testing.T) {
 func TestAssigner_RequestAssignments_EmptyArray_ReturnsNil(t *testing.T) {
 	t.Parallel()
 
-	pmOutput := `{"type":"result","content":"[]"}` + "\n"
+	pmOutput := `{"type":"result","result":"[]"}` + "\n"
 	runner := &fakeProcessRunner{output: []byte(pmOutput)}
 	pmAgent := setupPMAgent(t, runner)
 	assigner := orchestrator.NewAssigner(pmAgent)
@@ -105,7 +105,7 @@ func TestAssigner_RequestAssignments_FiltersInvalidRoles(t *testing.T) {
 
 	assignmentJSON := `[{"role":"engineer-1","ticket":"SQ-42","description":"Valid"},{"role":"engineer-99","ticket":"SQ-43","description":"Invalid role"}]`
 	contentBytes, _ := json.Marshal(assignmentJSON)
-	pmOutput := `{"type":"result","content":` + string(contentBytes) + `}` + "\n"
+	pmOutput := `{"type":"result","result":` + string(contentBytes) + `}` + "\n"
 
 	runner := &fakeProcessRunner{output: []byte(pmOutput)}
 	pmAgent := setupPMAgent(t, runner)
@@ -121,7 +121,7 @@ func TestAssigner_RequestAssignments_FiltersInvalidRoles(t *testing.T) {
 func TestAssigner_RequestAssignments_NoJSON_ReturnsNil(t *testing.T) {
 	t.Parallel()
 
-	pmOutput := `{"type":"result","content":"No tickets ready right now."}` + "\n"
+	pmOutput := `{"type":"result","result":"No tickets ready right now."}` + "\n"
 	runner := &fakeProcessRunner{output: []byte(pmOutput)}
 	pmAgent := setupPMAgent(t, runner)
 	assigner := orchestrator.NewAssigner(pmAgent)

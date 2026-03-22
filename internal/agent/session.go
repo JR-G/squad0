@@ -35,7 +35,10 @@ func (runner ExecProcessRunner) Run(ctx context.Context, stdin, name string, arg
 // StreamMessage represents a single line of Claude Code's stream-json output.
 type StreamMessage struct {
 	Type    string          `json:"type"`
+	SubType string          `json:"subtype,omitempty"`
 	Content json.RawMessage `json:"content,omitempty"`
+	Result  string          `json:"result,omitempty"`
+	Message json.RawMessage `json:"message,omitempty"`
 	Error   string          `json:"error,omitempty"`
 }
 
@@ -95,6 +98,7 @@ func buildArgs(cfg SessionConfig) []string {
 		"-p",
 		"--model", cfg.Model,
 		"--output-format", "stream-json",
+		"--verbose",
 		"--dangerously-skip-permissions",
 	}
 
@@ -126,22 +130,42 @@ func parseStreamOutput(raw string) []StreamMessage {
 }
 
 func extractTranscript(messages []StreamMessage) string {
-	var builder strings.Builder
+	for idx := len(messages) - 1; idx >= 0; idx-- {
+		if messages[idx].Type == "result" && messages[idx].Result != "" {
+			return messages[idx].Result
+		}
+	}
 
 	for _, msg := range messages {
-		switch msg.Type {
-		case "assistant":
-			var content string
-			if err := json.Unmarshal(msg.Content, &content); err == nil {
-				builder.WriteString(content)
-				builder.WriteString("\n")
-			}
-		case "result":
-			var content string
-			if err := json.Unmarshal(msg.Content, &content); err == nil {
-				builder.WriteString(content)
-				builder.WriteString("\n")
-			}
+		if msg.Type != "assistant" {
+			continue
+		}
+
+		text := extractAssistantText(msg)
+		if text != "" {
+			return text
+		}
+	}
+
+	return ""
+}
+
+func extractAssistantText(msg StreamMessage) string {
+	var parsed struct {
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+	}
+
+	if err := json.Unmarshal(msg.Message, &parsed); err != nil {
+		return ""
+	}
+
+	var builder strings.Builder
+	for _, block := range parsed.Content {
+		if block.Type == "text" {
+			builder.WriteString(block.Text)
 		}
 	}
 

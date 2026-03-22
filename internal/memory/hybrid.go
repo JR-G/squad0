@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"fmt"
+	"log"
 	"sort"
 )
 
@@ -104,7 +105,8 @@ func (searcher *HybridSearcher) Search(ctx context.Context, query string, limit 
 func (searcher *HybridSearcher) vectorSearch(ctx context.Context, query string) ([]ScoredResult, error) {
 	queryVec, err := searcher.embedder.Embed(ctx, query)
 	if err != nil {
-		return nil, fmt.Errorf("embedding query: %w", err)
+		log.Printf("vector search skipped (embedder unavailable): %v", err)
+		return nil, nil
 	}
 
 	episodes, err := searcher.episodeStore.EpisodesWithEmbeddings(ctx)

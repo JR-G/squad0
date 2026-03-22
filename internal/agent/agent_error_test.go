@@ -70,7 +70,7 @@ func TestAgent_ExecuteTask_StoreEpisodeError_WhenSessionSucceeds_ReturnsError(t 
 	// so that prompt assembly succeeds but episode storage fails.
 	breakingRunner := &dbBreakingRunner{
 		fakeProcessRunner: fakeProcessRunner{
-			output: []byte(`{"type":"result","content":"done"}` + "\n"),
+			output: []byte(`{"type":"result","result":"done"}` + "\n"),
 		},
 		rawDB: db.RawDB(),
 	}
@@ -237,7 +237,7 @@ func TestParseStreamOutput_BlankLines_Ignored(t *testing.T) {
 	t.Parallel()
 
 	output := "\n\n" +
-		`{"type":"result","content":"ok"}` + "\n" +
+		`{"type":"result","result":"ok"}` + "\n" +
 		"   \n"
 	runner := &fakeProcessRunner{output: []byte(output)}
 	session := agent.NewSession(runner)
@@ -254,7 +254,7 @@ func TestAgent_ExecuteTask_SessionError_StillStoresEpisode(t *testing.T) {
 	t.Parallel()
 
 	agentInstance, runner := setupAgentTest(t)
-	runner.output = []byte(`{"type":"result","content":"partial work"}` + "\n")
+	runner.output = []byte(`{"type":"result","result":"partial work"}` + "\n")
 	runner.err = fmt.Errorf("session crashed")
 
 	result, err := agentInstance.ExecuteTask(

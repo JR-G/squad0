@@ -24,7 +24,7 @@ func setupClosedDBOrch(t *testing.T) *orchestrator.Orchestrator {
 	require.NoError(t, checkIns.InitSchema(context.Background()))
 	require.NoError(t, db.Close())
 
-	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","content":"[]"}` + "\n")}
+	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"[]"}` + "\n")}
 	pmAgent := setupPMAgent(t, pmRunner)
 
 	agents := map[agent.Role]*agent.Agent{

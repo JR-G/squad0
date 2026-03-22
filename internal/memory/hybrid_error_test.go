@@ -18,7 +18,7 @@ func (emb *errorEmbedder) Embed(_ context.Context, _ string) ([]float32, error) 
 	return nil, fmt.Errorf("embedding service unavailable")
 }
 
-func TestHybridSearcher_Search_EmbedderError_ReturnsError(t *testing.T) {
+func TestHybridSearcher_Search_EmbedderError_GracefullySkips(t *testing.T) {
 	t.Parallel()
 
 	db := openTestDB(t)
@@ -27,13 +27,13 @@ func TestHybridSearcher_Search_EmbedderError_ReturnsError(t *testing.T) {
 
 	searcher := memory.NewHybridSearcher(ftsStore, episodeStore, &errorEmbedder{}, 0.5, 0.5)
 
-	_, err := searcher.Search(context.Background(), "test query", 10)
+	results, err := searcher.Search(context.Background(), "test query", 10)
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "vector search")
+	require.NoError(t, err)
+	assert.Empty(t, results)
 }
 
-func TestHybridSearcher_VectorSearch_EmbedderError_ReturnsError(t *testing.T) {
+func TestHybridSearcher_VectorSearch_EmbedderUnavailable_FallsBackToKeyword(t *testing.T) {
 	t.Parallel()
 
 	db := openTestDB(t)
@@ -42,10 +42,10 @@ func TestHybridSearcher_VectorSearch_EmbedderError_ReturnsError(t *testing.T) {
 
 	searcher := memory.NewHybridSearcher(ftsStore, episodeStore, &errorEmbedder{}, 1.0, 0.0)
 
-	_, err := searcher.Search(context.Background(), "query", 10)
+	results, err := searcher.Search(context.Background(), "query", 10)
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "embedding")
+	require.NoError(t, err)
+	assert.Empty(t, results)
 }
 
 func TestHybridSearcher_VectorSearch_EpisodesLoadError_ReturnsError(t *testing.T) {

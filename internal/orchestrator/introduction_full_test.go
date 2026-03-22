@@ -32,7 +32,7 @@ func setupIntroductionTest(t *testing.T, transcript string) (map[agent.Role]*age
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	runner := &fakeProcessRunner{output: []byte(`{"type":"result","content":` + `"` + transcript + `"` + `}` + "\n")}
+	runner := &fakeProcessRunner{output: []byte(`{"type":"result","result":` + `"` + transcript + `"` + `}` + "\n")}
 
 	agentInstance := buildAgent(t, runner, agent.RoleEngineer1, db)
 
@@ -130,7 +130,7 @@ func TestRunIntroductions_WithBot_PostsToFeed(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 
-	runner := &fakeProcessRunner{output: []byte(`{"type":"assistant","content":"My name is Bolt. I move fast."}` + "\n")}
+	runner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"My name is Bolt. I move fast."}` + "\n")}
 	agentInstance := buildAgent(t, runner, agent.RoleEngineer1, db)
 	agents := map[agent.Role]*agent.Agent{agent.RoleEngineer1: agentInstance}
 
@@ -176,7 +176,7 @@ func TestRunIntroductions_EmptyTranscript_UsesFallback(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	// Agent returns empty content — name extraction will work but transcript is empty
-	runner := &fakeProcessRunner{output: []byte(`{"type":"assistant","content":"My name is Zen."}` + "\n")}
+	runner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"My name is Zen."}` + "\n")}
 	agentInstance := buildAgent(t, runner, agent.RoleEngineer1, db)
 	agents := map[agent.Role]*agent.Agent{agent.RoleEngineer1: agentInstance}
 

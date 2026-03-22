@@ -49,7 +49,7 @@ func setupOrchestrator(t *testing.T, pmRunner *fakeProcessRunner) (*orchestrator
 
 func setupEngineerAgent(t *testing.T, role agent.Role) *agent.Agent {
 	t.Helper()
-	runner := &fakeProcessRunner{output: []byte(`{"type":"result","content":"done"}` + "\n")}
+	runner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"done"}` + "\n")}
 	return setupAgentWithRole(t, runner, role)
 }
 
@@ -68,7 +68,7 @@ func setupAgentWithRole(t *testing.T, runner *fakeProcessRunner, role agent.Role
 func TestOrchestrator_IsRunning_DefaultFalse(t *testing.T) {
 	t.Parallel()
 
-	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","content":"[]"}` + "\n")}
+	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"[]"}` + "\n")}
 	orch, _ := setupOrchestrator(t, pmRunner)
 
 	assert.False(t, orch.IsRunning())
@@ -77,7 +77,7 @@ func TestOrchestrator_IsRunning_DefaultFalse(t *testing.T) {
 func TestOrchestrator_Run_SetsRunningTrue(t *testing.T) {
 	t.Parallel()
 
-	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","content":"[]"}` + "\n")}
+	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"[]"}` + "\n")}
 	orch, _ := setupOrchestrator(t, pmRunner)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
@@ -91,7 +91,7 @@ func TestOrchestrator_Run_SetsRunningTrue(t *testing.T) {
 func TestOrchestrator_Run_InitialisesCheckIns(t *testing.T) {
 	t.Parallel()
 
-	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","content":"[]"}` + "\n")}
+	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"[]"}` + "\n")}
 	orch, checkIns := setupOrchestrator(t, pmRunner)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
@@ -107,7 +107,7 @@ func TestOrchestrator_Run_InitialisesCheckIns(t *testing.T) {
 func TestOrchestrator_Status_ReturnsCheckIns(t *testing.T) {
 	t.Parallel()
 
-	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","content":"[]"}` + "\n")}
+	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"[]"}` + "\n")}
 	orch, checkIns := setupOrchestrator(t, pmRunner)
 	ctx := context.Background()
 

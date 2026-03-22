@@ -79,7 +79,7 @@ func TestAgent_ExecuteTask_SuccessfulSession_StoresEpisode(t *testing.T) {
 
 	agentInstance, runner := setupAgentTest(t)
 	runner.output = []byte(`{"type":"assistant","content":"I fixed the bug."}` + "\n" +
-		`{"type":"result","content":"Done."}` + "\n")
+		`{"type":"result","result":"Done."}` + "\n")
 
 	result, err := agentInstance.ExecuteTask(
 		context.Background(),
@@ -115,7 +115,7 @@ func TestAgent_ExecuteTask_PromptIncludesPersonality(t *testing.T) {
 	t.Parallel()
 
 	agentInstance, runner := setupAgentTest(t)
-	runner.output = []byte(`{"type":"result","content":"ok"}` + "\n")
+	runner.output = []byte(`{"type":"result","result":"ok"}` + "\n")
 
 	_, err := agentInstance.ExecuteTask(
 		context.Background(),
