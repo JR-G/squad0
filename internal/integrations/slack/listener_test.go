@@ -301,6 +301,79 @@ func TestDispatchSocketEvent_NilRequest_DoesNotPanic(t *testing.T) {
 	assert.Equal(t, 0, acker.acked)
 }
 
+func TestMakeEventsAPIHandler_ValidEvent_Dispatches(t *testing.T) {
+	t.Parallel()
+
+	bot, collector := newListenerTestBot(t)
+
+	handler := bot.MakeEventsAPIHandler(context.Background())
+
+	event := &socketmode.Event{
+		Data: slackevents.EventsAPIEvent{
+			Type: slackevents.CallbackEvent,
+			InnerEvent: slackevents.EventsAPIInnerEvent{
+				Data: &slackevents.MessageEvent{
+					Channel:     "C002",
+					User:        "U001",
+					Text:        "from handler",
+					ChannelType: "channel",
+				},
+			},
+		},
+		Request: &socketmode.Request{EnvelopeID: "test-123"},
+	}
+
+	handler(event, bot.SocketClient())
+
+	messages := collector.get()
+	require.Len(t, messages, 1)
+	assert.Equal(t, "from handler", messages[0].Text)
+}
+
+func TestMakeEventsAPIHandler_InvalidData_AcksOnly(t *testing.T) {
+	t.Parallel()
+
+	bot, collector := newListenerTestBot(t)
+
+	handler := bot.MakeEventsAPIHandler(context.Background())
+
+	event := &socketmode.Event{
+		Data:    "not an EventsAPIEvent",
+		Request: &socketmode.Request{EnvelopeID: "test-456"},
+	}
+
+	handler(event, bot.SocketClient())
+
+	assert.Empty(t, collector.get())
+}
+
+func TestMakeDefaultHandler_DoesNotPanic(t *testing.T) {
+	t.Parallel()
+
+	handler := islack.MakeDefaultHandler()
+
+	event := &socketmode.Event{Type: socketmode.EventTypeHello}
+
+	assert.NotPanics(t, func() {
+		handler(event, nil)
+	})
+}
+
+func TestHandleMessageEvent_BotSubtype_Ignored(t *testing.T) {
+	t.Parallel()
+
+	bot, collector := newListenerTestBot(t)
+
+	bot.HandleMessageEvent(context.Background(), &slackevents.MessageEvent{
+		Channel: "C002",
+		User:    "",
+		Text:    "bot said this",
+		SubType: "bot_message",
+	})
+
+	assert.Empty(t, collector.get())
+}
+
 func TestAckRequest_NilRequest_DoesNotPanic(t *testing.T) {
 	t.Parallel()
 

@@ -10,7 +10,13 @@ project_id = ""
 [slack]
 bot_token_env = "SLACK_BOT_TOKEN"
 app_token_env = "SLACK_APP_TOKEN"
-channels = ["feed", "engineering", "reviews", "triage", "standup", "commands"]
+[slack.channels]
+commands = "C0ANVV4HT08"
+engineering = "C0AMY8QM9GV"
+feed = "C0AML7VJLMD"
+reviews = "C0ANVV5MY9W"
+standup = "C0AMZKGP8LE"
+triage = "C0AN1M555FC"
 
 [github]
 owner = "JR-G"

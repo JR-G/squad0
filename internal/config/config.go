@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"slices"
 
 	"github.com/BurntSushi/toml"
 )
@@ -36,9 +35,9 @@ type LinearConfig struct {
 
 // SlackConfig holds Slack integration settings.
 type SlackConfig struct {
-	BotTokenEnv string   `toml:"bot_token_env"`
-	AppTokenEnv string   `toml:"app_token_env"`
-	Channels    []string `toml:"channels"`
+	BotTokenEnv string            `toml:"bot_token_env"`
+	AppTokenEnv string            `toml:"app_token_env"`
+	Channels    map[string]string `toml:"channels"`
 }
 
 // GitHubConfig holds GitHub integration context passed to agent prompts.
@@ -155,7 +154,7 @@ func (cfg Config) Validate() error {
 		return fmt.Errorf("worktree base_dir must not be empty")
 	}
 
-	if !slices.Contains(cfg.Slack.Channels, "commands") {
+	if _, hasCommands := cfg.Slack.Channels["commands"]; !hasCommands {
 		return fmt.Errorf("slack channels must include \"commands\"")
 	}
 

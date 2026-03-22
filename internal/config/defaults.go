@@ -10,7 +10,14 @@ func DefaultConfig() Config {
 		Slack: SlackConfig{
 			BotTokenEnv: "SLACK_BOT_TOKEN",
 			AppTokenEnv: "SLACK_APP_TOKEN",
-			Channels:    []string{"feed", "engineering", "reviews", "triage", "standup", "commands"},
+			Channels: map[string]string{
+				"feed":        "",
+				"engineering": "",
+				"reviews":     "",
+				"triage":      "",
+				"standup":     "",
+				"commands":    "",
+			},
 		},
 		GitHub: GitHubConfig{},
 		Embeddings: EmbeddingsConfig{

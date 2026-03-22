@@ -16,6 +16,31 @@ type Persona struct {
 	IconURL string
 }
 
+// DisplayName returns the Slack username combining name and role title.
+func (persona Persona) DisplayName() string {
+	title := roleTitle(persona.Role)
+	if persona.Name == string(persona.Role) {
+		return title
+	}
+	return persona.Name + " — " + title
+}
+
+func roleTitle(role agent.Role) string {
+	switch role {
+	case agent.RolePM:
+		return "PM"
+	case agent.RoleTechLead:
+		return "Tech Lead"
+	case agent.RoleEngineer1, agent.RoleEngineer2, agent.RoleEngineer3:
+		return "Engineer"
+	case agent.RoleReviewer:
+		return "Reviewer"
+	case agent.RoleDesigner:
+		return "Designer"
+	}
+	return string(role)
+}
+
 // PersonaStore loads and saves agent personas backed by the memory DB.
 type PersonaStore struct {
 	graphStores map[agent.Role]*memory.GraphStore

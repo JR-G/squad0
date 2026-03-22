@@ -84,12 +84,12 @@ func TestBot_PostMessage_SetsUsername(t *testing.T) {
 	})
 
 	bot := newTestBot(t, handler)
-	persona := slack.Persona{Name: "Rex"}
+	persona := slack.Persona{Role: agent.RoleReviewer, Name: "Rex"}
 
 	err := bot.PostMessage(context.Background(), "engineering", "test", persona)
 
 	require.NoError(t, err)
-	assert.Equal(t, "Rex", receivedUsername)
+	assert.Equal(t, "Rex — Reviewer", receivedUsername)
 }
 
 func TestBot_PostMessage_UnknownChannel_ReturnsError(t *testing.T) {
@@ -162,7 +162,7 @@ func TestBot_PostAsRole_UsesRolePersona(t *testing.T) {
 	err := bot.PostAsRole(context.Background(), "engineering", "status update", agent.RolePM)
 
 	require.NoError(t, err)
-	assert.Equal(t, "Nova", receivedUsername)
+	assert.Equal(t, "Nova — PM", receivedUsername)
 }
 
 func TestBot_PostThreadAsRole_UsesRolePersona(t *testing.T) {
@@ -193,7 +193,7 @@ func TestBot_PostAsRole_UnknownRole_UsesFallback(t *testing.T) {
 	err := bot.PostAsRole(context.Background(), "engineering", "test", agent.RoleDesigner)
 
 	require.NoError(t, err)
-	assert.Equal(t, "designer", receivedUsername)
+	assert.Equal(t, "Designer", receivedUsername)
 }
 
 func TestBot_ChannelName_KnownChannel_ReturnsName(t *testing.T) {
@@ -238,7 +238,7 @@ func TestBot_UpdatePersonas_ReplacesMap(t *testing.T) {
 	err := bot.PostAsRole(context.Background(), "engineering", "test", agent.RolePM)
 
 	require.NoError(t, err)
-	assert.Equal(t, "Zara", receivedUsername)
+	assert.Equal(t, "Zara — PM", receivedUsername)
 }
 
 func TestNewBot_CreatesWithDefaultURL(t *testing.T) {

@@ -294,15 +294,10 @@ func createSlackBot(
 	personaStore := slack.NewPersonaStore(graphStores, factStores)
 	personas := personaStore.LoadAllPersonas(ctx)
 
-	channels := make(map[string]string, len(cfg.Slack.Channels))
-	for _, name := range cfg.Slack.Channels {
-		channels[name] = name
-	}
-
 	return slack.NewBot(slack.BotConfig{
 		BotToken:   slackSecrets.SlackBotToken,
 		AppToken:   slackSecrets.SlackAppToken,
-		Channels:   channels,
+		Channels:   cfg.Slack.Channels,
 		Personas:   personas,
 		MinSpacing: 2 * time.Second,
 	})

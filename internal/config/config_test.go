@@ -158,8 +158,10 @@ func TestValidate_InvalidFields_ReturnsError(t *testing.T) {
 			wantErr: "base_dir",
 		},
 		{
-			name:    "missing commands channel",
-			modify:  func(cfg *config.Config) { cfg.Slack.Channels = []string{"feed", "engineering"} },
+			name: "missing commands channel",
+			modify: func(cfg *config.Config) {
+				cfg.Slack.Channels = map[string]string{"feed": "C001", "engineering": "C002"}
+			},
 			wantErr: "commands",
 		},
 	}

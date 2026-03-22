@@ -51,31 +51,28 @@ type BotConfig struct {
 	MinSpacing time.Duration
 }
 
-const defaultSlackAPIURL = "https://slack.com/api/"
-
 // NewBot creates a Bot with the given configuration. The channels map
 // maps logical names (e.g. "feed", "engineering") to Slack channel IDs.
 func NewBot(cfg BotConfig) *Bot {
-	return NewBotWithURL(cfg, defaultSlackAPIURL)
+	client := slackapi.New(
+		cfg.BotToken,
+		slackapi.OptionAppLevelToken(cfg.AppToken),
+	)
+	return newBot(cfg, client)
 }
 
 // NewBotWithURL creates a Bot pointing at a custom Slack API URL. Pass
 // an httptest server URL to test without a real Slack connection.
 func NewBotWithURL(cfg BotConfig, apiURL string) *Bot {
-	opts := []slackapi.Option{slackapi.OptionAPIURL(apiURL)}
-
-	if apiURL == defaultSlackAPIURL {
-		opts = append(opts, slackapi.OptionAppLevelToken(cfg.AppToken))
-	}
-
-	return newBot(cfg, slackapi.New(cfg.BotToken, opts...))
+	client := slackapi.New(
+		cfg.BotToken,
+		slackapi.OptionAPIURL(apiURL),
+	)
+	return newBot(cfg, client)
 }
 
 func newBot(cfg BotConfig, client *slackapi.Client) *Bot {
-	socket := socketmode.New(
-		client,
-		socketmode.OptionLog(nil),
-	)
+	socket := socketmode.New(client)
 
 	reverse := make(map[string]string, len(cfg.Channels))
 	for name, channelID := range cfg.Channels {
@@ -188,7 +185,7 @@ func (bot *Bot) resolveChannel(name string) (string, error) {
 func buildMessageOpts(text string, persona Persona) []slackapi.MsgOption {
 	opts := []slackapi.MsgOption{
 		slackapi.MsgOptionText(text, false),
-		slackapi.MsgOptionUsername(persona.Name),
+		slackapi.MsgOptionUsername(persona.DisplayName()),
 	}
 
 	if persona.IconURL != "" {

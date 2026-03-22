@@ -3,11 +3,11 @@ package cli
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/JR-G/squad0/internal/agent"
 	slack "github.com/JR-G/squad0/internal/integrations/slack"
 	"github.com/JR-G/squad0/internal/orchestrator"
-	"github.com/JR-G/squad0/internal/tui"
 )
 
 type commandDispatcher struct {
@@ -20,6 +20,8 @@ func newCommandDispatcher(orch *orchestrator.Orchestrator, bot *slack.Bot) *comm
 }
 
 func (dispatcher *commandDispatcher) handleMessage(ctx context.Context, msg slack.IncomingMessage) {
+	log.Printf("message received: channel=%s text=%q isDM=%v", msg.Channel, msg.Text, msg.IsDM)
+
 	if msg.IsDM {
 		dispatcher.handleDM(ctx, msg)
 		return
@@ -31,22 +33,28 @@ func (dispatcher *commandDispatcher) handleMessage(ctx context.Context, msg slac
 
 	cmd, err := slack.ParseCommand(msg.Text)
 	if err != nil {
-		_ = dispatcher.bot.PostMessage(ctx, "commands", err.Error(), slack.Persona{Name: "Squad0"})
+		dispatcher.reply(ctx, err.Error())
 		return
 	}
 
-	dispatcher.executeCommand(ctx, cmd)
+	response := dispatcher.routeCommand(ctx, cmd)
+	dispatcher.reply(ctx, response)
 }
 
 func (dispatcher *commandDispatcher) handleDM(ctx context.Context, msg slack.IncomingMessage) {
-	_ = dispatcher.bot.PostAsRole(ctx, msg.ChannelID,
+	err := dispatcher.bot.PostAsRole(ctx, msg.ChannelID,
 		fmt.Sprintf("Noted. I'll look into: %s", msg.Text),
 		agent.RolePM)
+	if err != nil {
+		log.Printf("error posting DM reply: %v", err)
+	}
 }
 
-func (dispatcher *commandDispatcher) executeCommand(ctx context.Context, cmd slack.Command) {
-	response := dispatcher.routeCommand(ctx, cmd)
-	_ = dispatcher.bot.PostMessage(ctx, "commands", response, slack.Persona{Name: "Squad0"})
+func (dispatcher *commandDispatcher) reply(ctx context.Context, text string) {
+	err := dispatcher.bot.PostMessage(ctx, "commands", text, slack.Persona{Name: "squad0"})
+	if err != nil {
+		log.Printf("error posting to commands: %v", err)
+	}
 }
 
 func (dispatcher *commandDispatcher) routeCommand(ctx context.Context, cmd slack.Command) string {
@@ -76,7 +84,7 @@ func (dispatcher *commandDispatcher) handleStatus(ctx context.Context) string {
 		return fmt.Sprintf("Error getting status: %v", err)
 	}
 
-	return tui.FormatAgentStatus(checkIns, nil)
+	return slack.FormatStatusForSlack(checkIns)
 }
 
 func handlePauseResume(
