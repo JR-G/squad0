@@ -14,14 +14,16 @@ type commandDispatcher struct {
 	orch         *orchestrator.Orchestrator
 	bot          *slack.Bot
 	conversation *orchestrator.ConversationEngine
+	personas     map[agent.Role]slack.Persona
 }
 
 func newCommandDispatcher(
 	orch *orchestrator.Orchestrator,
 	bot *slack.Bot,
 	conversation *orchestrator.ConversationEngine,
+	personas map[agent.Role]slack.Persona,
 ) *commandDispatcher {
-	return &commandDispatcher{orch: orch, bot: bot, conversation: conversation}
+	return &commandDispatcher{orch: orch, bot: bot, conversation: conversation, personas: personas}
 }
 
 func (dispatcher *commandDispatcher) handleMessage(ctx context.Context, msg slack.IncomingMessage) {
@@ -96,7 +98,7 @@ func (dispatcher *commandDispatcher) handleStatus(ctx context.Context) string {
 		return fmt.Sprintf("Error getting status: %v", err)
 	}
 
-	return slack.FormatStatusForSlack(checkIns)
+	return slack.FormatStatusForSlack(checkIns, dispatcher.personas)
 }
 
 func handlePauseResume(

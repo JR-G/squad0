@@ -114,7 +114,11 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	orchestrator.RunIntroductions(ctx, agents, personaStore, bot)
 	bot.UpdatePersonas(personaStore.LoadAllPersonas(ctx))
 
-	orchestrator.RunPMBriefing(ctx, agents, bot)
+	briefingDone := filepath.Join(deps.DataDir, ".briefing_done")
+	if _, statErr := os.Stat(briefingDone); os.IsNotExist(statErr) {
+		orchestrator.RunPMBriefing(ctx, agents, bot)
+		_ = os.WriteFile(briefingDone, []byte("done"), 0o644)
+	}
 
 	checkInStore, coordDB, err := createCoordinationStore(ctx, deps.DataDir)
 	if err != nil {
@@ -156,7 +160,8 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 
 	conversation := orchestrator.NewConversationEngine(agents, agentFactStores, bot)
 	orch.SetConversationEngine(conversation)
-	commandHandler := newCommandDispatcher(orch, bot, conversation)
+	personas := personaStore.LoadAllPersonas(ctx)
+	commandHandler := newCommandDispatcher(orch, bot, conversation, personas)
 	bot.OnMessage(commandHandler.handleMessage)
 
 	_, _ = fmt.Fprint(out, tui.StepDone("All systems ready"))

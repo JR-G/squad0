@@ -17,7 +17,7 @@ func TestFormatStatusForSlack_ShowsAllAgents(t *testing.T) {
 		{Agent: agent.RolePM, Status: coordination.StatusIdle},
 	}
 
-	result := slack.FormatStatusForSlack(checkIns)
+	result := slack.FormatStatusForSlack(checkIns, nil)
 
 	assert.Contains(t, result, "engineer-1")
 	assert.Contains(t, result, "`working`")
@@ -29,7 +29,7 @@ func TestFormatStatusForSlack_ShowsAllAgents(t *testing.T) {
 func TestFormatStatusForSlack_EmptyCheckIns(t *testing.T) {
 	t.Parallel()
 
-	result := slack.FormatStatusForSlack(nil)
+	result := slack.FormatStatusForSlack(nil, nil)
 
 	assert.Contains(t, result, "No agents")
 }
@@ -44,7 +44,7 @@ func TestFormatStatusForSlack_AllStatuses(t *testing.T) {
 		{Agent: agent.RoleReviewer, Status: coordination.StatusReviewing},
 	}
 
-	result := slack.FormatStatusForSlack(checkIns)
+	result := slack.FormatStatusForSlack(checkIns, nil)
 
 	assert.Contains(t, result, "`working`")
 	assert.Contains(t, result, "`blocked`")
@@ -59,7 +59,7 @@ func TestFormatStatusForSlack_UnknownStatus(t *testing.T) {
 		{Agent: agent.RolePM, Status: coordination.Status("unknown")},
 	}
 
-	result := slack.FormatStatusForSlack(checkIns)
+	result := slack.FormatStatusForSlack(checkIns, nil)
 
 	assert.Contains(t, result, "unknown")
 }
@@ -71,7 +71,7 @@ func TestFormatStatusForSlack_EmptyTicket(t *testing.T) {
 		{Agent: agent.RolePM, Status: coordination.StatusIdle, Ticket: ""},
 	}
 
-	result := slack.FormatStatusForSlack(checkIns)
+	result := slack.FormatStatusForSlack(checkIns, nil)
 
 	assert.Contains(t, result, "—")
 }

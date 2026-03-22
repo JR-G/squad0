@@ -57,7 +57,8 @@ func (engine *ConversationEngine) OnMessage(ctx context.Context, channel, sender
 
 	state.recentLines = appendRecent(state.recentLines, fmt.Sprintf("%s: %s", sender, text))
 	state.lastMessage = time.Now()
-	state.roundCount++
+
+	state.roundCount = nextRoundCount(sender, state.roundCount)
 	roundCount := state.roundCount
 	recentCopy := make([]string, len(state.recentLines))
 	copy(recentCopy, state.recentLines)
@@ -286,6 +287,22 @@ func decideResponderCount(roundCount int) int {
 		}
 		return 0
 	}
+}
+
+func nextRoundCount(sender string, current int) int {
+	if isHumanMessage(sender) {
+		return 0
+	}
+	return current + 1
+}
+
+func isHumanMessage(sender string) bool {
+	for _, role := range agent.AllRoles() {
+		if sender == string(role) {
+			return false
+		}
+	}
+	return true
 }
 
 func appendRecent(lines []string, line string) []string {
