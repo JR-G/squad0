@@ -166,14 +166,19 @@ func RunOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	return runOrchestratorWithContext(ctx, cfg, deps)
 }
 
+// CreatePersonaStore exports createPersonaStore for testing.
+func CreatePersonaStore(agentDBs map[agent.Role]*memory.DB) *slack.PersonaStore {
+	return createPersonaStore(agentDBs)
+}
+
 // CreateSlackBot exports createSlackBot for testing.
 func CreateSlackBot(
 	ctx context.Context,
 	cfg config.Config,
 	slackSecrets secrets.Secrets,
-	agentDBs map[agent.Role]*memory.DB,
+	personaStore *slack.PersonaStore,
 ) *slack.Bot {
-	return createSlackBot(ctx, cfg, slackSecrets, agentDBs)
+	return createSlackBot(ctx, cfg, slackSecrets, personaStore)
 }
 
 // DefaultStartDeps exports defaultStartDeps for testing.

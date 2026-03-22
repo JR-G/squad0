@@ -91,7 +91,8 @@ func TestCreateSlackBot_ReturnsNonNilBot(t *testing.T) {
 		SlackAppToken: "xapp-test",
 	}
 
-	bot := cli.CreateSlackBot(ctx, cfg, slackSecrets, agentDBs)
+	personaStore := cli.CreatePersonaStore(agentDBs)
+	bot := cli.CreateSlackBot(ctx, cfg, slackSecrets, personaStore)
 
 	require.NotNil(t, bot)
 }
@@ -306,7 +307,8 @@ func TestCreateSlackBot_EmptyChannels_ReturnsBot(t *testing.T) {
 		SlackAppToken: "xapp-test",
 	}
 
-	bot := cli.CreateSlackBot(ctx, cfg, slackSecrets, agentDBs)
+	personaStore := cli.CreatePersonaStore(agentDBs)
+	bot := cli.CreateSlackBot(ctx, cfg, slackSecrets, personaStore)
 
 	require.NotNil(t, bot)
 }

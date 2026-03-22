@@ -107,8 +107,12 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	}
 	_, _ = fmt.Fprint(out, tui.StepDone(fmt.Sprintf("%d agents created", len(agents))))
 
-	bot := createSlackBot(ctx, cfg, slackSecrets, agentDBs)
+	personaStore := createPersonaStore(agentDBs)
+	bot := createSlackBot(ctx, cfg, slackSecrets, personaStore)
 	_, _ = fmt.Fprint(out, tui.StepDone("Slack bot connected"))
+
+	orchestrator.RunIntroductions(ctx, agents, personaStore, bot)
+	bot.UpdatePersonas(personaStore.LoadAllPersonas(ctx))
 
 	checkInStore, coordDB, err := createCoordinationStore(ctx, deps.DataDir)
 	if err != nil {
@@ -277,12 +281,7 @@ func buildSingleAgent(
 	return agent.NewAgent(role, model, session, loader, retriever, agentDB, episodeStore, embedder)
 }
 
-func createSlackBot(
-	ctx context.Context,
-	cfg config.Config,
-	slackSecrets secrets.Secrets,
-	agentDBs map[agent.Role]*memory.DB,
-) *slack.Bot {
+func createPersonaStore(agentDBs map[agent.Role]*memory.DB) *slack.PersonaStore {
 	graphStores := make(map[agent.Role]*memory.GraphStore, len(agentDBs))
 	factStores := make(map[agent.Role]*memory.FactStore, len(agentDBs))
 
@@ -291,7 +290,15 @@ func createSlackBot(
 		factStores[role] = memory.NewFactStore(db)
 	}
 
-	personaStore := slack.NewPersonaStore(graphStores, factStores)
+	return slack.NewPersonaStore(graphStores, factStores)
+}
+
+func createSlackBot(
+	ctx context.Context,
+	cfg config.Config,
+	slackSecrets secrets.Secrets,
+	personaStore *slack.PersonaStore,
+) *slack.Bot {
 	personas := personaStore.LoadAllPersonas(ctx)
 
 	return slack.NewBot(slack.BotConfig{
