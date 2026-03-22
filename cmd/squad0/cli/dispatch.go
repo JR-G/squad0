@@ -11,12 +11,17 @@ import (
 )
 
 type commandDispatcher struct {
-	orch *orchestrator.Orchestrator
-	bot  *slack.Bot
+	orch         *orchestrator.Orchestrator
+	bot          *slack.Bot
+	conversation *orchestrator.ConversationEngine
 }
 
-func newCommandDispatcher(orch *orchestrator.Orchestrator, bot *slack.Bot) *commandDispatcher {
-	return &commandDispatcher{orch: orch, bot: bot}
+func newCommandDispatcher(
+	orch *orchestrator.Orchestrator,
+	bot *slack.Bot,
+	conversation *orchestrator.ConversationEngine,
+) *commandDispatcher {
+	return &commandDispatcher{orch: orch, bot: bot, conversation: conversation}
 }
 
 func (dispatcher *commandDispatcher) handleMessage(ctx context.Context, msg slack.IncomingMessage) {
@@ -27,11 +32,18 @@ func (dispatcher *commandDispatcher) handleMessage(ctx context.Context, msg slac
 		return
 	}
 
-	if msg.Channel != "commands" {
+	if msg.Channel == "commands" {
+		dispatcher.handleCommand(ctx, msg.Text)
 		return
 	}
 
-	cmd, err := slack.ParseCommand(msg.Text)
+	if dispatcher.conversation != nil {
+		go dispatcher.conversation.OnMessage(ctx, msg.Channel, msg.User, msg.Text)
+	}
+}
+
+func (dispatcher *commandDispatcher) handleCommand(ctx context.Context, text string) {
+	cmd, err := slack.ParseCommand(text)
 	if err != nil {
 		dispatcher.reply(ctx, err.Error())
 		return

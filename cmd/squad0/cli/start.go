@@ -114,6 +114,8 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	orchestrator.RunIntroductions(ctx, agents, personaStore, bot)
 	bot.UpdatePersonas(personaStore.LoadAllPersonas(ctx))
 
+	orchestrator.RunPMBriefing(ctx, agents, bot)
+
 	checkInStore, coordDB, err := createCoordinationStore(ctx, deps.DataDir)
 	if err != nil {
 		return err
@@ -141,7 +143,14 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 		agents, checkInStore, bot, assigner,
 	)
 
-	commandHandler := newCommandDispatcher(orch, bot)
+	agentFactStores := make(map[agent.Role]*memory.FactStore, len(agentDBs))
+	for role, db := range agentDBs {
+		agentFactStores[role] = memory.NewFactStore(db)
+	}
+
+	conversation := orchestrator.NewConversationEngine(agents, agentFactStores, bot)
+	orch.SetConversationEngine(conversation)
+	commandHandler := newCommandDispatcher(orch, bot, conversation)
 	bot.OnMessage(commandHandler.handleMessage)
 
 	_, _ = fmt.Fprint(out, tui.StepDone("All systems ready"))

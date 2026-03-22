@@ -10,9 +10,23 @@ import (
 	"testing"
 
 	"github.com/JR-G/squad0/internal/agent"
+	islack "github.com/JR-G/squad0/internal/integrations/slack"
 	"github.com/JR-G/squad0/internal/memory"
 	"github.com/stretchr/testify/require"
 )
+
+func newTestSlackBot(serverURL string) *islack.Bot {
+	return islack.NewBotWithURL(islack.BotConfig{
+		BotToken: "xoxb-test",
+		AppToken: "xapp-test",
+		Channels: map[string]string{
+			"engineering": "C001",
+			"feed":        "C002",
+			"commands":    "C003",
+		},
+		Personas: map[agent.Role]islack.Persona{},
+	}, serverURL+"/")
+}
 
 func openMemoryDB(ctx context.Context) (*memory.DB, error) {
 	return memory.Open(ctx, ":memory:")

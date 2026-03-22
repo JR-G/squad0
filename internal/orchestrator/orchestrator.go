@@ -15,12 +15,13 @@ import (
 // the PM, assigns tickets to idle engineers, runs sessions, and
 // captures results.
 type Orchestrator struct {
-	cfg      Config
-	agents   map[agent.Role]*agent.Agent
-	checkIns *coordination.CheckInStore
-	bot      *slack.Bot
-	assigner *Assigner
-	running  bool
+	cfg          Config
+	agents       map[agent.Role]*agent.Agent
+	checkIns     *coordination.CheckInStore
+	bot          *slack.Bot
+	assigner     *Assigner
+	running      bool
+	conversation *ConversationEngine
 }
 
 // Config holds orchestrator-level settings.
@@ -103,12 +104,30 @@ func (orch *Orchestrator) tick(ctx context.Context) {
 	assignments, err := orch.assigner.RequestAssignments(ctx, idleEngineers)
 	if err != nil {
 		log.Printf("error requesting assignments from PM: %v", err)
+		orch.breakSilence(ctx)
+		return
+	}
+
+	if len(assignments) == 0 {
+		orch.breakSilence(ctx)
 		return
 	}
 
 	for _, assignment := range assignments {
 		orch.startWork(ctx, assignment)
 	}
+}
+
+// SetConversationEngine connects the conversation engine to the orchestrator.
+func (orch *Orchestrator) SetConversationEngine(engine *ConversationEngine) {
+	orch.conversation = engine
+}
+
+func (orch *Orchestrator) breakSilence(ctx context.Context) {
+	if orch.conversation == nil {
+		return
+	}
+	orch.conversation.BreakSilence(ctx)
 }
 
 func (orch *Orchestrator) startWork(ctx context.Context, assignment Assignment) {

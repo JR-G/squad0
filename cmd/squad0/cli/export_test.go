@@ -87,7 +87,7 @@ type CommandDispatcherWrapper struct {
 
 // NewCommandDispatcher exports newCommandDispatcher for testing.
 func NewCommandDispatcher(orch *orchestrator.Orchestrator, bot *slack.Bot) *CommandDispatcherWrapper {
-	return &CommandDispatcherWrapper{inner: newCommandDispatcher(orch, bot)}
+	return &CommandDispatcherWrapper{inner: newCommandDispatcher(orch, bot, nil)}
 }
 
 // HandleMessage exports handleMessage for testing.
