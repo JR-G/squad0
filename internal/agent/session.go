@@ -13,16 +13,21 @@ import (
 // ProcessRunner executes a command with stdin and captures stdout.
 // This interface exists to enable testing without spawning real processes.
 type ProcessRunner interface {
-	Run(ctx context.Context, stdin string, name string, args ...string) ([]byte, error)
+	Run(ctx context.Context, stdin, workingDir, name string, args ...string) ([]byte, error)
 }
 
 // ExecProcessRunner implements ProcessRunner using os/exec.
 type ExecProcessRunner struct{}
 
 // Run executes the named command, pipes stdin, and returns combined output.
-func (runner ExecProcessRunner) Run(ctx context.Context, stdin, name string, args ...string) ([]byte, error) {
+// When workingDir is non-empty the process runs in that directory.
+func (runner ExecProcessRunner) Run(ctx context.Context, stdin, workingDir, name string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdin = strings.NewReader(stdin)
+
+	if workingDir != "" {
+		cmd.Dir = workingDir
+	}
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -75,7 +80,7 @@ func NewSession(runner ProcessRunner) *Session {
 func (session *Session) Run(ctx context.Context, cfg SessionConfig) (SessionResult, error) {
 	args := buildArgs(cfg)
 
-	output, err := session.runner.Run(ctx, cfg.Prompt, "claude", args...)
+	output, err := session.runner.Run(ctx, cfg.Prompt, cfg.WorkingDir, "claude", args...)
 
 	var result SessionResult
 	result.RawOutput = string(output)

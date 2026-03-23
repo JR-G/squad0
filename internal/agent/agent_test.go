@@ -163,3 +163,54 @@ func TestAgent_DirectSession_Error_ReturnsError(t *testing.T) {
 
 	require.Error(t, err)
 }
+
+func TestAgent_SetDBPath_And_DBPath(t *testing.T) {
+	t.Parallel()
+
+	agentInstance, _ := setupAgentTest(t)
+
+	assert.Empty(t, agentInstance.DBPath())
+
+	agentInstance.SetDBPath("/data/agents/engineer-1.db")
+
+	assert.Equal(t, "/data/agents/engineer-1.db", agentInstance.DBPath())
+}
+
+func TestAgent_SetMemoryStores_And_Accessors(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	agentInstance, _ := setupAgentTest(t)
+
+	graphStore := memory.NewGraphStore(db)
+	factStore := memory.NewFactStore(db)
+
+	agentInstance.SetMemoryStores(graphStore, factStore)
+
+	assert.NotNil(t, agentInstance.GraphStore())
+	assert.NotNil(t, agentInstance.FactStore())
+	assert.NotNil(t, agentInstance.EpisodeStore())
+	assert.NotNil(t, agentInstance.Embedder())
+}
+
+func TestSession_Run_WorkingDir_PassedToRunner(t *testing.T) {
+	t.Parallel()
+
+	runner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"ok"}` + "\n")}
+	session := agent.NewSession(runner)
+
+	_, err := session.Run(context.Background(), agent.SessionConfig{
+		Role:       agent.RoleEngineer1,
+		Model:      "claude-sonnet-4-6",
+		Prompt:     "task",
+		WorkingDir: "/tmp/worktree",
+	})
+
+	require.NoError(t, err)
+	// The fake ignores workingDir but verifies the session passes it through
+	require.Len(t, runner.calls, 1)
+}

@@ -22,7 +22,7 @@ type fakeProcessCall struct {
 	args  []string
 }
 
-func (runner *fakeProcessRunner) Run(_ context.Context, stdin, name string, args ...string) ([]byte, error) {
+func (runner *fakeProcessRunner) Run(_ context.Context, stdin, _ /* workingDir */, name string, args ...string) ([]byte, error) {
 	runner.calls = append(runner.calls, fakeProcessCall{stdin: stdin, name: name, args: args})
 	return runner.output, runner.err
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"testing"
 	"time"
 
@@ -396,6 +397,71 @@ func TestPauseAgent_WhileWorking_CancelsAndPauses(t *testing.T) {
 	checkIn, err = checkIns.GetByAgent(ctx, agent.RoleEngineer1)
 	require.NoError(t, err)
 	assert.Equal(t, coordination.StatusIdle, checkIn.Status)
+}
+
+func TestOrchestrator_RunSession_WithMCPConfig_WritesMCPFile(t *testing.T) {
+	t.Parallel()
+
+	// Create a temp git repo so worktree creation succeeds.
+	tmpDir := t.TempDir()
+	ctx := context.Background()
+
+	initGit := func(args ...string) {
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = tmpDir
+		_ = cmd.Run()
+	}
+	initGit("init")
+	initGit("commit", "--allow-empty", "-m", "init")
+
+	assignmentJSON := `[{"role":"engineer-1","ticket":"SQ-77","description":"Test MCP wiring"}]`
+	contentBytes, _ := json.Marshal(assignmentJSON)
+	pmOutput := `{"type":"result","result":` + string(contentBytes) + `}` + "\n"
+
+	pmRunner := &fakeProcessRunner{output: []byte(pmOutput)}
+	engRunner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"Done with MCP."}` + "\n"),
+	}
+
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	pmAgent := setupPMAgent(t, pmRunner)
+	engAgent := setupAgentWithRole(t, engRunner, agent.RoleEngineer1)
+	engAgent.SetDBPath("/tmp/test-agent.db")
+
+	agents := map[agent.Role]*agent.Agent{
+		agent.RolePM:        pmAgent,
+		agent.RoleEngineer1: engAgent,
+	}
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{
+			PollInterval:     50 * time.Millisecond,
+			MaxParallel:      3,
+			CooldownAfter:    time.Second,
+			WorkEnabled:      true,
+			TargetRepoDir:    tmpDir,
+			MemoryBinaryPath: "/usr/local/bin/squad0-memory-mcp",
+		},
+		agents, checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
+	)
+
+	timedCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
+
+	_ = orch.Run(timedCtx)
+	orch.Wait()
+
+	// The engineer should have been called with --mcp-config in args.
+	if len(engRunner.calls) > 0 {
+		call := engRunner.calls[0]
+		assert.Contains(t, call.args, "--mcp-config")
+	}
 }
 
 func TestConversationEngine_PausedAgent_SkipsResponse(t *testing.T) {

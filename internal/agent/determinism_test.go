@@ -99,7 +99,7 @@ func TestExecProcessRunner_Run_InvalidCommand_ReturnsError(t *testing.T) {
 	t.Parallel()
 
 	runner := agent.ExecProcessRunner{}
-	_, err := runner.Run(context.Background(), "", "nonexistent-binary-that-does-not-exist")
+	_, err := runner.Run(context.Background(), "", "", "nonexistent-binary-that-does-not-exist")
 
 	require.Error(t, err)
 }

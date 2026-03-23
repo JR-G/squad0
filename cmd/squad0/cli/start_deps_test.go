@@ -330,6 +330,16 @@ func TestResolveTargetRepo_WithRepo_ReturnsPath(t *testing.T) {
 	assert.NotEmpty(t, result)
 }
 
+func TestResolveMemoryBinaryPath_ReturnsStringOrEmpty(t *testing.T) {
+	t.Parallel()
+
+	// This just exercises the function — it returns empty string if
+	// the binary isn't next to the test binary, which is expected.
+	result := cli.ResolveMemoryBinaryPath()
+	// Result is either empty or a valid path; either way, no panic.
+	_ = result
+}
+
 func TestRunOrchestratorWithContext_CoordStoreFailure_ReturnsError(t *testing.T) {
 	t.Parallel()
 

@@ -59,6 +59,14 @@ func (engine *ConversationEngine) SetPauseChecker(checker PauseChecker) {
 	engine.pauseChecker = checker
 }
 
+// UpdateRoster replaces the roster so agents use each other's chosen
+// names. Called after introductions or whenever names change.
+func (engine *ConversationEngine) UpdateRoster(roster map[agent.Role]string) {
+	engine.mu.Lock()
+	defer engine.mu.Unlock()
+	engine.roster = roster
+}
+
 // OnMessage is called when any message arrives in a channel.
 // It decides if agents should respond and triggers lightweight sessions.
 func (engine *ConversationEngine) OnMessage(ctx context.Context, channel, sender, text string) {

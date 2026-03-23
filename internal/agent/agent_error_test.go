@@ -25,8 +25,8 @@ type dbBreakingRunner struct {
 	rawDB *sql.DB
 }
 
-func (runner *dbBreakingRunner) Run(ctx context.Context, stdin, name string, args ...string) ([]byte, error) {
-	output, err := runner.fakeProcessRunner.Run(ctx, stdin, name, args...)
+func (runner *dbBreakingRunner) Run(ctx context.Context, stdin, workingDir, name string, args ...string) ([]byte, error) {
+	output, err := runner.fakeProcessRunner.Run(ctx, stdin, workingDir, name, args...)
 
 	_, _ = runner.rawDB.Exec(`DROP TABLE episodes_fts`)
 
@@ -205,7 +205,7 @@ func TestExecProcessRunner_Run_SuccessfulCommand_ReturnsOutput(t *testing.T) {
 	t.Parallel()
 
 	runner := agent.ExecProcessRunner{}
-	output, err := runner.Run(context.Background(), "", "echo", "hello")
+	output, err := runner.Run(context.Background(), "", "", "echo", "hello")
 
 	require.NoError(t, err)
 	assert.Contains(t, string(output), "hello")
@@ -215,7 +215,7 @@ func TestExecProcessRunner_Run_FailingCommand_ReturnsOutputAndError(t *testing.T
 	t.Parallel()
 
 	runner := agent.ExecProcessRunner{}
-	output, err := runner.Run(context.Background(), "", "sh", "-c", "echo fail && exit 1")
+	output, err := runner.Run(context.Background(), "", "", "sh", "-c", "echo fail && exit 1")
 
 	require.Error(t, err)
 	assert.Contains(t, string(output), "fail")

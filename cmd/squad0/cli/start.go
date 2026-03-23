@@ -101,7 +101,7 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 
 	embedder := memory.NewEmbedder(cfg.Embeddings.OllamaURL, cfg.Embeddings.Model)
 	modelMap := buildModelMap(cfg)
-	agents, err := createAgents(agentDBs, embedder, modelMap, deps.PersonalityDir)
+	agents, err := createAgents(agentDBs, embedder, modelMap, deps.PersonalityDir, deps.DataDir)
 	if err != nil {
 		return fmt.Errorf("creating agents: %w", err)
 	}
@@ -143,11 +143,12 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 
 	orch := orchestrator.NewOrchestrator(
 		orchestrator.Config{
-			PollInterval:  time.Duration(cfg.Agents.CooldownSeconds) * time.Second,
-			MaxParallel:   cfg.Agents.MaxParallel,
-			CooldownAfter: time.Duration(cfg.Agents.CooldownSeconds) * time.Second,
-			WorkEnabled:   workEnabled,
-			TargetRepoDir: targetRepoDir,
+			PollInterval:     time.Duration(cfg.Agents.CooldownSeconds) * time.Second,
+			MaxParallel:      cfg.Agents.MaxParallel,
+			CooldownAfter:    time.Duration(cfg.Agents.CooldownSeconds) * time.Second,
+			WorkEnabled:      workEnabled,
+			TargetRepoDir:    targetRepoDir,
+			MemoryBinaryPath: resolveMemoryBinaryPath(),
 		},
 		agents, checkInStore, bot, assigner,
 	)
@@ -271,6 +272,7 @@ func createAgents(
 	embedder *memory.Embedder,
 	modelMap map[agent.Role]string,
 	personalityDir string,
+	dataDir string,
 ) (map[agent.Role]*agent.Agent, error) {
 	loader := agent.NewPersonalityLoader(personalityDir)
 	runner := agent.ExecProcessRunner{}
@@ -282,7 +284,10 @@ func createAgents(
 			return nil, fmt.Errorf("no database for role %s", role)
 		}
 
-		agents[role] = buildSingleAgent(role, agentDB, embedder, modelMap, loader, runner)
+		newAgent := buildSingleAgent(role, agentDB, embedder, modelMap, loader, runner)
+		dbPath := filepath.Join(dataDir, "agents", string(role)+".db")
+		newAgent.SetDBPath(dbPath)
+		agents[role] = newAgent
 	}
 
 	return agents, nil
@@ -306,7 +311,10 @@ func buildSingleAgent(
 	model := agent.ModelForRole(role, modelMap)
 	session := agent.NewSession(runner)
 
-	return agent.NewAgent(role, model, session, loader, retriever, agentDB, episodeStore, embedder)
+	newAgent := agent.NewAgent(role, model, session, loader, retriever, agentDB, episodeStore, embedder)
+	newAgent.SetMemoryStores(graphStore, factStore)
+
+	return newAgent
 }
 
 func createPersonaStore(agentDBs map[agent.Role]*memory.DB) *slack.PersonaStore {
@@ -383,6 +391,20 @@ func resolveTargetRepo(targetRepo string) string {
 
 	repoName := filepath.Base(targetRepo)
 	return filepath.Join(home, "repos", repoName)
+}
+
+func resolveMemoryBinaryPath() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+
+	candidate := filepath.Join(filepath.Dir(exe), "squad0-memory-mcp")
+	if _, statErr := os.Stat(candidate); statErr == nil {
+		return candidate
+	}
+
+	return ""
 }
 
 func parseCronToInterval(_ string) time.Duration {

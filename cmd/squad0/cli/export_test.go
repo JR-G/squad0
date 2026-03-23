@@ -53,8 +53,13 @@ func CreateAgents(
 	embedder *memory.Embedder,
 	modelMap map[agent.Role]string,
 	personalityDir string,
+	dataDir ...string,
 ) (map[agent.Role]*agent.Agent, error) {
-	return createAgents(agentDBs, embedder, modelMap, personalityDir)
+	dir := ""
+	if len(dataDir) > 0 {
+		dir = dataDir[0]
+	}
+	return createAgents(agentDBs, embedder, modelMap, personalityDir, dir)
 }
 
 // BuildSingleAgent exports buildSingleAgent for testing.
@@ -194,4 +199,9 @@ func ReadFromTUI(name string, input io.Reader) (string, error) {
 // ResolveTargetRepo exports resolveTargetRepo for testing.
 func ResolveTargetRepo(targetRepo string) string {
 	return resolveTargetRepo(targetRepo)
+}
+
+// ResolveMemoryBinaryPath exports resolveMemoryBinaryPath for testing.
+func ResolveMemoryBinaryPath() string {
+	return resolveMemoryBinaryPath()
 }

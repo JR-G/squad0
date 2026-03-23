@@ -19,8 +19,11 @@ type Agent struct {
 	loader        *PersonalityLoader
 	retriever     *memory.Retriever
 	agentDB       *memory.DB
+	graphStore    *memory.GraphStore
+	factStore     *memory.FactStore
 	episodeStore  *memory.EpisodeStore
 	embedder      *memory.Embedder
+	dbPath        string
 	MCPConfigPath string
 }
 
@@ -47,9 +50,48 @@ func NewAgent(
 	}
 }
 
+// SetMemoryStores sets the graph and fact stores for post-session
+// memory flush. Called after construction because these stores are
+// created externally.
+func (agent *Agent) SetMemoryStores(graphStore *memory.GraphStore, factStore *memory.FactStore) {
+	agent.graphStore = graphStore
+	agent.factStore = factStore
+}
+
+// SetDBPath stores the filesystem path to the agent's SQLite database
+// so the orchestrator can configure MCP servers per session.
+func (agent *Agent) SetDBPath(path string) {
+	agent.dbPath = path
+}
+
 // Role returns the agent's role.
 func (agent *Agent) Role() Role {
 	return agent.role
+}
+
+// DBPath returns the filesystem path to the agent's database.
+func (agent *Agent) DBPath() string {
+	return agent.dbPath
+}
+
+// GraphStore returns the agent's graph store for memory operations.
+func (agent *Agent) GraphStore() *memory.GraphStore {
+	return agent.graphStore
+}
+
+// FactStore returns the agent's fact store for memory operations.
+func (agent *Agent) FactStore() *memory.FactStore {
+	return agent.factStore
+}
+
+// EpisodeStore returns the agent's episode store.
+func (agent *Agent) EpisodeStore() *memory.EpisodeStore {
+	return agent.episodeStore
+}
+
+// Embedder returns the agent's text embedder.
+func (agent *Agent) Embedder() *memory.Embedder {
+	return agent.embedder
 }
 
 // ExecuteTask runs a complete agent session for the given task: assembles
