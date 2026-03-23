@@ -253,9 +253,12 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 		fmt.Sprintf("%s completed work on %s — please review", role, assignment.Ticket),
 		role)
 
-	_ = orch.checkIns.SetIdle(ctx, role)
+	pmAgent := orch.agents[agent.RolePM]
+	if pmAgent != nil {
+		go FlushSessionMemory(ctx, pmAgent, agentInstance, assignment.Ticket, result.Transcript)
+	}
 
-	_ = result
+	_ = orch.checkIns.SetIdle(ctx, role)
 }
 
 func (orch *Orchestrator) postAsRole(ctx context.Context, channel, text string, role agent.Role) {
