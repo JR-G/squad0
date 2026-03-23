@@ -10,6 +10,7 @@ import (
 
 	"github.com/JR-G/squad0/internal/agent"
 	"github.com/JR-G/squad0/internal/coordination"
+	"github.com/JR-G/squad0/internal/health"
 	slack "github.com/JR-G/squad0/internal/integrations/slack"
 )
 
@@ -22,6 +23,7 @@ type Orchestrator struct {
 	checkIns     *coordination.CheckInStore
 	bot          *slack.Bot
 	assigner     *Assigner
+	monitor      *health.Monitor
 	running      bool
 	conversation *ConversationEngine
 	wg           sync.WaitGroup
@@ -60,6 +62,12 @@ func NewOrchestrator(
 		assigner:       assigner,
 		sessionCancels: make(map[agent.Role]context.CancelFunc),
 	}
+}
+
+// SetHealthMonitor connects the health monitor for health-aware
+// assignment and session tracking.
+func (orch *Orchestrator) SetHealthMonitor(monitor *health.Monitor) {
+	orch.monitor = monitor
 }
 
 // Run starts the main orchestration loop. It blocks until the context
@@ -119,7 +127,7 @@ func (orch *Orchestrator) tick(ctx context.Context) {
 
 	log.Printf("tick: %d idle agents, roles: %v", len(idleRoles), idleRoles)
 
-	idleEngineers := filterEngineers(idleRoles)
+	idleEngineers := orch.filterHealthyEngineers(idleRoles)
 	if len(idleEngineers) == 0 {
 		log.Println("tick: no idle engineers")
 		return
@@ -199,6 +207,8 @@ func (orch *Orchestrator) startWork(ctx context.Context, assignment Assignment) 
 	sessionCtx, cancel := context.WithCancel(ctx)
 	orch.registerSessionCancel(assignment.Role, cancel)
 
+	go MoveTicketState(ctx, orch.agents[agent.RolePM], assignment.Ticket, "In Progress")
+
 	orch.wg.Add(1)
 	go func() {
 		defer orch.wg.Done()
@@ -214,6 +224,8 @@ func (orch *Orchestrator) Wait() {
 
 func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.Agent, assignment Assignment) {
 	role := agentInstance.Role()
+
+	orch.recordSessionStart(role)
 
 	orch.postAsRole(ctx, "engineering",
 		fmt.Sprintf("Picking up %s: %s", assignment.Ticket, assignment.Description),
@@ -238,12 +250,15 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 	result, err := agentInstance.ExecuteTask(ctx, prompt, nil, workSession.Dir())
 	if err != nil {
 		log.Printf("session error for %s on %s: %v", role, assignment.Ticket, err)
+		orch.recordSessionEnd(role, assignment.Ticket, false)
 		orch.postAsRole(ctx, "engineering",
 			fmt.Sprintf("Hit an issue with %s — will need to pick this up again", assignment.Ticket),
 			role)
 		_ = orch.checkIns.SetIdle(ctx, role)
 		return
 	}
+
+	orch.recordSessionEnd(role, assignment.Ticket, true)
 
 	orch.postAsRole(ctx, "engineering",
 		fmt.Sprintf("Finished %s. PR should be up for review.", assignment.Ticket),
@@ -256,6 +271,12 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 	pmAgent := orch.agents[agent.RolePM]
 	if pmAgent != nil {
 		go FlushSessionMemory(ctx, pmAgent, agentInstance, assignment.Ticket, result.Transcript)
+	}
+
+	prURL := ExtractPRURL(result.Transcript)
+	if prURL != "" {
+		go MoveTicketState(ctx, orch.agents[agent.RolePM], assignment.Ticket, "In Review")
+		orch.startReview(ctx, prURL, assignment.Ticket)
 	}
 
 	_ = orch.checkIns.SetIdle(ctx, role)
@@ -306,6 +327,46 @@ func (orch *Orchestrator) clearSessionCancel(role agent.Role) {
 	orch.cancelsMu.Lock()
 	defer orch.cancelsMu.Unlock()
 	delete(orch.sessionCancels, role)
+}
+
+// filterHealthyEngineers returns engineers that are not in a failing
+// health state.
+func (orch *Orchestrator) filterHealthyEngineers(roles []agent.Role) []agent.Role {
+	engineers := filterEngineers(roles)
+
+	if orch.monitor == nil {
+		return engineers
+	}
+
+	healthy := make([]agent.Role, 0, len(engineers))
+	for _, role := range engineers {
+		agentHealth, err := orch.monitor.GetHealth(role)
+		if err != nil {
+			healthy = append(healthy, role)
+			continue
+		}
+		if agentHealth.State == health.StateFailing {
+			log.Printf("tick: skipping %s — health state is failing", role)
+			continue
+		}
+		healthy = append(healthy, role)
+	}
+
+	return healthy
+}
+
+func (orch *Orchestrator) recordSessionStart(role agent.Role) {
+	if orch.monitor == nil {
+		return
+	}
+	orch.monitor.RecordSessionStart(role)
+}
+
+func (orch *Orchestrator) recordSessionEnd(role agent.Role, ticket string, success bool) {
+	if orch.monitor == nil {
+		return
+	}
+	orch.monitor.RecordSessionEnd(role, ticket, success)
 }
 
 // writeMCPConfig writes the .mcp.json to the session working directory

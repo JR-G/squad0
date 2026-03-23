@@ -93,6 +93,16 @@ func extractLearnings(ctx context.Context, extractor *agent.Agent, ticket, trans
 	return &learnings
 }
 
+// TruncateTranscriptForTest exports truncateTranscript for testing.
+func TruncateTranscriptForTest(text string, maxLen int) string {
+	return truncateTranscript(text, maxLen)
+}
+
+// ExtractJSONObjectForTest exports extractJSONObject for testing.
+func ExtractJSONObjectForTest(text string) string {
+	return extractJSONObject(text)
+}
+
 func truncateTranscript(text string, maxLen int) string {
 	if len(text) <= maxLen {
 		return text

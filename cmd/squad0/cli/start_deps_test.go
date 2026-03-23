@@ -333,11 +333,35 @@ func TestResolveTargetRepo_WithRepo_ReturnsPath(t *testing.T) {
 func TestResolveMemoryBinaryPath_ReturnsStringOrEmpty(t *testing.T) {
 	t.Parallel()
 
-	// This just exercises the function — it returns empty string if
-	// the binary isn't next to the test binary, which is expected.
-	result := cli.ResolveMemoryBinaryPath()
-	// Result is either empty or a valid path; either way, no panic.
-	_ = result
+	assert.NotPanics(t, func() {
+		_ = cli.ResolveMemoryBinaryPath()
+	})
+}
+
+func TestCreateAgents_SetsDBPath(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+
+	_, agentDBs, err := cli.OpenAllDatabases(ctx, tmpDir)
+	require.NoError(t, err)
+	defer func() {
+		for _, db := range agentDBs {
+			_ = db.Close()
+		}
+	}()
+
+	embedder := memory.NewEmbedder("http://localhost:11434", "nomic-embed-text")
+	modelMap := cli.BuildModelMap(config.DefaultConfig())
+
+	agents, err := cli.CreateAgents(agentDBs, embedder, modelMap, t.TempDir(), tmpDir)
+	require.NoError(t, err)
+
+	for role, agentInstance := range agents {
+		assert.Contains(t, agentInstance.DBPath(), string(role),
+			"DB path should include role name")
+	}
 }
 
 func TestRunOrchestratorWithContext_CoordStoreFailure_ReturnsError(t *testing.T) {

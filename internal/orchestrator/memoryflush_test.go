@@ -103,6 +103,44 @@ func TestFlushSessionMemory_NilStores_SkipsSafely(t *testing.T) {
 	})
 }
 
+func TestExtractJSONObject_FindsObject(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"clean JSON", `{"facts":[]}`, `{"facts":[]}`},
+		{"wrapped in text", `Here is the result: {"facts":[]} done`, `{"facts":[]}`},
+		{"no JSON", "no json here", ""},
+		{"only open brace", "{ incomplete", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			result := orchestrator.ExtractJSONObjectForTest(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestTruncateTranscript_ShortText_Unchanged(t *testing.T) {
+	t.Parallel()
+
+	result := orchestrator.TruncateTranscriptForTest("short", 100)
+	assert.Equal(t, "short", result)
+}
+
+func TestTruncateTranscript_LongText_Truncated(t *testing.T) {
+	t.Parallel()
+
+	long := string(make([]byte, 200))
+	result := orchestrator.TruncateTranscriptForTest(long, 50)
+	assert.Len(t, result, 50)
+}
+
 func TestFlushSessionMemory_EmptyTranscript_ExtractsNothing(t *testing.T) {
 	t.Parallel()
 

@@ -153,6 +153,8 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 		agents, checkInStore, bot, assigner,
 	)
 
+	orch.SetHealthMonitor(monitor)
+
 	if !workEnabled {
 		_, _ = fmt.Fprint(out, tui.StepWarn("Linear not configured — agents will chat but not work"))
 	}
