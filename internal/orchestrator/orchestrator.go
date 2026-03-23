@@ -24,6 +24,8 @@ type Orchestrator struct {
 	running      bool
 	conversation *ConversationEngine
 	wg           sync.WaitGroup
+	assigning    bool
+	assigningMu  sync.Mutex
 }
 
 // Config holds orchestrator-level settings.
@@ -94,6 +96,8 @@ func (orch *Orchestrator) initialiseCheckIns(ctx context.Context) error {
 }
 
 func (orch *Orchestrator) tick(ctx context.Context) {
+	log.Printf("tick: work_enabled=%v", orch.cfg.WorkEnabled)
+
 	if !orch.cfg.WorkEnabled {
 		orch.breakSilence(ctx)
 		return
@@ -105,26 +109,49 @@ func (orch *Orchestrator) tick(ctx context.Context) {
 		return
 	}
 
+	log.Printf("tick: %d idle agents, roles: %v", len(idleRoles), idleRoles)
+
 	idleEngineers := filterEngineers(idleRoles)
 	if len(idleEngineers) == 0 {
+		log.Println("tick: no idle engineers")
 		return
 	}
 
-	assignments, err := orch.assigner.RequestAssignments(ctx, idleEngineers)
-	if err != nil {
-		log.Printf("error requesting assignments from PM: %v", err)
-		orch.breakSilence(ctx)
+	orch.assigningMu.Lock()
+	if orch.assigning {
+		orch.assigningMu.Unlock()
+		log.Println("tick: assignment already in progress, skipping")
 		return
 	}
+	orch.assigning = true
+	orch.assigningMu.Unlock()
 
-	if len(assignments) == 0 {
-		orch.breakSilence(ctx)
-		return
-	}
+	log.Printf("tick: requesting assignments for %v", idleEngineers)
 
-	for _, assignment := range assignments {
-		orch.startWork(ctx, assignment)
-	}
+	go func() {
+		defer func() {
+			orch.assigningMu.Lock()
+			orch.assigning = false
+			orch.assigningMu.Unlock()
+		}()
+
+		assignments, err := orch.assigner.RequestAssignments(ctx, idleEngineers)
+		if err != nil {
+			log.Printf("tick: assignment failed: %v", err)
+			return
+		}
+
+		log.Printf("tick: got %d assignments", len(assignments))
+
+		if len(assignments) == 0 {
+			return
+		}
+
+		for _, assignment := range assignments {
+			log.Printf("tick: assigning %s to %s", assignment.Ticket, assignment.Role)
+			orch.startWork(ctx, assignment)
+		}
+	}()
 }
 
 // SetConversationEngine connects the conversation engine to the orchestrator.
@@ -218,6 +245,10 @@ func (orch *Orchestrator) postAsRole(ctx context.Context, channel, text string, 
 		return
 	}
 	_ = orch.bot.PostAsRole(ctx, channel, text, role)
+
+	if orch.conversation != nil {
+		go orch.conversation.OnMessage(ctx, channel, string(role), text)
+	}
 }
 
 func filterEngineers(roles []agent.Role) []agent.Role {

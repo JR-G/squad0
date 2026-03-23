@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/JR-G/squad0/internal/agent"
@@ -39,6 +40,8 @@ func (assigner *Assigner) RequestAssignments(ctx context.Context, idleEngineers 
 		return nil, fmt.Errorf("PM assignment session failed: %w", err)
 	}
 
+	log.Printf("PM said: %q", result.Transcript)
+
 	assignments, err := parseAssignments(result.Transcript, idleEngineers)
 	if err != nil {
 		return nil, fmt.Errorf("parsing PM assignments: %w", err)
@@ -52,8 +55,10 @@ func buildAssignmentPrompt(idleEngineers []agent.Role, teamKey string) string {
 
 	builder.WriteString("You are the PM. Your job is to check the Linear board and assign work.\n\n")
 
-	fmt.Fprintf(&builder, "Use the Linear MCP tools to find issues in the %s team that are ready to be worked on.\n", teamKey)
-	builder.WriteString("Look for issues with status 'Todo' or 'Ready' or 'Backlog' that haven't been assigned.\n\n")
+	builder.WriteString("You have a Linear MCP server available (it may show as 'pending' initially — it will connect shortly). ")
+	fmt.Fprintf(&builder, "Use the Linear MCP tools (not the API) to find issues in the %s team.\n", teamKey)
+	builder.WriteString("Look for issues with status 'Backlog' or 'Todo' that are unassigned and ready to be worked on.\n")
+	builder.WriteString("Do NOT try to use the Linear API directly or look for API keys. Use the MCP tools.\n\n")
 
 	builder.WriteString("Available engineers:\n")
 	for _, role := range idleEngineers {

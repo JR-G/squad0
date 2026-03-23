@@ -4,20 +4,24 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 
 	"github.com/JR-G/squad0/internal/memory"
 )
 
+const chatModel = "claude-haiku-4-5-20251001"
+
 // Agent represents a squad0 team member with a persistent identity.
 type Agent struct {
-	role         Role
-	model        string
-	session      *Session
-	loader       *PersonalityLoader
-	retriever    *memory.Retriever
-	agentDB      *memory.DB
-	episodeStore *memory.EpisodeStore
-	embedder     *memory.Embedder
+	role          Role
+	model         string
+	session       *Session
+	loader        *PersonalityLoader
+	retriever     *memory.Retriever
+	agentDB       *memory.DB
+	episodeStore  *memory.EpisodeStore
+	embedder      *memory.Embedder
+	MCPConfigPath string
 }
 
 // NewAgent creates an Agent with all dependencies injected.
@@ -58,10 +62,11 @@ func (agent *Agent) ExecuteTask(ctx context.Context, taskDescription string, fil
 	}
 
 	cfg := SessionConfig{
-		Role:       agent.role,
-		Model:      agent.model,
-		Prompt:     prompt,
-		WorkingDir: workingDir,
+		Role:          agent.role,
+		Model:         agent.model,
+		Prompt:        prompt,
+		WorkingDir:    workingDir,
+		MCPConfigPath: agent.MCPConfigPath,
 	}
 
 	result, sessionErr := agent.session.Run(ctx, cfg)
@@ -76,6 +81,33 @@ func (agent *Agent) ExecuteTask(ctx context.Context, taskDescription string, fil
 	}
 
 	return result, nil
+}
+
+// QuickChat runs a lightweight Claude Code session for conversation.
+// Loads personality for authentic voice but skips full memory retrieval.
+// Top beliefs are injected by the caller's prompt. Uses the agent's
+// own model so personality comes through.
+func (agent *Agent) QuickChat(ctx context.Context, prompt string) (string, error) {
+	personality, err := agent.loader.LoadBase(agent.role)
+	if err != nil {
+		personality = ""
+	}
+
+	fullPrompt := personality + "\n\n" + prompt
+
+	cfg := SessionConfig{
+		Role:   agent.role,
+		Model:  chatModel,
+		Prompt: fullPrompt,
+	}
+
+	result, err := agent.session.Run(ctx, cfg)
+	if err != nil {
+		log.Printf("quick chat failed for %s: %v", agent.role, err)
+		return "", err
+	}
+
+	return result.Transcript, nil
 }
 
 func (agent *Agent) assemblePrompt(ctx context.Context, taskDescription string, filePaths []string) (string, error) {

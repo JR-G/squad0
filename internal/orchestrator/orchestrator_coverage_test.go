@@ -237,6 +237,13 @@ func TestOrchestrator_Tick_WorkDisabled_BreaksSilence(t *testing.T) {
 		agents, checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
 
+	memDB, memErr := openMemoryDB(context.Background())
+	require.NoError(t, memErr)
+	t.Cleanup(func() { _ = memDB.Close() })
+	factStores := map[agent.Role]*memory.FactStore{agent.RolePM: memory.NewFactStore(memDB)}
+	conversation := orchestrator.NewConversationEngine(agents, factStores, nil)
+	orch.SetConversationEngine(conversation)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 

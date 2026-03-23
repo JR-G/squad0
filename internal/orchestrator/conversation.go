@@ -65,14 +65,19 @@ func (engine *ConversationEngine) OnMessage(ctx context.Context, channel, sender
 	engine.mu.Unlock()
 
 	respondersCount := decideResponderCount(roundCount)
+	log.Printf("chat: channel=%s sender=%s round=%d responders=%d", channel, sender, roundCount, respondersCount)
+
 	if respondersCount == 0 {
 		return
 	}
 
 	candidates := engine.pickCandidates(sender, respondersCount)
+	log.Printf("chat: picked %v to respond", candidates)
 
 	for _, role := range candidates {
+		log.Printf("chat: %s responding...", role)
 		engine.tryRespond(ctx, channel, role, recentCopy)
+		log.Printf("chat: %s finished", role)
 	}
 }
 
@@ -153,24 +158,28 @@ func (engine *ConversationEngine) tryRespond(ctx context.Context, channel string
 
 	prompt := buildChatPrompt(role, channel, recentLines, engine.topBeliefs(ctx, role))
 
-	result, err := agentInstance.ExecuteTask(ctx, prompt, nil, "")
+	transcript, err := agentInstance.QuickChat(ctx, prompt)
 	if err != nil {
 		log.Printf("chat failed for %s: %v", role, err)
 		return
 	}
 
-	text := strings.TrimSpace(result.Transcript)
+	text := strings.TrimSpace(transcript)
+	log.Printf("chat: %s said: %q", role, text)
+
 	if text == "" || strings.EqualFold(text, "PASS") {
+		log.Printf("chat: %s passed or empty", role)
 		return
 	}
 
 	if engine.bot == nil {
+		log.Printf("chat: bot is nil, can't post")
 		return
 	}
 
 	err = engine.bot.PostAsRole(ctx, channel, text, role)
 	if err != nil {
-		log.Printf("failed to post for %s in %s: %v", role, channel, err)
+		log.Printf("chat: failed to post for %s in %s: %v", role, channel, err)
 		return
 	}
 
@@ -245,7 +254,7 @@ func buildChatPrompt(role agent.Role, channel string, recentLines, beliefs []str
 		fmt.Fprintf(&builder, "> %s\n", line)
 	}
 
-	builder.WriteString("\nRespond naturally in 1-2 sentences. If you have nothing meaningful to add, respond with exactly: PASS")
+	builder.WriteString("\nYou're part of this team. Respond naturally — react to what's been said, share your perspective, ask a question, or build on the conversation. Be yourself. Keep it to 1-2 sentences. Only respond with PASS if the conversation has clearly ended and there's genuinely nothing left to say.")
 
 	return builder.String()
 }

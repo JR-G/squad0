@@ -57,6 +57,7 @@ type SessionConfig struct {
 	Prompt          string
 	WorkingDir      string
 	MaxTurnDuration int
+	MCPConfigPath   string
 }
 
 // Session manages a single Claude Code agent session.
@@ -104,6 +105,10 @@ func buildArgs(cfg SessionConfig) []string {
 
 	if cfg.MaxTurnDuration > 0 {
 		args = append(args, "--max-turns", fmt.Sprintf("%d", cfg.MaxTurnDuration))
+	}
+
+	if cfg.MCPConfigPath != "" {
+		args = append(args, "--mcp-config", cfg.MCPConfigPath)
 	}
 
 	return args

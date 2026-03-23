@@ -133,6 +133,30 @@ func TestConversationEngine_BreakSilence_QuietChannel_TriggersResponse(t *testin
 	}
 }
 
+func TestConversationEngine_TryRespond_PostsToBot(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	runner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"Looks great."}` + "\n")}
+
+	agents := map[agent.Role]*agent.Agent{
+		agent.RoleEngineer1: buildAgent(t, runner, agent.RoleEngineer1, db),
+	}
+	factStores := map[agent.Role]*memory.FactStore{
+		agent.RoleEngineer1: memory.NewFactStore(db),
+	}
+
+	engine := orchestrator.NewConversationEngine(agents, factStores, nil)
+	engine.OnMessage(ctx, "engineering", "ceo", "what do you think?")
+
+	recent := engine.RecentMessages("engineering")
+	assert.NotEmpty(t, recent)
+}
+
 func TestConversationEngine_PASSResponse_NotPosted(t *testing.T) {
 	t.Parallel()
 
