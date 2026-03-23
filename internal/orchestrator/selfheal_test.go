@@ -17,6 +17,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestSetHealthMonitor_SetsMonitor(t *testing.T) {
+	t.Parallel()
+
+	orch, _ := setupLifecycleOrch(t)
+	monitor := health.NewMonitor(
+		[]agent.Role{agent.RolePM},
+		health.MonitorConfig{MaxConsecutiveErrors: 3},
+	)
+
+	assert.NotPanics(t, func() {
+		orch.SetHealthMonitor(monitor)
+	})
+}
+
 func TestSetHealthMonitor_FiltersFailingAgents(t *testing.T) {
 	t.Parallel()
 
