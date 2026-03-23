@@ -38,7 +38,7 @@ func newConversationEngineWithBot(
 	t.Cleanup(server.Close)
 
 	bot := newTestSlackBot(server.URL)
-	return orchestrator.NewConversationEngine(agents, factStores, bot)
+	return orchestrator.NewConversationEngine(agents, factStores, bot, nil)
 }
 
 func TestConversationEngine_TryRespond_WithBot_PostsMessage(t *testing.T) {
@@ -101,7 +101,7 @@ func TestConversationEngine_TryRespond_SessionError_DoesNotPanic(t *testing.T) {
 	t.Cleanup(server.Close)
 	bot := newTestSlackBot(server.URL)
 
-	engine := orchestrator.NewConversationEngine(agents, factStores, bot)
+	engine := orchestrator.NewConversationEngine(agents, factStores, bot, nil)
 	assert.NotPanics(t, func() {
 		engine.OnMessage(ctx, "engineering", "ceo", "hello?")
 	})
@@ -134,7 +134,7 @@ func TestConversationEngine_TopBeliefs_WithBeliefs_IncludedInPrompt(t *testing.T
 		factStores[role] = factStore
 	}
 
-	engine := orchestrator.NewConversationEngine(agents, factStores, nil)
+	engine := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
 
 	// Trigger conversation where beliefs should be loaded
 	engine.OnMessage(ctx, "engineering", "ceo", "what do you know?")
@@ -161,7 +161,7 @@ func TestConversationEngine_TopBeliefs_MissingRole_ReturnsNil(t *testing.T) {
 	}
 	factStores := map[agent.Role]*memory.FactStore{}
 
-	engine := orchestrator.NewConversationEngine(agents, factStores, nil)
+	engine := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
 	engine.OnMessage(ctx, "engineering", "ceo", "hello")
 
 	// Should not panic — topBeliefs returns nil for unknown role
@@ -189,7 +189,7 @@ func TestConversationEngine_PickCandidates_ExcludesSenderAndReviewer(t *testing.
 		factStores[role] = memory.NewFactStore(db)
 	}
 
-	engine := orchestrator.NewConversationEngine(agents, factStores, nil)
+	engine := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
 
 	// Send message as engineer-1; verify it ran without panic
 	// (pickCandidates excludes sender and reviewer)
@@ -222,7 +222,7 @@ func TestConversationEngine_BreakSilence_AfterLongSilence_TriggersResponse(t *te
 	t.Cleanup(server.Close)
 	bot := newTestSlackBot(server.URL)
 
-	engine := orchestrator.NewConversationEngine(agents, factStores, bot)
+	engine := orchestrator.NewConversationEngine(agents, factStores, bot, nil)
 
 	// BreakSilence on a fresh engine (no lastMessage set beyond initial)
 	// Since engineering channel is fresh with time.Now(), this should skip.
@@ -272,7 +272,7 @@ func TestRoleDescription_AllRoles_ReturnDescriptions(t *testing.T) {
 		factStores[role] = memory.NewFactStore(db)
 	}
 
-	engine := orchestrator.NewConversationEngine(agents, factStores, nil)
+	engine := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
 
 	// Send many messages to exercise all roles as responders.
 	// pickCandidates excludes sender and reviewer, so we use "ceo" as sender.
@@ -325,7 +325,7 @@ func TestBuildChatPrompt_EmptyRecentLines_ShowsQuiet(t *testing.T) {
 		agent.RoleEngineer1: memory.NewFactStore(db),
 	}
 
-	engine := orchestrator.NewConversationEngine(agents, factStores, nil)
+	engine := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
 	_ = capturedPrompt
 
 	// BreakSilence with no recent messages creates a prompt with "(quiet)"
@@ -363,7 +363,7 @@ func TestConversationEngine_TryRespond_BotPostError_DoesNotPanic(t *testing.T) {
 	t.Cleanup(errServer.Close)
 
 	bot := newTestSlackBot(errServer.URL)
-	engine := orchestrator.NewConversationEngine(agents, factStores, bot)
+	engine := orchestrator.NewConversationEngine(agents, factStores, bot, nil)
 
 	assert.NotPanics(t, func() {
 		engine.OnMessage(ctx, "engineering", "ceo", "thoughts?")

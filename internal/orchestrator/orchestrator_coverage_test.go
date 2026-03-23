@@ -41,7 +41,7 @@ func TestSetConversationEngine_SetsEngine(t *testing.T) {
 		agent.RoleEngineer1: memory.NewFactStore(db),
 	}
 
-	engine := orchestrator.NewConversationEngine(agents, factStores, nil)
+	engine := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
 	orch.SetConversationEngine(engine)
 
 	// Verify it was set by running orchestrator which calls breakSilence
@@ -112,7 +112,7 @@ func TestBreakSilence_WithConversationEngine_CallsBreakSilence(t *testing.T) {
 		factStores[role] = memory.NewFactStore(db)
 	}
 
-	engine := orchestrator.NewConversationEngine(convAgents, factStores, nil)
+	engine := orchestrator.NewConversationEngine(convAgents, factStores, nil, nil)
 	orch.SetConversationEngine(engine)
 
 	timedCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
@@ -155,7 +155,7 @@ func TestBreakSilence_EmptyAssignments_CallsBreakSilence(t *testing.T) {
 		agent.RoleEngineer1: memory.NewFactStore(db),
 	}
 
-	engine := orchestrator.NewConversationEngine(convAgents, factStores, nil)
+	engine := orchestrator.NewConversationEngine(convAgents, factStores, nil, nil)
 	orch.SetConversationEngine(engine)
 
 	timedCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
@@ -241,7 +241,7 @@ func TestOrchestrator_Tick_WorkDisabled_BreaksSilence(t *testing.T) {
 	require.NoError(t, memErr)
 	t.Cleanup(func() { _ = memDB.Close() })
 	factStores := map[agent.Role]*memory.FactStore{agent.RolePM: memory.NewFactStore(memDB)}
-	conversation := orchestrator.NewConversationEngine(agents, factStores, nil)
+	conversation := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
 	orch.SetConversationEngine(conversation)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)

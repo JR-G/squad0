@@ -35,7 +35,7 @@ func NewAssigner(pmAgent *agent.Agent, teamKey string) *Assigner {
 func (assigner *Assigner) RequestAssignments(ctx context.Context, idleEngineers []agent.Role) ([]Assignment, error) {
 	prompt := buildAssignmentPrompt(idleEngineers, assigner.teamKey)
 
-	result, err := assigner.pmAgent.ExecuteTask(ctx, prompt, nil, "")
+	result, err := assigner.pmAgent.DirectSession(ctx, prompt)
 	if err != nil {
 		return nil, fmt.Errorf("PM assignment session failed: %w", err)
 	}
@@ -55,10 +55,12 @@ func buildAssignmentPrompt(idleEngineers []agent.Role, teamKey string) string {
 
 	builder.WriteString("You are the PM. Your job is to check the Linear board and assign work.\n\n")
 
-	builder.WriteString("You have a Linear MCP server available (it may show as 'pending' initially — it will connect shortly). ")
-	fmt.Fprintf(&builder, "Use the Linear MCP tools (not the API) to find issues in the %s team.\n", teamKey)
-	builder.WriteString("Look for issues with status 'Backlog' or 'Todo' that are unassigned and ready to be worked on.\n")
-	builder.WriteString("Do NOT try to use the Linear API directly or look for API keys. Use the MCP tools.\n\n")
+	builder.WriteString("Step 1: Get the Linear API key from Keychain by running:\n")
+	builder.WriteString("  security find-generic-password -s squad0 -a LINEAR_API_KEY -w\n\n")
+
+	builder.WriteString("Step 2: Query Linear for available tickets by running:\n")
+	fmt.Fprintf(&builder, "  curl -s -X POST https://api.linear.app/graphql -H \"Authorization: $LINEAR_API_KEY\" -H \"Content-Type: application/json\" -d '{\"query\":\"{ team(id:\\\"%s\\\") { issues(filter:{state:{type:{in:[\\\"unstarted\\\",\\\"backlog\\\"]}}}) { nodes { identifier title state { name } } } } }\"}'", teamKey)
+	builder.WriteString("\n\nStep 3: Pick tickets from the results and assign them to engineers.\n\n")
 
 	builder.WriteString("Available engineers:\n")
 	for _, role := range idleEngineers {

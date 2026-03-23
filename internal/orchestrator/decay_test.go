@@ -28,7 +28,7 @@ func TestConversationEngine_AgentMessages_IncreaseRoundCount(t *testing.T) {
 		factStores[role] = memory.NewFactStore(db)
 	}
 
-	engine := orchestrator.NewConversationEngine(agents, factStores, nil)
+	engine := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
 
 	// Simulate agent-only conversation (no human reset)
 	for range 15 {
@@ -56,7 +56,7 @@ func TestConversationEngine_HumanMessage_ResetsDecay(t *testing.T) {
 		factStores[role] = memory.NewFactStore(db)
 	}
 
-	engine := orchestrator.NewConversationEngine(agents, factStores, nil)
+	engine := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
 
 	// Agent messages build up rounds
 	for range 10 {

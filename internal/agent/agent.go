@@ -110,6 +110,20 @@ func (agent *Agent) QuickChat(ctx context.Context, prompt string) (string, error
 	return result.Transcript, nil
 }
 
+// DirectSession runs a clean Claude Code session with the agent's own
+// model. No personality wrapping, no memory retrieval. Used for
+// structured tasks like querying Linear where the prompt should not
+// be buried in other context.
+func (agent *Agent) DirectSession(ctx context.Context, prompt string) (SessionResult, error) {
+	cfg := SessionConfig{
+		Role:   agent.role,
+		Model:  agent.model,
+		Prompt: prompt,
+	}
+
+	return agent.session.Run(ctx, cfg)
+}
+
 func (agent *Agent) assemblePrompt(ctx context.Context, taskDescription string, filePaths []string) (string, error) {
 	personality, err := agent.loader.LoadBase(agent.role)
 	if err != nil {

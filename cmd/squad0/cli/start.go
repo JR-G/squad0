@@ -161,9 +161,14 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 		agentFactStores[role] = memory.NewFactStore(db)
 	}
 
-	conversation := orchestrator.NewConversationEngine(agents, agentFactStores, bot)
-	orch.SetConversationEngine(conversation)
 	personas := personaStore.LoadAllPersonas(ctx)
+	roster := make(map[agent.Role]string, len(personas))
+	for role, persona := range personas {
+		roster[role] = persona.Name
+	}
+
+	conversation := orchestrator.NewConversationEngine(agents, agentFactStores, bot, roster)
+	orch.SetConversationEngine(conversation)
 	commandHandler := newCommandDispatcher(orch, bot, conversation, personas)
 	bot.OnMessage(commandHandler.handleMessage)
 

@@ -43,7 +43,7 @@ func TestConversationEngine_TopBeliefs_ClosedDB_ReturnsNil(t *testing.T) {
 		factStores[role] = factStore // closed DB factStore
 	}
 
-	engine := orchestrator.NewConversationEngine(agents, factStores, nil)
+	engine := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
 
 	// topBeliefs should handle the error gracefully and return nil
 	assert.NotPanics(t, func() {
@@ -71,7 +71,7 @@ func TestConversationEngine_TryRespond_MissingAgent_Skips(t *testing.T) {
 		agent.RoleEngineer1: memory.NewFactStore(db),
 	}
 
-	engine := orchestrator.NewConversationEngine(agents, factStores, nil)
+	engine := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
 
 	// pickCandidates will return roles not in agents map -> tryRespond returns early
 	assert.NotPanics(t, func() {
@@ -103,7 +103,7 @@ func TestConversationEngine_TryRespond_WithBotAndSuccessfulPost(t *testing.T) {
 	t.Cleanup(server.Close)
 	bot := newTestSlackBot(server.URL)
 
-	engine := orchestrator.NewConversationEngine(agents, factStores, bot)
+	engine := orchestrator.NewConversationEngine(agents, factStores, bot, nil)
 
 	// This exercises the full tryRespond path: agent responds, bot posts,
 	// and the response is appended to recentLines
@@ -193,6 +193,58 @@ func TestExtractFirstWord_WhitespaceOnly_ReturnsEmpty(t *testing.T) {
 	assert.Empty(t, name)
 }
 
+func TestBuildChatPrompt_WithRoster_IncludesTeamNames(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	runner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"Hey Ada!"}` + "\n"),
+	}
+
+	allRoles := agent.AllRoles()
+	agents := make(map[agent.Role]*agent.Agent, len(allRoles))
+	factStores := make(map[agent.Role]*memory.FactStore, len(allRoles))
+	for _, role := range allRoles {
+		agents[role] = buildAgent(t, runner, role, db)
+		factStores[role] = memory.NewFactStore(db)
+	}
+
+	roster := map[agent.Role]string{
+		agent.RolePM:        "Ada",
+		agent.RoleTechLead:  "Kai",
+		agent.RoleEngineer1: "Spark",
+		agent.RoleEngineer2: "Nova",
+		agent.RoleEngineer3: "Flux",
+		agent.RoleReviewer:  "Atlas",
+		agent.RoleDesigner:  "Iris",
+	}
+
+	engine := orchestrator.NewConversationEngine(agents, factStores, nil, roster)
+	engine.OnMessage(ctx, "engineering", "ceo", "morning team")
+
+	// Check that at least one prompt includes roster names and role titles
+	foundRoster := false
+	for _, call := range runner.calls {
+		if strings.Contains(call.stdin, "Your team:") {
+			foundRoster = true
+			// roleTitle is exercised via writeRoster — check for role titles
+			assert.True(t,
+				strings.Contains(call.stdin, "PM") ||
+					strings.Contains(call.stdin, "Tech Lead") ||
+					strings.Contains(call.stdin, "Engineer") ||
+					strings.Contains(call.stdin, "Designer"),
+				"expected roster to contain role titles",
+			)
+			break
+		}
+	}
+	assert.True(t, foundRoster, "expected at least one prompt to include roster")
+}
+
 func TestBuildChatPrompt_WithBeliefs_IncludesBeliefText(t *testing.T) {
 	t.Parallel()
 
@@ -217,7 +269,7 @@ func TestBuildChatPrompt_WithBeliefs_IncludesBeliefText(t *testing.T) {
 		factStores[role] = factStore
 	}
 
-	engine := orchestrator.NewConversationEngine(agents, factStores, nil)
+	engine := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
 	engine.OnMessage(ctx, "engineering", "ceo", "how should we approach testing?")
 
 	// Check that the prompt includes belief text

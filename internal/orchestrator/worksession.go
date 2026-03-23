@@ -50,6 +50,8 @@ func NewWorkSession(ctx context.Context, repoDir string, role agent.Role, ticket
 	branch := fmt.Sprintf("feat/%s", strings.ToLower(ticket))
 	worktreeDir := fmt.Sprintf("%s/.worktrees/%s", repoDir, role)
 
+	cleanupStaleWorktree(ctx, repoDir, worktreeDir, branch)
+
 	output, err := gitCommand(ctx, repoDir, "worktree", "add", "-b", branch, worktreeDir)
 	if err != nil {
 		return nil, fmt.Errorf("creating worktree: %s: %w", string(output), err)
@@ -81,6 +83,12 @@ func logWorktreeRemoval(ctx context.Context, repoDir, worktreeDir string) {
 		return
 	}
 	log.Printf("cleaned up worktree %s", worktreeDir)
+}
+
+func cleanupStaleWorktree(ctx context.Context, repoDir, worktreeDir, branch string) {
+	_, _ = gitCommand(ctx, repoDir, "worktree", "remove", "--force", worktreeDir)
+	_, _ = gitCommand(ctx, repoDir, "branch", "-D", branch)
+	_, _ = gitCommand(ctx, repoDir, "worktree", "prune")
 }
 
 func gitCommand(ctx context.Context, dir string, args ...string) ([]byte, error) {

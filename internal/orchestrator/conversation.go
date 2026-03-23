@@ -22,6 +22,7 @@ type ConversationEngine struct {
 	bot        *slack.Bot
 	mu         sync.Mutex
 	channels   map[string]*channelState
+	roster     map[agent.Role]string
 }
 
 type channelState struct {
@@ -35,12 +36,14 @@ func NewConversationEngine(
 	agents map[agent.Role]*agent.Agent,
 	factStores map[agent.Role]*memory.FactStore,
 	bot *slack.Bot,
+	roster map[agent.Role]string,
 ) *ConversationEngine {
 	return &ConversationEngine{
 		agents:     agents,
 		factStores: factStores,
 		bot:        bot,
 		channels:   make(map[string]*channelState),
+		roster:     roster,
 	}
 }
 
@@ -156,7 +159,7 @@ func (engine *ConversationEngine) tryRespond(ctx context.Context, channel string
 		return
 	}
 
-	prompt := buildChatPrompt(role, channel, recentLines, engine.topBeliefs(ctx, role))
+	prompt := buildChatPrompt(role, channel, recentLines, engine.topBeliefs(ctx, role), engine.roster)
 
 	transcript, err := agentInstance.QuickChat(ctx, prompt)
 	if err != nil {
@@ -233,16 +236,23 @@ func (engine *ConversationEngine) pickCandidates(sender string, count int) []age
 	return eligible[:count]
 }
 
-func buildChatPrompt(role agent.Role, channel string, recentLines, beliefs []string) string {
+func buildChatPrompt(role agent.Role, channel string, recentLines, beliefs []string, roster map[agent.Role]string) string {
 	var builder strings.Builder
 
-	builder.WriteString(fmt.Sprintf("You are %s. ", roleDescription(role)))
+	name := roster[role]
+	if name == "" {
+		name = string(role)
+	}
+
+	builder.WriteString(fmt.Sprintf("Your name is %s. You are %s. ", name, roleDescription(role)))
 
 	if len(beliefs) > 0 {
 		builder.WriteString("Things you believe from experience: ")
 		builder.WriteString(strings.Join(beliefs, "; "))
 		builder.WriteString(". ")
 	}
+
+	writeRoster(&builder, role, roster)
 
 	fmt.Fprintf(&builder, "\n\nRecent messages in #%s:\n", channel)
 
@@ -275,6 +285,38 @@ func roleDescription(role agent.Role) string {
 		return "the reviewer — you catch bugs and ensure quality"
 	case agent.RoleDesigner:
 		return "the designer — you think from the user's perspective"
+	}
+	return string(role)
+}
+
+func writeRoster(builder *strings.Builder, self agent.Role, roster map[agent.Role]string) {
+	if len(roster) == 0 {
+		return
+	}
+
+	builder.WriteString("\n\nYour team: ")
+	rosterParts := make([]string, 0, len(roster))
+	for role, name := range roster {
+		if role != self {
+			rosterParts = append(rosterParts, fmt.Sprintf("%s (%s)", name, roleTitle(role)))
+		}
+	}
+	builder.WriteString(strings.Join(rosterParts, ", "))
+	builder.WriteString(". Use their names, not role IDs.")
+}
+
+func roleTitle(role agent.Role) string {
+	switch role {
+	case agent.RolePM:
+		return "PM"
+	case agent.RoleTechLead:
+		return "Tech Lead"
+	case agent.RoleEngineer1, agent.RoleEngineer2, agent.RoleEngineer3:
+		return "Engineer"
+	case agent.RoleReviewer:
+		return "Reviewer"
+	case agent.RoleDesigner:
+		return "Designer"
 	}
 	return string(role)
 }

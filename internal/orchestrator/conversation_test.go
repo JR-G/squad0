@@ -30,7 +30,7 @@ func newTestConversationEngine(t *testing.T) *orchestrator.ConversationEngine {
 		factStores[role] = memory.NewFactStore(db)
 	}
 
-	return orchestrator.NewConversationEngine(agents, factStores, nil)
+	return orchestrator.NewConversationEngine(agents, factStores, nil, nil)
 }
 
 func TestConversationEngine_OnMessage_TracksRecentMessages(t *testing.T) {
@@ -125,7 +125,7 @@ func TestConversationEngine_BreakSilence_QuietChannel_TriggersResponse(t *testin
 		factStores[role] = memory.NewFactStore(db)
 	}
 
-	engine := orchestrator.NewConversationEngine(agents, factStores, nil)
+	engine := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
 	engine.SetLastMessageTime("engineering", time.Now().Add(-15*time.Minute))
 
 	for range 20 {
@@ -150,7 +150,7 @@ func TestConversationEngine_TryRespond_PostsToBot(t *testing.T) {
 		agent.RoleEngineer1: memory.NewFactStore(db),
 	}
 
-	engine := orchestrator.NewConversationEngine(agents, factStores, nil)
+	engine := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
 	engine.OnMessage(ctx, "engineering", "ceo", "what do you think?")
 
 	recent := engine.RecentMessages("engineering")
@@ -174,7 +174,7 @@ func TestConversationEngine_PASSResponse_NotPosted(t *testing.T) {
 		agent.RoleEngineer1: memory.NewFactStore(db),
 	}
 
-	engine := orchestrator.NewConversationEngine(agents, factStores, nil)
+	engine := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
 	engine.OnMessage(ctx, "engineering", "someone", "any thoughts?")
 
 	recent := engine.RecentMessages("engineering")

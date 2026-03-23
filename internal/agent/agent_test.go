@@ -129,3 +129,37 @@ func TestAgent_ExecuteTask_PromptIncludesPersonality(t *testing.T) {
 	assert.Contains(t, runner.calls[0].stdin, "You are a thorough engineer.")
 	assert.Contains(t, runner.calls[0].stdin, "Do something")
 }
+
+func TestAgent_DirectSession_RunsCleanPrompt(t *testing.T) {
+	t.Parallel()
+
+	agentInstance, runner := setupAgentTest(t)
+	runner.output = []byte(`{"type":"result","result":"Linear tickets: JAM-1, JAM-2"}` + "\n")
+
+	result, err := agentInstance.DirectSession(
+		context.Background(),
+		"Query Linear for available tickets",
+	)
+
+	require.NoError(t, err)
+	assert.Contains(t, result.Transcript, "Linear tickets")
+	require.Len(t, runner.calls, 1)
+	// DirectSession uses the prompt as-is, no personality wrapping
+	assert.NotContains(t, runner.calls[0].stdin, "You are a thorough engineer")
+	assert.Contains(t, runner.calls[0].stdin, "Query Linear for available tickets")
+}
+
+func TestAgent_DirectSession_Error_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	agentInstance, runner := setupAgentTest(t)
+	runner.output = []byte(`{"type":"error","content":"rate limited"}` + "\n")
+	runner.err = fmt.Errorf("exit status 1")
+
+	_, err := agentInstance.DirectSession(
+		context.Background(),
+		"Do something",
+	)
+
+	require.Error(t, err)
+}
