@@ -190,3 +190,8 @@ func DefaultStartDeps() StartDeps {
 func ReadFromTUI(name string, input io.Reader) (string, error) {
 	return readFromTUI(name, input)
 }
+
+// ResolveTargetRepo exports resolveTargetRepo for testing.
+func ResolveTargetRepo(targetRepo string) string {
+	return resolveTargetRepo(targetRepo)
+}

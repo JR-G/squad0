@@ -313,6 +313,23 @@ func TestCreateSlackBot_EmptyChannels_ReturnsBot(t *testing.T) {
 	require.NotNil(t, bot)
 }
 
+func TestResolveTargetRepo_Empty_ReturnsEmpty(t *testing.T) {
+	t.Parallel()
+
+	result := cli.ResolveTargetRepo("")
+	assert.Empty(t, result)
+}
+
+func TestResolveTargetRepo_WithRepo_ReturnsPath(t *testing.T) {
+	t.Parallel()
+
+	result := cli.ResolveTargetRepo("github.com/JR-G/makebook")
+
+	assert.Contains(t, result, "repos")
+	assert.Contains(t, result, "makebook")
+	assert.NotEmpty(t, result)
+}
+
 func TestRunOrchestratorWithContext_CoordStoreFailure_ReturnsError(t *testing.T) {
 	t.Parallel()
 

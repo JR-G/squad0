@@ -49,6 +49,7 @@ func TestFormatAgentStatus_AllStatuses(t *testing.T) {
 		{Agent: agent.RoleEngineer2, Status: coordination.StatusBlocked},
 		{Agent: agent.RoleEngineer3, Status: coordination.StatusIdle},
 		{Agent: agent.RoleReviewer, Status: coordination.StatusReviewing},
+		{Agent: agent.RoleDesigner, Status: coordination.StatusPaused},
 	}
 
 	result := tui.FormatAgentStatus(checkIns, nil)
@@ -57,6 +58,7 @@ func TestFormatAgentStatus_AllStatuses(t *testing.T) {
 	assert.Contains(t, result, "blocked")
 	assert.Contains(t, result, "idle")
 	assert.Contains(t, result, "reviewing")
+	assert.Contains(t, result, "paused")
 }
 
 func TestFormatAgentStatus_EmptyTicket(t *testing.T) {

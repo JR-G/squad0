@@ -361,6 +361,43 @@ func TestPauseAll_CancelsAllSessions(t *testing.T) {
 	assert.Empty(t, idleRoles, "no agents should be idle after PauseAll")
 }
 
+func TestPauseAgent_WhileWorking_CancelsAndPauses(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	// Set up orchestrator with an engineer that will take time.
+	engRunner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"working..."}` + "\n"),
+	}
+
+	orch, checkIns := setupOrchestratorWithEngineers(t, &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"[]"}` + "\n"),
+	}, map[agent.Role]*fakeProcessRunner{
+		agent.RoleEngineer1: engRunner,
+	})
+
+	// Set to working state.
+	_ = checkIns.Upsert(ctx, coordination.CheckIn{
+		Agent: agent.RoleEngineer1, Status: coordination.StatusWorking,
+		FilesTouching: []string{}, Message: "working on SQ-1",
+	})
+
+	// Pause cancels session and sets status.
+	require.NoError(t, orch.PauseAgent(ctx, agent.RoleEngineer1))
+
+	checkIn, err := checkIns.GetByAgent(ctx, agent.RoleEngineer1)
+	require.NoError(t, err)
+	assert.Equal(t, coordination.StatusPaused, checkIn.Status)
+
+	// Resume brings them back to idle.
+	require.NoError(t, orch.ResumeAgent(ctx, agent.RoleEngineer1))
+
+	checkIn, err = checkIns.GetByAgent(ctx, agent.RoleEngineer1)
+	require.NoError(t, err)
+	assert.Equal(t, coordination.StatusIdle, checkIn.Status)
+}
+
 func TestConversationEngine_PausedAgent_SkipsResponse(t *testing.T) {
 	t.Parallel()
 
