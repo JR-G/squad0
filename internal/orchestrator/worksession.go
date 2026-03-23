@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -33,6 +34,8 @@ When you open the PR, include:
 - Any testing notes
 `
 
+const maxWorktreeRetries = 3
+
 // BuildImplementationPrompt creates the prompt for an engineer session.
 func BuildImplementationPrompt(ticket, description string) string {
 	return fmt.Sprintf(implementationPromptTemplate, ticket, description)
@@ -45,24 +48,32 @@ type WorkSession struct {
 	worktreeDir string
 }
 
-// NewWorkSession creates a worktree for the agent to work in.
+// NewWorkSession creates a worktree for the agent to work in. Retries
+// up to 3 times with progressively more aggressive cleanup between
+// attempts so agents can self-heal from stale state.
 func NewWorkSession(ctx context.Context, repoDir string, role agent.Role, ticket string) (*WorkSession, error) {
 	branch := fmt.Sprintf("feat/%s", strings.ToLower(ticket))
 	worktreeDir := fmt.Sprintf("%s/.worktrees/%s", repoDir, role)
 
-	cleanupStaleWorktree(ctx, repoDir, worktreeDir, branch)
+	var lastErr error
+	for attempt := range maxWorktreeRetries {
+		cleanupStaleWorktree(ctx, repoDir, worktreeDir, branch)
 
-	output, err := gitCommand(ctx, repoDir, "worktree", "add", "-b", branch, worktreeDir)
-	if err != nil {
-		return nil, fmt.Errorf("creating worktree: %s: %w", string(output), err)
+		output, err := gitCommand(ctx, repoDir, "worktree", "add", "-b", branch, worktreeDir)
+		if err == nil {
+			log.Printf("created worktree for %s at %s (branch %s)", role, worktreeDir, branch)
+			return &WorkSession{repoDir: repoDir, worktreeDir: worktreeDir}, nil
+		}
+
+		lastErr = fmt.Errorf("creating worktree (attempt %d): %s: %w", attempt+1, string(output), err)
+		log.Printf("worktree attempt %d failed for %s: %v", attempt+1, role, lastErr)
+
+		// More aggressive cleanup on retry: remove the directory manually
+		// and prune in case git's internal state is stale.
+		forceCleanup(ctx, repoDir, worktreeDir, branch)
 	}
 
-	log.Printf("created worktree for %s at %s (branch %s)", role, worktreeDir, branch)
-
-	return &WorkSession{
-		repoDir:     repoDir,
-		worktreeDir: worktreeDir,
-	}, nil
+	return nil, lastErr
 }
 
 // Dir returns the worktree directory path.
@@ -89,6 +100,15 @@ func cleanupStaleWorktree(ctx context.Context, repoDir, worktreeDir, branch stri
 	_, _ = gitCommand(ctx, repoDir, "worktree", "remove", "--force", worktreeDir)
 	_, _ = gitCommand(ctx, repoDir, "branch", "-D", branch)
 	_, _ = gitCommand(ctx, repoDir, "worktree", "prune")
+}
+
+// forceCleanup is a last-resort cleanup that removes the worktree
+// directory from disk and deletes the branch, ignoring all errors.
+// Used when git's internal state has diverged from what's on disk.
+func forceCleanup(ctx context.Context, repoDir, worktreeDir, branch string) {
+	_ = os.RemoveAll(worktreeDir)
+	_, _ = gitCommand(ctx, repoDir, "worktree", "prune")
+	_, _ = gitCommand(ctx, repoDir, "branch", "-D", branch)
 }
 
 func gitCommand(ctx context.Context, dir string, args ...string) ([]byte, error) {

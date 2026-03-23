@@ -55,6 +55,8 @@ func formatSlackStatus(status coordination.Status) string {
 		return "`reviewing`"
 	case coordination.StatusIdle:
 		return "_idle_"
+	case coordination.StatusPaused:
+		return "`paused`"
 	}
 	return string(status)
 }

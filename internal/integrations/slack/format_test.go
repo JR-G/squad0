@@ -42,6 +42,7 @@ func TestFormatStatusForSlack_AllStatuses(t *testing.T) {
 		{Agent: agent.RoleEngineer2, Status: coordination.StatusBlocked},
 		{Agent: agent.RoleEngineer3, Status: coordination.StatusIdle},
 		{Agent: agent.RoleReviewer, Status: coordination.StatusReviewing},
+		{Agent: agent.RoleDesigner, Status: coordination.StatusPaused},
 	}
 
 	result := slack.FormatStatusForSlack(checkIns, nil)
@@ -50,6 +51,7 @@ func TestFormatStatusForSlack_AllStatuses(t *testing.T) {
 	assert.Contains(t, result, "`blocked`")
 	assert.Contains(t, result, "_idle_")
 	assert.Contains(t, result, "`reviewing`")
+	assert.Contains(t, result, "`paused`")
 }
 
 func TestFormatStatusForSlack_UnknownStatus(t *testing.T) {

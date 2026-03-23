@@ -41,7 +41,7 @@ func setupLifecycleOrch(t *testing.T) (*orchestrator.Orchestrator, *coordination
 	return orch, checkIns
 }
 
-func TestPauseAgent_SetsIdle(t *testing.T) {
+func TestPauseAgent_SetsPaused(t *testing.T) {
 	t.Parallel()
 
 	orch, checkIns := setupLifecycleOrch(t)
@@ -56,8 +56,27 @@ func TestPauseAgent_SetsIdle(t *testing.T) {
 	require.NoError(t, err)
 	checkIn, err := checkIns.GetByAgent(ctx, agent.RoleEngineer1)
 	require.NoError(t, err)
-	assert.Equal(t, coordination.StatusIdle, checkIn.Status)
+	assert.Equal(t, coordination.StatusPaused, checkIn.Status)
 	assert.Contains(t, checkIn.Message, "paused")
+}
+
+func TestPauseAgent_PausedAgentsNotAssigned(t *testing.T) {
+	t.Parallel()
+
+	orch, checkIns := setupLifecycleOrch(t)
+	ctx := context.Background()
+
+	// Pause engineer-1.
+	require.NoError(t, orch.PauseAgent(ctx, agent.RoleEngineer1))
+
+	// Check that IdleAgents does NOT include the paused agent.
+	idleRoles, err := checkIns.IdleAgents(ctx)
+	require.NoError(t, err)
+
+	for _, role := range idleRoles {
+		assert.NotEqual(t, agent.RoleEngineer1, role,
+			"paused agent should not appear in idle list")
+	}
 }
 
 func TestResumeAgent_SetsIdle(t *testing.T) {
@@ -67,7 +86,7 @@ func TestResumeAgent_SetsIdle(t *testing.T) {
 	ctx := context.Background()
 
 	_ = checkIns.Upsert(ctx, coordination.CheckIn{
-		Agent: agent.RoleEngineer1, Status: coordination.StatusIdle, FilesTouching: []string{},
+		Agent: agent.RoleEngineer1, Status: coordination.StatusPaused, FilesTouching: []string{},
 		Message: "paused by CEO",
 	})
 
@@ -96,7 +115,7 @@ func TestPauseAll_PausesEveryAgent(t *testing.T) {
 	require.NoError(t, err)
 	allCheckIns, _ := checkIns.GetAll(ctx)
 	for _, checkIn := range allCheckIns {
-		assert.Equal(t, coordination.StatusIdle, checkIn.Status)
+		assert.Equal(t, coordination.StatusPaused, checkIn.Status)
 	}
 }
 
@@ -108,12 +127,51 @@ func TestResumeAll_ResumesEveryAgent(t *testing.T) {
 
 	for _, role := range []agent.Role{agent.RolePM, agent.RoleEngineer1, agent.RoleEngineer2} {
 		_ = checkIns.Upsert(ctx, coordination.CheckIn{
-			Agent: role, Status: coordination.StatusIdle, FilesTouching: []string{},
-			Message: "paused",
+			Agent: role, Status: coordination.StatusPaused, FilesTouching: []string{},
+			Message: "paused by CEO",
 		})
 	}
 
 	err := orch.ResumeAll(ctx)
 
 	require.NoError(t, err)
+	allCheckIns, _ := checkIns.GetAll(ctx)
+	for _, checkIn := range allCheckIns {
+		assert.Equal(t, coordination.StatusIdle, checkIn.Status)
+	}
+}
+
+func TestIsPaused_ReturnsTrueWhenPaused(t *testing.T) {
+	t.Parallel()
+
+	orch, checkIns := setupLifecycleOrch(t)
+	ctx := context.Background()
+
+	_ = checkIns.Upsert(ctx, coordination.CheckIn{
+		Agent: agent.RoleEngineer1, Status: coordination.StatusPaused, FilesTouching: []string{},
+	})
+
+	assert.True(t, orch.IsPaused(ctx, agent.RoleEngineer1))
+}
+
+func TestIsPaused_ReturnsFalseWhenIdle(t *testing.T) {
+	t.Parallel()
+
+	orch, checkIns := setupLifecycleOrch(t)
+	ctx := context.Background()
+
+	_ = checkIns.Upsert(ctx, coordination.CheckIn{
+		Agent: agent.RoleEngineer1, Status: coordination.StatusIdle, FilesTouching: []string{},
+	})
+
+	assert.False(t, orch.IsPaused(ctx, agent.RoleEngineer1))
+}
+
+func TestIsPaused_ReturnsFalseForUnknownAgent(t *testing.T) {
+	t.Parallel()
+
+	orch, _ := setupLifecycleOrch(t)
+	ctx := context.Background()
+
+	assert.False(t, orch.IsPaused(ctx, agent.RoleDesigner))
 }

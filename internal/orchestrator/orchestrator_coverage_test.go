@@ -314,3 +314,82 @@ func TestOrchestrator_StartWork_WithBot_PostsWorkMessages(t *testing.T) {
 	// Should have posted startup, starting work, and finished messages
 	assert.GreaterOrEqual(t, len(messages), 2)
 }
+
+func TestPauseAgent_CancelsRunningSession(t *testing.T) {
+	t.Parallel()
+
+	orch, checkIns := setupLifecycleOrch(t)
+	ctx := context.Background()
+
+	// Set engineer-1 to working.
+	_ = checkIns.Upsert(ctx, coordination.CheckIn{
+		Agent: agent.RoleEngineer1, Status: coordination.StatusWorking, FilesTouching: []string{},
+	})
+
+	// Pause should set status to paused (not idle).
+	require.NoError(t, orch.PauseAgent(ctx, agent.RoleEngineer1))
+
+	checkIn, err := checkIns.GetByAgent(ctx, agent.RoleEngineer1)
+	require.NoError(t, err)
+	assert.Equal(t, coordination.StatusPaused, checkIn.Status)
+
+	// IdleAgents should NOT return the paused agent.
+	idleRoles, err := checkIns.IdleAgents(ctx)
+	require.NoError(t, err)
+	for _, role := range idleRoles {
+		assert.NotEqual(t, agent.RoleEngineer1, role)
+	}
+}
+
+func TestPauseAll_CancelsAllSessions(t *testing.T) {
+	t.Parallel()
+
+	orch, checkIns := setupLifecycleOrch(t)
+	ctx := context.Background()
+
+	for _, role := range []agent.Role{agent.RolePM, agent.RoleEngineer1, agent.RoleEngineer2} {
+		_ = checkIns.Upsert(ctx, coordination.CheckIn{
+			Agent: role, Status: coordination.StatusWorking, FilesTouching: []string{},
+		})
+	}
+
+	require.NoError(t, orch.PauseAll(ctx))
+
+	// All agents should be paused, none idle.
+	idleRoles, err := checkIns.IdleAgents(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, idleRoles, "no agents should be idle after PauseAll")
+}
+
+func TestConversationEngine_PausedAgent_SkipsResponse(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	runner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"I should not respond."}` + "\n"),
+	}
+
+	allRoles := agent.AllRoles()
+	agents := make(map[agent.Role]*agent.Agent, len(allRoles))
+	factStores := make(map[agent.Role]*memory.FactStore, len(allRoles))
+	for _, role := range allRoles {
+		agents[role] = buildAgent(t, runner, role, db)
+		factStores[role] = memory.NewFactStore(db)
+	}
+
+	engine := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
+
+	// All agents are paused — none should respond.
+	engine.SetPauseChecker(func(_ context.Context, _ agent.Role) bool {
+		return true
+	})
+
+	engine.OnMessage(ctx, "engineering", "ceo", "anyone there?")
+
+	// Runner should have zero calls because all agents are paused.
+	assert.Empty(t, runner.calls, "paused agents should not make any Claude calls")
+}

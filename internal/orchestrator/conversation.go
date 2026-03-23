@@ -14,15 +14,19 @@ import (
 	"github.com/JR-G/squad0/internal/memory"
 )
 
+// PauseChecker returns true if the given role is currently paused.
+type PauseChecker func(ctx context.Context, role agent.Role) bool
+
 // ConversationEngine manages organic agent conversations in Slack.
 // Event-driven — triggered by incoming messages, not polling.
 type ConversationEngine struct {
-	agents     map[agent.Role]*agent.Agent
-	factStores map[agent.Role]*memory.FactStore
-	bot        *slack.Bot
-	mu         sync.Mutex
-	channels   map[string]*channelState
-	roster     map[agent.Role]string
+	agents       map[agent.Role]*agent.Agent
+	factStores   map[agent.Role]*memory.FactStore
+	bot          *slack.Bot
+	mu           sync.Mutex
+	channels     map[string]*channelState
+	roster       map[agent.Role]string
+	pauseChecker PauseChecker
 }
 
 type channelState struct {
@@ -45,6 +49,14 @@ func NewConversationEngine(
 		channels:   make(map[string]*channelState),
 		roster:     roster,
 	}
+}
+
+// SetPauseChecker registers a function that the engine calls before
+// letting an agent respond. Paused agents are silently skipped.
+func (engine *ConversationEngine) SetPauseChecker(checker PauseChecker) {
+	engine.mu.Lock()
+	defer engine.mu.Unlock()
+	engine.pauseChecker = checker
 }
 
 // OnMessage is called when any message arrives in a channel.
@@ -154,6 +166,11 @@ func (engine *ConversationEngine) getOrCreateChannel(channel string) *channelSta
 }
 
 func (engine *ConversationEngine) tryRespond(ctx context.Context, channel string, role agent.Role, recentLines []string) {
+	if engine.isRolePaused(ctx, role) {
+		log.Printf("chat: %s is paused, skipping", role)
+		return
+	}
+
 	agentInstance, ok := engine.agents[role]
 	if !ok {
 		return
@@ -354,6 +371,13 @@ func isHumanMessage(sender string) bool {
 		}
 	}
 	return true
+}
+
+func (engine *ConversationEngine) isRolePaused(ctx context.Context, role agent.Role) bool {
+	if engine.pauseChecker == nil {
+		return false
+	}
+	return engine.pauseChecker(ctx, role)
 }
 
 func appendRecent(lines []string, line string) []string {

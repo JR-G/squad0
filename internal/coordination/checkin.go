@@ -22,6 +22,8 @@ const (
 	StatusIdle Status = "idle"
 	// StatusReviewing indicates the agent is reviewing a PR.
 	StatusReviewing Status = "reviewing"
+	// StatusPaused indicates the agent has been paused by the CEO.
+	StatusPaused Status = "paused"
 )
 
 // CheckIn represents an agent's current state in the coordination DB.

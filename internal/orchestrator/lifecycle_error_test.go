@@ -108,7 +108,7 @@ func TestPauseAgent_SetsMessage(t *testing.T) {
 	checkIn, getErr := checkIns.GetByAgent(ctx, agent.RoleEngineer2)
 	require.NoError(t, getErr)
 	assert.Equal(t, "paused by CEO", checkIn.Message)
-	assert.Equal(t, coordination.StatusIdle, checkIn.Status)
+	assert.Equal(t, coordination.StatusPaused, checkIn.Status)
 }
 
 func TestResumeAgent_ClearsMessage(t *testing.T) {
@@ -118,7 +118,7 @@ func TestResumeAgent_ClearsMessage(t *testing.T) {
 	ctx := context.Background()
 
 	require.NoError(t, checkIns.Upsert(ctx, coordination.CheckIn{
-		Agent: agent.RoleEngineer2, Status: coordination.StatusIdle,
+		Agent: agent.RoleEngineer2, Status: coordination.StatusPaused,
 		FilesTouching: []string{},
 		Message:       "paused by CEO",
 	}))

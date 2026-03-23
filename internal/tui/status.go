@@ -54,6 +54,8 @@ func renderStatus(status coordination.Status) string {
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("#8B5CF6")).Bold(true).Render("reviewing")
 	case coordination.StatusIdle:
 		return StatusIdle.Render("idle")
+	case coordination.StatusPaused:
+		return Warning.Render("paused")
 	}
 
 	return Muted.Render(string(status))

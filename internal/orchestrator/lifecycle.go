@@ -3,16 +3,22 @@ package orchestrator
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/JR-G/squad0/internal/agent"
 	"github.com/JR-G/squad0/internal/coordination"
 )
 
-// PauseAgent sets the given agent to idle and posts a message.
+// PauseAgent pauses the given agent: cancels any running session and
+// sets the check-in status to paused so the tick loop will not assign
+// new work.
 func (orch *Orchestrator) PauseAgent(ctx context.Context, role agent.Role) error {
+	orch.cancelSession(role)
+	log.Printf("paused session for %s", role)
+
 	err := orch.checkIns.Upsert(ctx, coordination.CheckIn{
 		Agent:         role,
-		Status:        coordination.StatusIdle,
+		Status:        coordination.StatusPaused,
 		FilesTouching: []string{},
 		Message:       "paused by CEO",
 	})
@@ -24,8 +30,8 @@ func (orch *Orchestrator) PauseAgent(ctx context.Context, role agent.Role) error
 	return nil
 }
 
-// ResumeAgent clears the paused message for an agent, making them
-// available for assignment on the next tick.
+// ResumeAgent unpauses the given agent, making them available for
+// assignment on the next tick.
 func (orch *Orchestrator) ResumeAgent(ctx context.Context, role agent.Role) error {
 	err := orch.checkIns.SetIdle(ctx, role)
 	if err != nil {
@@ -36,8 +42,10 @@ func (orch *Orchestrator) ResumeAgent(ctx context.Context, role agent.Role) erro
 	return nil
 }
 
-// PauseAll pauses every agent.
+// PauseAll pauses every agent, cancelling all running sessions.
 func (orch *Orchestrator) PauseAll(ctx context.Context) error {
+	orch.cancelAllSessions()
+
 	for role := range orch.agents {
 		if err := orch.PauseAgent(ctx, role); err != nil {
 			return err
@@ -54,6 +62,15 @@ func (orch *Orchestrator) ResumeAll(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// IsPaused returns whether the given agent is currently paused.
+func (orch *Orchestrator) IsPaused(ctx context.Context, role agent.Role) bool {
+	checkIn, err := orch.checkIns.GetByAgent(ctx, role)
+	if err != nil {
+		return false
+	}
+	return checkIn.Status == coordination.StatusPaused
 }
 
 // Status returns all current agent check-ins.

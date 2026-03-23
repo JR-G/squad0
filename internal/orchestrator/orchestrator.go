@@ -26,6 +26,11 @@ type Orchestrator struct {
 	wg           sync.WaitGroup
 	assigning    bool
 	assigningMu  sync.Mutex
+
+	// Per-agent session cancellation. When pause is called, the cancel
+	// function fires and the running Claude Code process is killed.
+	sessionCancels map[agent.Role]context.CancelFunc
+	cancelsMu      sync.Mutex
 }
 
 // Config holds orchestrator-level settings.
@@ -46,11 +51,12 @@ func NewOrchestrator(
 	assigner *Assigner,
 ) *Orchestrator {
 	return &Orchestrator{
-		cfg:      cfg,
-		agents:   agents,
-		checkIns: checkIns,
-		bot:      bot,
-		assigner: assigner,
+		cfg:            cfg,
+		agents:         agents,
+		checkIns:       checkIns,
+		bot:            bot,
+		assigner:       assigner,
+		sessionCancels: make(map[agent.Role]context.CancelFunc),
 	}
 }
 
@@ -135,9 +141,9 @@ func (orch *Orchestrator) tick(ctx context.Context) {
 			orch.assigningMu.Unlock()
 		}()
 
-		assignments, err := orch.assigner.RequestAssignments(ctx, idleEngineers)
-		if err != nil {
-			log.Printf("tick: assignment failed: %v", err)
+		assignments, assignErr := orch.assigner.RequestAssignments(ctx, idleEngineers)
+		if assignErr != nil {
+			log.Printf("tick: assignment failed: %v", assignErr)
 			return
 		}
 
@@ -154,9 +160,11 @@ func (orch *Orchestrator) tick(ctx context.Context) {
 	}()
 }
 
-// SetConversationEngine connects the conversation engine to the orchestrator.
+// SetConversationEngine connects the conversation engine to the orchestrator
+// and wires up the pause checker so paused agents stay silent.
 func (orch *Orchestrator) SetConversationEngine(engine *ConversationEngine) {
 	orch.conversation = engine
+	engine.SetPauseChecker(orch.IsPaused)
 }
 
 func (orch *Orchestrator) breakSilence(ctx context.Context) {
@@ -185,10 +193,15 @@ func (orch *Orchestrator) startWork(ctx context.Context, assignment Assignment) 
 		return
 	}
 
+	// Create a cancellable context for this session so pause can kill it.
+	sessionCtx, cancel := context.WithCancel(ctx)
+	orch.registerSessionCancel(assignment.Role, cancel)
+
 	orch.wg.Add(1)
 	go func() {
 		defer orch.wg.Done()
-		orch.runSession(ctx, agentInstance, assignment)
+		defer orch.clearSessionCancel(assignment.Role)
+		orch.runSession(sessionCtx, agentInstance, assignment)
 	}()
 }
 
@@ -249,6 +262,42 @@ func (orch *Orchestrator) postAsRole(ctx context.Context, channel, text string, 
 	if orch.conversation != nil {
 		go orch.conversation.OnMessage(ctx, channel, string(role), text)
 	}
+}
+
+// cancelSession cancels a running session for the given role, if any.
+func (orch *Orchestrator) cancelSession(role agent.Role) {
+	orch.cancelsMu.Lock()
+	defer orch.cancelsMu.Unlock()
+
+	cancel, ok := orch.sessionCancels[role]
+	if !ok {
+		return
+	}
+	cancel()
+	delete(orch.sessionCancels, role)
+}
+
+// cancelAllSessions cancels every running session.
+func (orch *Orchestrator) cancelAllSessions() {
+	orch.cancelsMu.Lock()
+	defer orch.cancelsMu.Unlock()
+
+	for role, cancel := range orch.sessionCancels {
+		cancel()
+		delete(orch.sessionCancels, role)
+	}
+}
+
+func (orch *Orchestrator) registerSessionCancel(role agent.Role, cancel context.CancelFunc) {
+	orch.cancelsMu.Lock()
+	defer orch.cancelsMu.Unlock()
+	orch.sessionCancels[role] = cancel
+}
+
+func (orch *Orchestrator) clearSessionCancel(role agent.Role) {
+	orch.cancelsMu.Lock()
+	defer orch.cancelsMu.Unlock()
+	delete(orch.sessionCancels, role)
 }
 
 func filterEngineers(roles []agent.Role) []agent.Role {
