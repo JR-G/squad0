@@ -195,7 +195,7 @@ func (engine *ConversationEngine) tryRespond(ctx context.Context, channel string
 	text := strings.TrimSpace(transcript)
 	log.Printf("chat: %s said: %q", role, text)
 
-	if text == "" || strings.EqualFold(text, "PASS") {
+	if text == "" || containsPass(text) {
 		log.Printf("chat: %s passed or empty", role)
 		return
 	}
@@ -289,7 +289,13 @@ func buildChatPrompt(role agent.Role, channel string, recentLines, beliefs []str
 		fmt.Fprintf(&builder, "> %s\n", line)
 	}
 
-	builder.WriteString("\nYou're part of this team. Respond naturally — react to what's been said, share your perspective, ask a question, or build on the conversation. Be yourself. Keep it to 1-2 sentences. Only respond with PASS if the conversation has clearly ended and there's genuinely nothing left to say.")
+	builder.WriteString("\nYou're part of this team. Respond naturally — react to what's been said, share your perspective, ask a question, or build on the conversation. Be yourself. Keep it to 1-2 sentences.")
+	builder.WriteString("\n\nRules:")
+	builder.WriteString("\n- Respond ONLY with what you'd actually say in Slack. Nothing else.")
+	builder.WriteString("\n- NEVER include meta-commentary, alternatives, stage directions, or parenthetical notes.")
+	builder.WriteString("\n- NEVER explain what you're doing or why. Just say it.")
+	builder.WriteString("\n- NEVER mention that you're an AI, a model, or playing a character.")
+	builder.WriteString("\n- If you have nothing to add, respond with exactly: PASS")
 
 	return builder.String()
 }
@@ -379,6 +385,11 @@ func isHumanMessage(sender string) bool {
 		}
 	}
 	return true
+}
+
+func containsPass(text string) bool {
+	upper := strings.ToUpper(text)
+	return strings.Contains(upper, "PASS")
 }
 
 func (engine *ConversationEngine) isRolePaused(ctx context.Context, role agent.Role) bool {
