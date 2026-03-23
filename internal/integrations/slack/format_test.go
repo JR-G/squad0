@@ -66,7 +66,7 @@ func TestFormatStatusForSlack_UnknownStatus(t *testing.T) {
 	assert.Contains(t, result, "unknown")
 }
 
-func TestFormatStatusForSlack_EmptyTicket(t *testing.T) {
+func TestFormatStatusForSlack_EmptyTicket_OmitsTicketLine(t *testing.T) {
 	t.Parallel()
 
 	checkIns := []coordination.CheckIn{
@@ -75,7 +75,27 @@ func TestFormatStatusForSlack_EmptyTicket(t *testing.T) {
 
 	result := slack.FormatStatusForSlack(checkIns, nil)
 
-	assert.Contains(t, result, "—")
+	assert.NotContains(t, result, "Ticket:")
+}
+
+func TestFormatStatusForSlack_WithMessageAndFiles(t *testing.T) {
+	t.Parallel()
+
+	checkIns := []coordination.CheckIn{
+		{
+			Agent:         agent.RoleEngineer1,
+			Status:        coordination.StatusWorking,
+			Ticket:        "JAM-17",
+			Message:       "working on JAM-17",
+			FilesTouching: []string{"auth/middleware.go", "auth/oauth.go"},
+		},
+	}
+
+	result := slack.FormatStatusForSlack(checkIns, nil)
+
+	assert.Contains(t, result, "JAM-17")
+	assert.Contains(t, result, "working on JAM-17")
+	assert.Contains(t, result, "auth/middleware.go")
 }
 
 func TestDisplayName_WithChosenName_ShowsNameAndRole(t *testing.T) {

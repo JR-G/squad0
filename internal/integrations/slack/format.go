@@ -16,17 +16,26 @@ func FormatStatusForSlack(checkIns []coordination.CheckIn, personas map[agent.Ro
 	}
 
 	var builder strings.Builder
-	builder.WriteString("*Agent Status*\n\n")
+	builder.WriteString("*Squad Status*\n\n")
 
 	for _, checkIn := range checkIns {
 		name := displayNameForStatus(checkIn.Agent, personas)
 		status := formatSlackStatus(checkIn.Status)
-		ticket := "—"
+		builder.WriteString(fmt.Sprintf("*%s*  %s\n", name, status))
+
 		if checkIn.Ticket != "" {
-			ticket = checkIn.Ticket
+			builder.WriteString(fmt.Sprintf("    Ticket: `%s`\n", checkIn.Ticket))
 		}
 
-		fmt.Fprintf(&builder, "• *%s*  %s  %s\n", name, status, ticket)
+		if checkIn.Message != "" {
+			builder.WriteString(fmt.Sprintf("    %s\n", checkIn.Message))
+		}
+
+		if len(checkIn.FilesTouching) > 0 {
+			builder.WriteString(fmt.Sprintf("    Files: %s\n", strings.Join(checkIn.FilesTouching, ", ")))
+		}
+
+		builder.WriteString("\n")
 	}
 
 	return builder.String()
