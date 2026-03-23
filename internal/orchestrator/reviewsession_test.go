@@ -130,6 +130,72 @@ func TestStartReview_AssignsReviewer(t *testing.T) {
 	assert.Contains(t, reviewRunner.calls[0].stdin, "gh pr diff 42")
 }
 
+func TestStartReview_NoReviewer_DoesNotPanic(t *testing.T) {
+	t.Parallel()
+
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(context.Background()))
+
+	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"[]"}` + "\n")}
+	pmAgent := setupPMAgent(t, pmRunner)
+
+	// No reviewer agent in the map.
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 3, CooldownAfter: time.Second},
+		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent},
+		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
+	)
+
+	assert.NotPanics(t, func() {
+		orch.StartReviewForTest(context.Background(), "https://github.com/JR-G/x/pull/1", "T-1")
+	})
+}
+
+func TestStartReview_ReviewerError_DoesNotPanic(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	reviewRunner := &fakeProcessRunner{
+		output: []byte(`{"type":"error","content":"fail"}` + "\n"),
+		err:    assert.AnError,
+	}
+
+	sqlDB, sqlErr := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, sqlErr)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"[]"}` + "\n")}
+	pmAgent := setupPMAgent(t, pmRunner)
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 3, CooldownAfter: time.Second},
+		map[agent.Role]*agent.Agent{
+			agent.RolePM:       pmAgent,
+			agent.RoleReviewer: buildAgent(t, reviewRunner, agent.RoleReviewer, db),
+		},
+		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
+	)
+
+	orch.StartReviewForTest(ctx, "https://github.com/JR-G/x/pull/1", "T-1")
+	orch.Wait()
+
+	// Reviewer should be back to idle after failure.
+	checkIn, getErr := checkIns.GetByAgent(ctx, agent.RoleReviewer)
+	require.NoError(t, getErr)
+	assert.Equal(t, coordination.StatusIdle, checkIn.Status)
+}
+
 func TestBuildReviewPrompt_ContainsPRNumber(t *testing.T) {
 	t.Parallel()
 

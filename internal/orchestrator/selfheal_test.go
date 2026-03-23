@@ -121,6 +121,55 @@ func TestOrchestrator_WithMonitor_RecordsHealthEvents(t *testing.T) {
 	assert.NotNil(t, allHealth)
 }
 
+func TestPauseAll_WithRunningSessions_CancelsAll(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"[]"}` + "\n")}
+	pmAgent := setupPMAgent(t, pmRunner)
+	eng1Agent := setupAgentWithRole(t, &fakeProcessRunner{output: []byte(`{"type":"result","result":"done"}` + "\n")}, agent.RoleEngineer1)
+
+	agents := map[agent.Role]*agent.Agent{
+		agent.RolePM:        pmAgent,
+		agent.RoleEngineer1: eng1Agent,
+	}
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 3, CooldownAfter: time.Second},
+		agents, checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
+	)
+
+	// Set agents to working.
+	for _, role := range []agent.Role{agent.RolePM, agent.RoleEngineer1} {
+		_ = checkIns.Upsert(ctx, coordination.CheckIn{
+			Agent: role, Status: coordination.StatusWorking, FilesTouching: []string{},
+		})
+	}
+
+	// PauseAll cancels all sessions and sets all to paused.
+	require.NoError(t, orch.PauseAll(ctx))
+
+	allCheckIns, err := checkIns.GetAll(ctx)
+	require.NoError(t, err)
+	for _, checkIn := range allCheckIns {
+		assert.Equal(t, coordination.StatusPaused, checkIn.Status, "agent %s should be paused", checkIn.Agent)
+	}
+
+	// ResumeAll brings everyone back.
+	require.NoError(t, orch.ResumeAll(ctx))
+
+	idleRoles, err := checkIns.IdleAgents(ctx)
+	require.NoError(t, err)
+	assert.Len(t, idleRoles, 2)
+}
+
 func TestUpdateRoster_RefreshesConversationNames(t *testing.T) {
 	t.Parallel()
 

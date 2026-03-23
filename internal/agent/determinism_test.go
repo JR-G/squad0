@@ -104,6 +104,17 @@ func TestExecProcessRunner_Run_InvalidCommand_ReturnsError(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestExecProcessRunner_Run_WithWorkingDir_RunsInDir(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	runner := agent.ExecProcessRunner{}
+	output, err := runner.Run(context.Background(), "", tmpDir, "pwd")
+
+	require.NoError(t, err)
+	assert.Contains(t, string(output), tmpDir)
+}
+
 func TestExtractExitError_NonExitError_ReturnsOne(t *testing.T) {
 	t.Parallel()
 
