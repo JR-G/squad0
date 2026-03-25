@@ -28,6 +28,18 @@ func TestBuildReReviewPrompt_ContainsPRInfo(t *testing.T) {
 	assert.Contains(t, prompt, "gh pr view 42 --comments")
 	assert.Contains(t, prompt, "gh pr diff 42")
 	assert.Contains(t, prompt, "previously reviewed")
+	assert.Contains(t, prompt, "gh pr comment 42 --body")
+}
+
+func TestBuildReReviewPrompt_VerifyRetryInstruction(t *testing.T) {
+	t.Parallel()
+
+	prompt := orchestrator.BuildReReviewPrompt(
+		"https://github.com/test-org/test-repo/pull/8",
+		"JAM-3",
+	)
+
+	assert.Contains(t, prompt, "reviewDecision is still empty after your review, try again")
 }
 
 func TestClassifyReviewOutcome_LGTMApproves(t *testing.T) {
@@ -56,12 +68,10 @@ func TestMergeAndComplete_NotApproved_BlocksMerge(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	memDB, err := memory.Open(ctx, ":memory:")
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = memDB.Close() })
 
+	// Step 1 (checkApprovalStatus) returns something without APPROVED.
 	pmRunner := &fakeProcessRunner{
-		output: []byte(`{"type":"result","result":"NOT_APPROVED"}` + "\n"),
+		output: []byte(`{"type":"result","result":"REVIEW_REQUIRED"}` + "\n"),
 	}
 	pmAgent := setupPMAgent(t, pmRunner)
 
@@ -89,8 +99,13 @@ func TestMergeAndComplete_CIFailing_BlocksMerge(t *testing.T) {
 
 	ctx := context.Background()
 
+	// Step 1: checkApprovalStatus returns APPROVED, Step 2: executeMerge reports CI failure.
 	pmRunner := &fakeProcessRunner{
-		output: []byte(`{"type":"result","result":"CI_FAILING"}` + "\n"),
+		output: []byte(`{"type":"result","result":"APPROVED"}` + "\n"),
+		outputs: [][]byte{
+			[]byte(`{"type":"result","result":"APPROVED"}` + "\n"),
+			[]byte(`{"type":"result","result":"CI FAIL: checks not passing"}` + "\n"),
+		},
 	}
 	pmAgent := setupPMAgent(t, pmRunner)
 
@@ -117,9 +132,14 @@ func TestMergeAndComplete_Success_AdvancesPipeline(t *testing.T) {
 
 	ctx := context.Background()
 
+	// Step 1: checkApprovalStatus → APPROVED
+	// Step 2: executeMerge → done
+	// Step 3: verifyMerged → MERGED
+	// Step 4: MoveTicketState (background, ignored)
 	pmRunner := &fakeProcessRunner{
-		output: []byte(`{"type":"result","result":"done"}` + "\n"),
+		output: []byte(`{"type":"result","result":"APPROVED"}` + "\n"),
 		outputs: [][]byte{
+			[]byte(`{"type":"result","result":"APPROVED"}` + "\n"),
 			[]byte(`{"type":"result","result":"done"}` + "\n"),
 			[]byte(`{"type":"result","result":"MERGED"}` + "\n"),
 		},
@@ -263,16 +283,24 @@ func TestRetryApproval_ReviewerReapproves_ThenMerges(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = memDB.Close() })
 
-	// PM: (1) NOT_APPROVED → retryApproval, (2) done → merge, (3) MERGED → verify.
+	// PM calls (step-based merge):
+	// (1) checkApprovalStatus → REVIEW_REQUIRED → triggers retryApproval
+	// After retryApproval succeeds, mergeAndComplete is called again:
+	// (2) checkApprovalStatus → APPROVED
+	// (3) executeMerge → done
+	// (4) verifyMerged → MERGED
+	// (5+) MoveTicketState (background goroutine) → done
 	pmRunner := &fakeProcessRunner{
-		output: []byte(`{"type":"result","result":"NOT_APPROVED"}` + "\n"),
+		output: []byte(`{"type":"result","result":"done"}` + "\n"),
 		outputs: [][]byte{
-			[]byte(`{"type":"result","result":"NOT_APPROVED"}` + "\n"),
+			[]byte(`{"type":"result","result":"REVIEW_REQUIRED"}` + "\n"),
+			[]byte(`{"type":"result","result":"APPROVED"}` + "\n"),
 			[]byte(`{"type":"result","result":"done"}` + "\n"),
 			[]byte(`{"type":"result","result":"MERGED"}` + "\n"),
+			[]byte(`{"type":"result","result":"done"}` + "\n"),
 		},
 	}
-	// Reviewer: (1) re-approve, (2) verify → APPROVED.
+	// Reviewer: (1) submit approval, (2) verify → APPROVED.
 	reviewRunner := &fakeProcessRunner{
 		output: []byte(`{"type":"result","result":"done"}` + "\n"),
 		outputs: [][]byte{
@@ -311,7 +339,6 @@ func TestRetryApproval_ReviewerReapproves_ThenMerges(t *testing.T) {
 	)
 	orch.SetPipeline(pipeStore)
 
-	// PM call 1: NOT_APPROVED → retryApproval → reviewer done → PM call 2: done → merged.
 	assert.NotPanics(t, func() {
 		orch.MergeWithEngineerForTest(ctx, "https://github.com/test-org/test-repo/pull/5", "JAM-5", itemID, agent.RoleEngineer1)
 	})
@@ -332,8 +359,10 @@ func TestRetryApproval_NoReviewer_DoesNotPanic(t *testing.T) {
 
 	ctx := context.Background()
 
+	// checkApprovalStatus returns NOT_APPROVED → triggers retryApproval
+	// which no-ops because there's no reviewer agent.
 	pmRunner := &fakeProcessRunner{
-		output: []byte(`{"type":"result","result":"NOT_APPROVED"}` + "\n"),
+		output: []byte(`{"type":"result","result":"PENDING"}` + "\n"),
 	}
 	pmAgent := setupPMAgent(t, pmRunner)
 
@@ -363,8 +392,9 @@ func TestRetryApproval_ReviewerFails_DoesNotPanic(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = memDB.Close() })
 
+	// checkApprovalStatus returns non-APPROVED → triggers retryApproval.
 	pmRunner := &fakeProcessRunner{
-		output: []byte(`{"type":"result","result":"NOT_APPROVED"}` + "\n"),
+		output: []byte(`{"type":"result","result":"PENDING"}` + "\n"),
 	}
 	reviewRunner := &fakeProcessRunner{
 		output: []byte(`{"type":"error","content":"fail"}` + "\n"),
@@ -397,8 +427,20 @@ func TestMergeAfterRetry_Success_AdvancesPipeline(t *testing.T) {
 
 	ctx := context.Background()
 
+	// PM calls:
+	// (1) checkApprovalStatus → PENDING (NOT_APPROVED) → retryApproval
+	// After retry, mergeAndComplete called again:
+	// (2) checkApprovalStatus → APPROVED
+	// (3) executeMerge → done
+	// (4) verifyMerged → MERGED
 	pmRunner := &fakeProcessRunner{
-		output: []byte(`{"type":"result","result":"done"}` + "\n"),
+		output: []byte(`{"type":"result","result":"PENDING"}` + "\n"),
+		outputs: [][]byte{
+			[]byte(`{"type":"result","result":"PENDING"}` + "\n"),
+			[]byte(`{"type":"result","result":"APPROVED"}` + "\n"),
+			[]byte(`{"type":"result","result":"done"}` + "\n"),
+			[]byte(`{"type":"result","result":"MERGED"}` + "\n"),
+		},
 	}
 	pmAgent := setupPMAgent(t, pmRunner)
 
@@ -421,9 +463,13 @@ func TestMergeAfterRetry_Success_AdvancesPipeline(t *testing.T) {
 	})
 	require.NoError(t, createErr)
 
-	// Reviewer says done (re-approval worked), PM says done (merge worked).
+	// Reviewer: (1) submit approval, (2) verify → APPROVED.
 	reviewRunner := &fakeProcessRunner{
 		output: []byte(`{"type":"result","result":"done"}` + "\n"),
+		outputs: [][]byte{
+			[]byte(`{"type":"result","result":"done"}` + "\n"),
+			[]byte(`{"type":"result","result":"APPROVED"}` + "\n"),
+		},
 	}
 	memDB, memErr := memory.Open(ctx, ":memory:")
 	require.NoError(t, memErr)
@@ -438,11 +484,12 @@ func TestMergeAfterRetry_Success_AdvancesPipeline(t *testing.T) {
 	)
 	orch.SetPipeline(pipeStore)
 
-	// Simulate: PM says NOT_APPROVED, reviewer re-approves, then mergeAfterRetry runs.
-	// We test mergeAfterRetry indirectly through MergeForTest which calls retryApproval.
-	// But PM always returns NOT_APPROVED for the first call...
-	// Instead, just verify the retry path doesn't hang and reviewer is called.
 	assert.NotPanics(t, func() {
 		orch.MergeForTest(ctx, "https://github.com/test-org/test-repo/pull/6", "JAM-6", itemID)
 	})
+
+	// Pipeline should have advanced to merged.
+	item, getErr := pipeStore.GetByID(ctx, itemID)
+	require.NoError(t, getErr)
+	assert.Equal(t, pipeline.StageMerged, item.Stage)
 }

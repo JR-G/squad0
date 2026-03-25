@@ -19,8 +19,13 @@ func TestMergeAndComplete_CIFailing_AnnouncesAndReturns(t *testing.T) {
 
 	ctx := context.Background()
 
+	// Step 1: checkApprovalStatus returns APPROVED, Step 2: executeMerge returns CI failure.
 	pmRunner := &fakeProcessRunner{
-		output: []byte(`{"type":"result","result":"CI_FAILING"}` + "\n"),
+		output: []byte(`{"type":"result","result":"APPROVED"}` + "\n"),
+		outputs: [][]byte{
+			[]byte(`{"type":"result","result":"APPROVED"}` + "\n"),
+			[]byte(`{"type":"result","result":"CI FAIL error"}` + "\n"),
+		},
 	}
 	pmAgent := setupPMAgent(t, pmRunner)
 
@@ -37,8 +42,22 @@ func TestMergeAndComplete_CIFailing_AnnouncesAndReturns(t *testing.T) {
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
 
-	// PM returns CI_FAILING — should announce and return, not loop.
+	// PM returns APPROVED then CI FAIL — should announce and return, not loop.
 	assert.NotPanics(t, func() {
 		orch.MergeWithEngineerForTest(ctx, "https://github.com/test-org/test-repo/pull/1", "JAM-1", 0, agent.RoleEngineer1)
 	})
+}
+
+func TestBuildFixUpPrompt_ContainsAllComments(t *testing.T) {
+	t.Parallel()
+
+	prompt := orchestrator.BuildFixUpPrompt(
+		"https://github.com/test-org/test-repo/pull/42",
+		"JAM-7",
+	)
+
+	assert.Contains(t, prompt, "Read ALL review comments on the PR: gh pr view 42 --comments")
+	assert.Contains(t, prompt, "For EACH comment, address it specifically")
+	assert.Contains(t, prompt, "gh pr comment 42 --body")
+	assert.Contains(t, prompt, "Addressed all feedback")
 }

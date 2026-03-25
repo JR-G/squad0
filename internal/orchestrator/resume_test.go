@@ -199,9 +199,13 @@ func TestMergeAndComplete_Success_AdvancesToMerged(t *testing.T) {
 	require.NoError(t, checkIns.InitSchema(ctx))
 	pipeStore := newPipelineStore(t, sqlDB)
 
+	// Step 1: checkApprovalStatus → APPROVED
+	// Step 2: executeMerge → done
+	// Step 3: verifyMerged → MERGED
 	pmRunner := &fakeProcessRunner{
 		output: []byte(`{"type":"result","result":"done"}` + "\n"),
 		outputs: [][]byte{
+			[]byte(`{"type":"result","result":"APPROVED"}` + "\n"),
 			[]byte(`{"type":"result","result":"done"}` + "\n"),
 			[]byte(`{"type":"result","result":"MERGED"}` + "\n"),
 		},
