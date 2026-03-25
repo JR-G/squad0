@@ -23,13 +23,7 @@ func FormatStatusForSlack(checkIns []coordination.CheckIn, personas map[agent.Ro
 		status := formatSlackStatus(checkIn.Status)
 		builder.WriteString(fmt.Sprintf("*%s*  %s\n", name, status))
 
-		if checkIn.Ticket != "" {
-			builder.WriteString(fmt.Sprintf("    Ticket: `%s`\n", checkIn.Ticket))
-		}
-
-		if checkIn.Message != "" {
-			builder.WriteString(fmt.Sprintf("    %s\n", checkIn.Message))
-		}
+		writeTicketLine(&builder, checkIn)
 
 		if len(checkIn.FilesTouching) > 0 {
 			builder.WriteString(fmt.Sprintf("    Files: %s\n", strings.Join(checkIn.FilesTouching, ", ")))
@@ -52,6 +46,22 @@ func displayNameForStatus(role agent.Role, personas map[agent.Role]Persona) stri
 	}
 
 	return persona.DisplayName()
+}
+
+func writeTicketLine(builder *strings.Builder, checkIn coordination.CheckIn) {
+	if checkIn.Ticket == "" {
+		return
+	}
+
+	defaultMsg := fmt.Sprintf("working on %s", checkIn.Ticket)
+	hasCustomMessage := checkIn.Message != "" && checkIn.Message != defaultMsg
+
+	if hasCustomMessage {
+		fmt.Fprintf(builder, "    `%s` — %s\n", checkIn.Ticket, checkIn.Message)
+		return
+	}
+
+	fmt.Fprintf(builder, "    `%s`\n", checkIn.Ticket)
 }
 
 func formatSlackStatus(status coordination.Status) string {

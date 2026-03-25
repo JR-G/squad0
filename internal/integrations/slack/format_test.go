@@ -86,7 +86,7 @@ func TestFormatStatusForSlack_WithMessageAndFiles(t *testing.T) {
 			Agent:         agent.RoleEngineer1,
 			Status:        coordination.StatusWorking,
 			Ticket:        "JAM-17",
-			Message:       "working on JAM-17",
+			Message:       "implementing auth middleware",
 			FilesTouching: []string{"auth/middleware.go", "auth/oauth.go"},
 		},
 	}
@@ -94,8 +94,26 @@ func TestFormatStatusForSlack_WithMessageAndFiles(t *testing.T) {
 	result := slack.FormatStatusForSlack(checkIns, nil)
 
 	assert.Contains(t, result, "JAM-17")
-	assert.Contains(t, result, "working on JAM-17")
+	assert.Contains(t, result, "implementing auth middleware")
 	assert.Contains(t, result, "auth/middleware.go")
+}
+
+func TestFormatStatusForSlack_DefaultMessage_Omitted(t *testing.T) {
+	t.Parallel()
+
+	checkIns := []coordination.CheckIn{
+		{
+			Agent:   agent.RoleEngineer1,
+			Status:  coordination.StatusWorking,
+			Ticket:  "JAM-17",
+			Message: "working on JAM-17",
+		},
+	}
+
+	result := slack.FormatStatusForSlack(checkIns, nil)
+
+	assert.Contains(t, result, "JAM-17")
+	assert.NotContains(t, result, "working on JAM-17")
 }
 
 func TestDisplayName_WithChosenName_ShowsNameAndRole(t *testing.T) {
