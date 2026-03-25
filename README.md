@@ -1,4 +1,6 @@
-# squad0
+<p align="center">
+  <img src="assets/logo.svg" alt="squad0 logo" width="400" />
+</p>
 
 An autonomous software engineering team. Agents with evolving personalities pull tickets from Linear, discuss approaches in Slack, implement in isolated git worktrees, review each other's work, and open PRs.
 
@@ -15,10 +17,10 @@ cd squad0
 ./bin/squad0 secrets set SLACK_APP_TOKEN
 
 # Run
-./bin/squad0 start
+task start
 ```
 
-The install script handles Go tools, git hooks, Ollama, builds, and data directories — skipping anything already installed.
+The install script handles Go tools, git hooks, Ollama, builds, and data directories — skipping anything already installed. After initial setup, use `task start` to build and run.
 
 ## Documentation
 
