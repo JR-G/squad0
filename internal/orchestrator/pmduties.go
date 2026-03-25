@@ -147,14 +147,13 @@ func (orch *Orchestrator) BreakDiscussionTie(ctx context.Context, channel string
 	}
 
 	prompt := "The team has been discussing an approach but hasn't reached consensus. " +
-		"Read the discussion and make the call. Be decisive — pick the approach " +
-		"that makes the most sense and explain why in 2-3 sentences.\n\n"
+		"Make the call. Start with 'Decision:' and be specific about what to build and what to skip.\n\n"
 
 	for _, line := range lines {
 		prompt += "> " + line + "\n"
 	}
 
-	prompt += "\nMake the decision. Start with \"Decision:\" then explain briefly."
+	prompt += "\nMake the decision now."
 
 	decision, err := pmAgent.QuickChat(ctx, prompt)
 	if err != nil {
@@ -168,7 +167,21 @@ func (orch *Orchestrator) BreakDiscussionTie(ctx context.Context, channel string
 	}
 
 	orch.postAsRole(ctx, channel, decision, agent.RolePM)
+
+	// If the PM's response contains a Decision: line, store it as an
+	// architecture decision for future recall.
+	decisionLine := ExtractDecisionLine(decision)
+	if decisionLine != "" {
+		orch.storeBreakTieDecision(ctx, decisionLine)
+	}
+
 	return decision
+}
+
+// storeBreakTieDecision persists the PM's tie-breaking decision as an
+// architecture decision via the Tech Lead's fact store.
+func (orch *Orchestrator) storeBreakTieDecision(ctx context.Context, decision string) {
+	orch.StoreArchitectureDecision(ctx, decision, "discussion-tiebreak")
 }
 
 // FormatDurationForTest exports formatDuration for testing.

@@ -3,6 +3,7 @@ package orchestrator_test
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"testing"
 	"time"
 
@@ -200,6 +201,153 @@ func TestBreakDiscussionTie_WithPM_ReturnsDecision(t *testing.T) {
 
 	result := orch.BreakDiscussionTie(ctx, "engineering")
 	assert.Contains(t, result, "Decision")
+}
+
+func TestBreakDiscussionTie_PromptContainsDecisionInstruction(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	memDB, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = memDB.Close() })
+
+	pmRunner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"Decision: use approach B."}` + "\n"),
+	}
+	pmAgent := setupPMAgent(t, pmRunner)
+
+	sqlDB, sqlErr := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, sqlErr)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	// No conversation engine — BreakDiscussionTie still works
+	// with recent messages from the engine, but without one
+	// it returns empty. Instead, set up a conversation engine
+	// but DON'T trigger OnMessage (which would cause extra calls).
+	allRoles := agent.AllRoles()
+	agents := make(map[agent.Role]*agent.Agent, len(allRoles))
+	factStores := make(map[agent.Role]*memory.FactStore, len(allRoles))
+	chatRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"PASS"}` + "\n")}
+	agents[agent.RolePM] = pmAgent
+	factStores[agent.RolePM] = memory.NewFactStore(memDB)
+
+	for _, role := range allRoles {
+		if role == agent.RolePM {
+			continue
+		}
+		agents[role] = buildAgent(t, chatRunner, role, memDB)
+		factStores[role] = memory.NewFactStore(memDB)
+	}
+
+	server := newTestSlackServer()
+	t.Cleanup(server.Close)
+	bot := newTestSlackBot(server.URL)
+
+	conversation := orchestrator.NewConversationEngine(agents, factStores, bot, nil)
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		agents, checkIns, bot, orchestrator.NewAssigner(pmAgent, "TEST"),
+	)
+	orch.SetConversationEngine(conversation)
+
+	// Seed messages directly to avoid triggering OnMessage callbacks
+	// that would consume PM runner calls.
+	conversation.OnMessage(ctx, "engineering", "human-ceo", "which approach?")
+	// Wait for conversation callbacks to finish.
+	time.Sleep(50 * time.Millisecond)
+
+	// Now call BreakDiscussionTie — the PM QuickChat call should
+	// contain the decision instruction.
+	_ = orch.BreakDiscussionTie(ctx, "engineering")
+
+	pmRunner.mu.Lock()
+	calls := make([]fakeCall, len(pmRunner.calls))
+	copy(calls, pmRunner.calls)
+	pmRunner.mu.Unlock()
+
+	// Find the call that contains the tie-breaking prompt.
+	found := false
+	for _, call := range calls {
+		if strings.Contains(call.stdin, "what to build and what to skip") {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "expected PM to receive prompt with 'what to build and what to skip'")
+}
+
+func TestBreakDiscussionTie_WithDecision_StoresIt(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	memDB, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = memDB.Close() })
+
+	pmRunner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"Decision: go with approach A, skip the cache."}` + "\n"),
+	}
+	pmAgent := setupPMAgent(t, pmRunner)
+
+	chatRunner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"PASS"}` + "\n"),
+	}
+
+	sqlDB, sqlErr := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, sqlErr)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	// Create a tech lead with fact store so StoreArchitectureDecision works.
+	tlRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"PASS"}` + "\n")}
+	tlAgent := buildAgent(t, tlRunner, agent.RoleTechLead, memDB)
+	factStore := memory.NewFactStore(memDB)
+	graphStore := memory.NewGraphStore(memDB)
+	tlAgent.SetMemoryStores(graphStore, factStore)
+
+	allRoles := agent.AllRoles()
+	agents := make(map[agent.Role]*agent.Agent, len(allRoles))
+	factStores := make(map[agent.Role]*memory.FactStore, len(allRoles))
+	agents[agent.RolePM] = pmAgent
+	agents[agent.RoleTechLead] = tlAgent
+	factStores[agent.RolePM] = memory.NewFactStore(memDB)
+	factStores[agent.RoleTechLead] = factStore
+
+	for _, role := range allRoles {
+		if role == agent.RolePM || role == agent.RoleTechLead {
+			continue
+		}
+		agents[role] = buildAgent(t, chatRunner, role, memDB)
+		factStores[role] = memory.NewFactStore(memDB)
+	}
+
+	server := newTestSlackServer()
+	t.Cleanup(server.Close)
+	bot := newTestSlackBot(server.URL)
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		agents, checkIns, bot, orchestrator.NewAssigner(pmAgent, "TEST"),
+	)
+
+	conversation := orchestrator.NewConversationEngine(agents, factStores, bot, nil)
+	orch.SetConversationEngine(conversation)
+	conversation.OnMessage(ctx, "engineering", "ceo", "which approach?")
+
+	result := orch.BreakDiscussionTie(ctx, "engineering")
+	assert.Contains(t, result, "Decision")
+
+	// The decision should have been stored via StoreArchitectureDecision.
+	beliefs, beliefErr := factStore.TopBeliefs(ctx, 5)
+	require.NoError(t, beliefErr)
+	assert.NotEmpty(t, beliefs)
+	assert.Contains(t, beliefs[0].Content, "go with approach A")
 }
 
 func TestVerifyTicketState_NoPM_DoesNotPanic(t *testing.T) {

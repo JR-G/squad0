@@ -219,6 +219,108 @@ func TestRunConversationalArchReview_Approved_StoresDecision(t *testing.T) {
 	assert.Equal(t, orchestrator.ReviewApproved, outcome)
 }
 
+func TestExtractDecisionLine_FindsDecision(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		text     string
+		expected string
+	}{
+		{
+			name:     "standard DECISION prefix",
+			text:     "Some thoughts.\nDECISION: Use the repository pattern with interfaces.",
+			expected: "Use the repository pattern with interfaces.",
+		},
+		{
+			name:     "lowercase decision prefix",
+			text:     "I agree with the plan.\ndecision: Go with approach A and skip the cache layer.",
+			expected: "Go with approach A and skip the cache layer.",
+		},
+		{
+			name:     "mixed case",
+			text:     "Decision: Build the auth middleware first, skip rate limiting for now.",
+			expected: "Build the auth middleware first, skip rate limiting for now.",
+		},
+		{
+			name:     "no decision line",
+			text:     "This looks fine. Proceed with the implementation.",
+			expected: "",
+		},
+		{
+			name:     "empty text",
+			text:     "",
+			expected: "",
+		},
+		{
+			name:     "decision with leading whitespace",
+			text:     "  DECISION:  Use dependency injection throughout.",
+			expected: "Use dependency injection throughout.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			result := orchestrator.ExtractDecisionLine(tt.text)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestTechLeadDiscussionReview_PromptContainsDecisionInstruction(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	tlRunner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"Approach is fine. DECISION: Use interfaces at module boundaries."}` + "\n"),
+	}
+	orch := setupTechLeadOrch(t, tlRunner)
+
+	orch.TechLeadDiscussionReview(ctx, "engineering", "my plan", "JAM-99")
+
+	require.NotEmpty(t, tlRunner.calls)
+	assert.Contains(t, tlRunner.calls[0].stdin, "DECISION: statement")
+}
+
+func TestTechLeadDiscussionReview_WithDecision_StoresIt(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	memDB, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = memDB.Close() })
+
+	tlRunner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"Good plan.\nDECISION: Use the handler pattern for all endpoints."}` + "\n"),
+	}
+	tlAgent := buildAgent(t, tlRunner, agent.RoleTechLead, memDB)
+
+	factStore := memory.NewFactStore(memDB)
+	graphStore := memory.NewGraphStore(memDB)
+	tlAgent.SetMemoryStores(graphStore, factStore)
+
+	sqlDB, sqlErr := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, sqlErr)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		map[agent.Role]*agent.Agent{agent.RoleTechLead: tlAgent},
+		checkIns, nil, nil,
+	)
+
+	orch.TechLeadDiscussionReview(ctx, "engineering", "my plan", "JAM-88")
+
+	beliefs, beliefErr := factStore.TopBeliefs(ctx, 5)
+	require.NoError(t, beliefErr)
+	assert.NotEmpty(t, beliefs)
+	assert.Contains(t, beliefs[0].Content, "Use the handler pattern")
+}
+
 func TestTechLeadDiscussionReview_PassResponse_DoesNotPost(t *testing.T) {
 	t.Parallel()
 

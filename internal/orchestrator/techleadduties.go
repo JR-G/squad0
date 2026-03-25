@@ -39,7 +39,8 @@ func (orch *Orchestrator) TechLeadDiscussionReview(ctx context.Context, channel,
 
 	prompt += "\nRespond with your architectural take in 2-4 sentences. " +
 		"Be specific about what you agree with and what concerns you. " +
-		"If you'd suggest changes, say what and why."
+		"If you'd suggest changes, say what and why. " +
+		"End with a clear DECISION: statement summarising what the engineer should do."
 
 	response, err := techLead.QuickChat(ctx, prompt)
 	if err != nil {
@@ -53,6 +54,26 @@ func (orch *Orchestrator) TechLeadDiscussionReview(ctx context.Context, channel,
 	}
 
 	orch.postAsRole(ctx, channel, response, agent.RoleTechLead)
+
+	// Extract and store the DECISION line so it's prominent in context.
+	decision := ExtractDecisionLine(response)
+	if decision != "" {
+		orch.StoreArchitectureDecision(ctx, decision, ticket)
+	}
+}
+
+// ExtractDecisionLine finds a line starting with "DECISION:" (case-insensitive)
+// in the given text and returns the content after the prefix.
+func ExtractDecisionLine(text string) string {
+	for _, line := range strings.Split(text, "\n") {
+		trimmed := strings.TrimSpace(line)
+		lower := strings.ToLower(trimmed)
+		if !strings.HasPrefix(lower, "decision:") {
+			continue
+		}
+		return strings.TrimSpace(trimmed[len("decision:"):])
+	}
+	return ""
 }
 
 // StoreArchitectureDecision saves a Tech Lead's architectural decision
