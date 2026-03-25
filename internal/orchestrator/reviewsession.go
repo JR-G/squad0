@@ -6,6 +6,7 @@ import (
 	"log"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/JR-G/squad0/internal/agent"
 	"github.com/JR-G/squad0/internal/coordination"
@@ -278,6 +279,11 @@ func (orch *Orchestrator) startFixUp(ctx context.Context, prURL, ticket string, 
 		fmt.Sprintf("Picking up the review feedback on %s — reading through the comments now.", ticketLink),
 		engineerRole)
 
+	// Brief pause so the conversation engine processes replies,
+	// then the engineer acknowledges before going heads-down.
+	time.Sleep(3 * time.Second)
+	orch.acknowledgeThread(ctx, engineerAgent, engineerRole, "engineering")
+
 	prompt := BuildFixUpPrompt(prURL, ticket)
 
 	result, err := engineerAgent.ExecuteTask(ctx, prompt, nil, orch.cfg.TargetRepoDir)
@@ -304,6 +310,39 @@ func (orch *Orchestrator) startFixUp(ctx context.Context, prURL, ticket string, 
 }
 
 // forceApproval ensures the reviewer's GitHub approval is actually submitted.
+// acknowledgeThread reads recent messages and posts a brief acknowledgment
+// before the engineer goes heads-down in a session.
+func (orch *Orchestrator) acknowledgeThread(ctx context.Context, agentInstance *agent.Agent, role agent.Role, channel string) {
+	if orch.conversation == nil {
+		return
+	}
+
+	lines := orch.conversation.RecentMessages(channel)
+	if len(lines) < 2 {
+		return
+	}
+
+	// Only acknowledge if someone responded to our narration.
+	lastLine := lines[len(lines)-1]
+	if strings.Contains(lastLine, string(role)) {
+		return // Last message was ours, nothing to acknowledge.
+	}
+
+	response, err := agentInstance.QuickChat(ctx, fmt.Sprintf(
+		"Your teammates just responded to you in #%s. Read the last few messages and reply with a brief acknowledgment (1 sentence max) before you dive into work:\n\n%s",
+		channel, strings.Join(lines[len(lines)-3:], "\n")))
+	if err != nil {
+		return
+	}
+
+	response = filterPassResponse(response)
+	if response == "" {
+		return
+	}
+
+	orch.postAsRole(ctx, channel, response, role)
+}
+
 func (orch *Orchestrator) startReReview(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role) {
 	reviewer, ok := orch.agents[agent.RoleReviewer]
 	if !ok {

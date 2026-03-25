@@ -293,14 +293,14 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 	orch.writeMCPConfig(agentInstance, workSession.Dir())
 	defer func() { _ = agent.RemoveMCPConfig(workSession.Dir()) }()
 
-	// Narrate — team sees the engineer is heads-down.
+	// Narrate and acknowledge before going heads-down.
 	orch.postAsRole(ctx, "engineering",
-		fmt.Sprintf("Starting work on %s — heads down, will update when I have a PR.", ticketLink),
-		role)
+		fmt.Sprintf("Starting work on %s — heads down, will update when I have a PR.", ticketLink), role)
+	time.Sleep(3 * time.Second)
+	orch.acknowledgeThread(ctx, agentInstance, role, "engineering")
 
 	seanceCtx := BuildSeanceContext(ctx, orch.projectEpisodeStore, assignment.Ticket, role)
 	prompt := seanceCtx + discussion + BuildImplementationPrompt(assignment.Ticket, assignment.Description)
-
 	result, err := agentInstance.ExecuteTask(ctx, prompt, nil, workSession.Dir())
 	if err != nil {
 		log.Printf("session error for %s on %s: %v", role, assignment.Ticket, err)
