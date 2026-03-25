@@ -181,5 +181,5 @@ func fallbackPersona(role agent.Role) Persona {
 // hash-based identicon service.
 func GenerateIdenticonURL(name string) string {
 	hash := sha256.Sum256([]byte(name))
-	return fmt.Sprintf("https://api.dicebear.com/9.x/identicon/png?seed=%x&size=128", hash[:8])
+	return fmt.Sprintf("https://api.dicebear.com/9.x/micah/png?seed=%x&size=128&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf", hash[:8])
 }

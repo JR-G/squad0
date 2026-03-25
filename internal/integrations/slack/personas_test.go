@@ -139,5 +139,5 @@ func TestGenerateIdenticonURL_ContainsHash(t *testing.T) {
 	url := slack.GenerateIdenticonURL("test")
 
 	assert.Contains(t, url, "dicebear")
-	assert.Contains(t, url, "identicon")
+	assert.Contains(t, url, "micah")
 }
