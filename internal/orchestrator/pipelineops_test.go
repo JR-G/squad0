@@ -321,11 +321,12 @@ func TestRunSession_WithPipeline_CreatesWorkItem(t *testing.T) {
 
 	orch := orchestrator.NewOrchestrator(
 		orchestrator.Config{
-			PollInterval:  50 * time.Millisecond,
-			MaxParallel:   3,
-			CooldownAfter: time.Second,
-			WorkEnabled:   true,
-			TargetRepoDir: tmpDir,
+			PollInterval:   50 * time.Millisecond,
+			MaxParallel:    3,
+			CooldownAfter:  time.Second,
+			WorkEnabled:    true,
+			TargetRepoDir:  tmpDir,
+			DiscussionWait: time.Millisecond,
 		},
 		agents, checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)

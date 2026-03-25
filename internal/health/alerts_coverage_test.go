@@ -231,6 +231,28 @@ func TestFormatHealthSummary_LastErrorWithoutErrorCount(t *testing.T) {
 	assert.Contains(t, summary, "last error: oops")
 }
 
+func TestFormatAlert_HealthyState_ReturnsMinimal(t *testing.T) {
+	t.Parallel()
+
+	result := health.FormatAlertForTest(health.AgentHealth{
+		Role: agent.RoleEngineer1, State: health.StateHealthy,
+	})
+
+	assert.Contains(t, result, "healthy")
+	assert.NotContains(t, result, "session")
+}
+
+func TestFormatAlert_FailingState_IncludesErrorCount(t *testing.T) {
+	t.Parallel()
+
+	result := health.FormatAlertForTest(health.AgentHealth{
+		Role: agent.RoleEngineer1, State: health.StateFailing, ErrorCount: 5, LastError: "timeout",
+	})
+
+	assert.Contains(t, result, "5 consecutive errors")
+	assert.Contains(t, result, "timeout")
+}
+
 func TestNewAlerter_ReturnsNonNil(t *testing.T) {
 	t.Parallel()
 

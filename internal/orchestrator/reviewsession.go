@@ -164,6 +164,12 @@ func (orch *Orchestrator) runReview(ctx context.Context, reviewer *agent.Agent, 
 
 	switch outcome {
 	case ReviewApproved:
+		archOutcome := orch.runArchitectureReview(ctx, prURL, ticket)
+		if archOutcome == ReviewChangesRequested {
+			orch.handleChangesRequested(ctx, prURL, ticket, workItemID, engineerRole, "Tech Lead requested architectural changes")
+			return
+		}
+
 		orch.advancePipeline(ctx, workItemID, pipeline.StageApproved)
 		orch.announceAsRole(ctx, "reviews",
 			fmt.Sprintf("Approved %s: %s", ticket, summary),
@@ -172,6 +178,58 @@ func (orch *Orchestrator) runReview(ctx context.Context, reviewer *agent.Agent, 
 	case ReviewChangesRequested:
 		orch.handleChangesRequested(ctx, prURL, ticket, workItemID, engineerRole, summary)
 	}
+}
+
+const archReviewPromptTemplate = `You are the Tech Lead reviewing the architecture of a PR for ticket %s.
+
+## PR
+%s
+
+## Instructions
+1. Read the PR diff: gh pr diff %s
+2. Focus on architectural concerns:
+   - Does this fit the system's existing design?
+   - Are module boundaries respected?
+   - Are dependencies between components reasonable?
+   - Will this scale? Will it cause problems later?
+   - Are there better patterns for this?
+3. If you have architectural concerns, post them:
+   gh pr review %s --request-changes --body "your architectural feedback"
+4. If the architecture is sound, approve:
+   gh pr review %s --approve --body "Architecture looks good"
+
+Focus on design and structure, not code style or minor bugs — the Reviewer handles those.
+End with APPROVED or CHANGES_REQUESTED on its own line.
+`
+
+// RunArchitectureReviewForTest exports runArchitectureReview for testing.
+func (orch *Orchestrator) RunArchitectureReviewForTest(ctx context.Context, prURL, ticket string) ReviewOutcome {
+	return orch.runArchitectureReview(ctx, prURL, ticket)
+}
+
+func (orch *Orchestrator) runArchitectureReview(ctx context.Context, prURL, ticket string) ReviewOutcome {
+	techLead, ok := orch.agents[agent.RoleTechLead]
+	if !ok {
+		return ReviewApproved
+	}
+
+	prNum := ExtractPRNumber(prURL)
+	prompt := fmt.Sprintf(archReviewPromptTemplate, ticket, prURL, prNum, prNum, prNum)
+
+	result, err := techLead.DirectSession(ctx, prompt)
+	if err != nil {
+		log.Printf("architecture review failed for %s: %v", ticket, err)
+		return ReviewApproved
+	}
+
+	outcome := ClassifyReviewOutcome(result.Transcript)
+	summary := agent.TruncateSummary(result.Transcript, 300)
+
+	orch.announceAsRole(ctx, "reviews",
+		fmt.Sprintf("Architecture review for %s: %s", ticket, summary),
+		agent.RoleTechLead)
+
+	return outcome
 }
 
 func (orch *Orchestrator) handleChangesRequested(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role, reviewSummary string) {

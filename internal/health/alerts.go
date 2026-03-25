@@ -74,6 +74,11 @@ func FormatHealthSummary(healthStates []AgentHealth) string {
 	return builder.String()
 }
 
+// FormatAlertForTest exports formatAlert for testing.
+func FormatAlertForTest(health AgentHealth) string {
+	return formatAlert(health)
+}
+
 func formatAlert(health AgentHealth) string {
 	var builder strings.Builder
 

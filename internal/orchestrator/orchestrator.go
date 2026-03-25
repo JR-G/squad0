@@ -50,6 +50,7 @@ type Config struct {
 	TargetRepoDir    string
 	MemoryBinaryPath string
 	Links            slack.LinkConfig
+	DiscussionWait   time.Duration
 }
 
 // NewOrchestrator creates an Orchestrator with all dependencies injected.
@@ -267,9 +268,9 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 	orch.recordSessionStart(role)
 
 	ticketLink := orch.cfg.Links.TicketLink(assignment.Ticket)
-	orch.postAsRole(ctx, "engineering",
-		fmt.Sprintf("Picking up %s: %s", ticketLink, assignment.Description),
-		role)
+
+	// Discussion phase — engineer posts plan, team responds.
+	discussion := orch.runDiscussionPhase(ctx, agentInstance, assignment)
 
 	workSession, err := NewWorkSession(ctx, orch.cfg.TargetRepoDir, role, assignment.Ticket)
 	if err != nil {
@@ -286,7 +287,7 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 	defer func() { _ = agent.RemoveMCPConfig(workSession.Dir()) }()
 
 	seanceCtx := BuildSeanceContext(ctx, orch.projectEpisodeStore, assignment.Ticket, role)
-	prompt := seanceCtx + BuildImplementationPrompt(assignment.Ticket, assignment.Description)
+	prompt := seanceCtx + discussion + BuildImplementationPrompt(assignment.Ticket, assignment.Description)
 
 	result, err := agentInstance.ExecuteTask(ctx, prompt, nil, workSession.Dir())
 	if err != nil {
@@ -301,7 +302,6 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 
 	orch.recordSessionEnd(role, assignment.Ticket, true)
 
-	name := orch.NameForRole(role)
 	prURL := ExtractPRURL(result.Transcript)
 
 	if prURL != "" {
@@ -316,10 +316,10 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 
 	orch.announceAsRole(ctx, "engineering", finishedMsg, role)
 
-	reviewMsg := fmt.Sprintf("%s completed %s — please review", name, ticketLink)
+	reviewMsg := fmt.Sprintf("Finished %s — ready for review", ticketLink)
 	if prURL != "" {
 		prLink := orch.cfg.Links.PRLink(prURL)
-		reviewMsg = fmt.Sprintf("%s completed %s — %s", name, ticketLink, prLink)
+		reviewMsg = fmt.Sprintf("Finished %s — %s", ticketLink, prLink)
 	}
 	orch.announceAsRole(ctx, "reviews", reviewMsg, role)
 
@@ -370,6 +370,11 @@ func (orch *Orchestrator) announceAsRole(ctx context.Context, channel, text stri
 	}
 
 	_ = orch.bot.PostAsRole(ctx, channel, text, role)
+}
+
+// RegisterCancelForTest exports registerSessionCancel for testing.
+func (orch *Orchestrator) RegisterCancelForTest(role agent.Role, cancel context.CancelFunc) {
+	orch.registerSessionCancel(role, cancel)
 }
 
 // cancelSession cancels a running session for the given role, if any.

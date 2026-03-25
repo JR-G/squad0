@@ -150,6 +150,7 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 			WorkEnabled:      workEnabled,
 			TargetRepoDir:    targetRepoDir,
 			MemoryBinaryPath: resolveMemoryBinaryPath(),
+			DiscussionWait:   20 * time.Second,
 			Links:            buildLinkConfig(cfg),
 		},
 		agents, checkInStore, bot, assigner,

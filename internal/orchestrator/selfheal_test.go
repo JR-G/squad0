@@ -199,6 +199,62 @@ func TestSetRoster_And_NameForRole(t *testing.T) {
 	assert.Equal(t, "pm", orch.NameForRole(agent.RolePM))
 }
 
+func TestFilterPassResponse_EdgeCases(t *testing.T) {
+	t.Parallel()
+
+	assert.Empty(t, orchestrator.FilterPassResponseForTest("  PASS  "))
+	assert.Empty(t, orchestrator.FilterPassResponseForTest("I'll pass on this one"))
+	assert.NotEmpty(t, orchestrator.FilterPassResponseForTest("Let's discuss the approach"))
+}
+
+func TestCancelAllSessions_CancelsRegisteredContexts(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"[]"}` + "\n")}
+	pmAgent := setupPMAgent(t, pmRunner)
+	eng1 := setupAgentWithRole(t, &fakeProcessRunner{output: []byte(`{"type":"result","result":"done"}` + "\n")}, agent.RoleEngineer1)
+
+	agents := map[agent.Role]*agent.Agent{
+		agent.RolePM:        pmAgent,
+		agent.RoleEngineer1: eng1,
+	}
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 3, CooldownAfter: time.Second},
+		agents, checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
+	)
+
+	// Register real cancel functions to exercise cancelAllSessions loop.
+	cancelled := false
+	_, cancel := context.WithCancel(ctx)
+	orch.RegisterCancelForTest(agent.RoleEngineer1, func() {
+		cancelled = true
+		cancel()
+	})
+
+	_ = checkIns.Upsert(ctx, coordination.CheckIn{
+		Agent: agent.RolePM, Status: coordination.StatusWorking, FilesTouching: []string{},
+	})
+	_ = checkIns.Upsert(ctx, coordination.CheckIn{
+		Agent: agent.RoleEngineer1, Status: coordination.StatusWorking, FilesTouching: []string{},
+	})
+
+	require.NoError(t, orch.PauseAll(ctx))
+
+	assert.True(t, cancelled, "cancel function should have been called")
+
+	checkIn, _ := checkIns.GetByAgent(ctx, agent.RoleEngineer1)
+	assert.Equal(t, coordination.StatusPaused, checkIn.Status)
+}
+
 func TestConversationEngine_PausedAgent_SkipsResponse(t *testing.T) {
 	t.Parallel()
 
