@@ -25,6 +25,7 @@ type Agent struct {
 	embedder      *memory.Embedder
 	dbPath        string
 	MCPConfigPath string
+	ghToken       string // If set, passed as GH_TOKEN to sessions.
 }
 
 // NewAgent creates an Agent with all dependencies injected.
@@ -152,6 +153,12 @@ func (agent *Agent) QuickChat(ctx context.Context, prompt string) (string, error
 	return result.Transcript, nil
 }
 
+// SetGHToken sets a custom GitHub token for this agent's sessions.
+// Used for reviewer/PM agents that need a GitHub App token to approve PRs.
+func (agent *Agent) SetGHToken(token string) {
+	agent.ghToken = token
+}
+
 // DirectSession runs a clean Claude Code session with the agent's own
 // model. No personality wrapping, no memory retrieval. Used for
 // structured tasks like querying Linear where the prompt should not
@@ -161,9 +168,17 @@ func (agent *Agent) DirectSession(ctx context.Context, prompt string) (SessionRe
 		Role:   agent.role,
 		Model:  agent.model,
 		Prompt: prompt,
+		Env:    agent.envWithGHToken(),
 	}
 
 	return agent.session.Run(ctx, cfg)
+}
+
+func (agent *Agent) envWithGHToken() map[string]string {
+	if agent.ghToken == "" {
+		return nil
+	}
+	return map[string]string{"GH_TOKEN": agent.ghToken}
 }
 
 func (agent *Agent) assemblePrompt(ctx context.Context, taskDescription string, filePaths []string) (string, error) {

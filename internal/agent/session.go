@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -17,7 +18,11 @@ type ProcessRunner interface {
 }
 
 // ExecProcessRunner implements ProcessRunner using os/exec.
-type ExecProcessRunner struct{}
+type ExecProcessRunner struct {
+	// ExtraEnv holds additional environment variables set on every
+	// process. These override inherited env vars.
+	ExtraEnv map[string]string
+}
 
 // Run executes the named command, pipes stdin, and returns combined output.
 // When workingDir is non-empty the process runs in that directory.
@@ -27,6 +32,13 @@ func (runner ExecProcessRunner) Run(ctx context.Context, stdin, workingDir, name
 
 	if workingDir != "" {
 		cmd.Dir = workingDir
+	}
+
+	if len(runner.ExtraEnv) > 0 {
+		cmd.Env = os.Environ()
+		for key, val := range runner.ExtraEnv {
+			cmd.Env = append(cmd.Env, key+"="+val)
+		}
 	}
 
 	output, err := cmd.CombinedOutput()
@@ -63,6 +75,7 @@ type SessionConfig struct {
 	WorkingDir      string
 	MaxTurnDuration int
 	MCPConfigPath   string
+	Env             map[string]string // Extra environment variables for the process.
 }
 
 // Session manages a single Claude Code agent session.
@@ -78,6 +91,10 @@ func NewSession(runner ProcessRunner) *Session {
 // Run executes a Claude Code session with the given configuration and
 // returns the parsed result.
 func (session *Session) Run(ctx context.Context, cfg SessionConfig) (SessionResult, error) {
+	// Apply extra env vars for the duration of this session.
+	restoreEnv := applyEnv(cfg.Env)
+	defer restoreEnv()
+
 	args := buildArgs(cfg)
 
 	output, err := session.runner.Run(ctx, cfg.Prompt, cfg.WorkingDir, "claude", args...)
@@ -180,6 +197,34 @@ func extractAssistantText(msg StreamMessage) string {
 	}
 
 	return builder.String()
+}
+
+// applyEnv sets environment variables and returns a function that
+// restores the previous values.
+func applyEnv(env map[string]string) func() {
+	if len(env) == 0 {
+		return func() {}
+	}
+
+	previous := make(map[string]string, len(env))
+	for key, val := range env {
+		previous[key] = os.Getenv(key)
+		_ = os.Setenv(key, val)
+	}
+
+	return func() {
+		for key, oldVal := range previous {
+			restoreEnvVar(key, oldVal)
+		}
+	}
+}
+
+func restoreEnvVar(key, oldVal string) {
+	if oldVal == "" {
+		_ = os.Unsetenv(key)
+		return
+	}
+	_ = os.Setenv(key, oldVal)
 }
 
 // ExtractExitError returns the exit code from an exec.ExitError, or 1
