@@ -48,7 +48,7 @@ func setupPMDutiesOrch(t *testing.T) (*orchestrator.Orchestrator, *pipeline.Work
 	}
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 3, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 3, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		agents, checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
 	orch.SetPipeline(pipeStore)
@@ -137,7 +137,7 @@ func TestBreakDiscussionTie_NoPM_ReturnsEmpty(t *testing.T) {
 	require.NoError(t, checkIns.InitSchema(ctx))
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		map[agent.Role]*agent.Agent{},
 		checkIns, nil, nil,
 	)
@@ -189,7 +189,7 @@ func TestBreakDiscussionTie_WithPM_ReturnsDecision(t *testing.T) {
 	bot := newTestSlackBot(server.URL)
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		agents, checkIns, bot, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
 
@@ -249,7 +249,7 @@ func TestBreakDiscussionTie_PromptContainsDecisionInstruction(t *testing.T) {
 	conversation := orchestrator.NewConversationEngine(agents, factStores, bot, nil)
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		agents, checkIns, bot, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
 	orch.SetConversationEngine(conversation)
@@ -332,7 +332,7 @@ func TestBreakDiscussionTie_WithDecision_StoresIt(t *testing.T) {
 	bot := newTestSlackBot(server.URL)
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		agents, checkIns, bot, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
 
@@ -362,7 +362,7 @@ func TestVerifyTicketState_NoPM_DoesNotPanic(t *testing.T) {
 	require.NoError(t, checkIns.InitSchema(ctx))
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		map[agent.Role]*agent.Agent{},
 		checkIns, nil, nil,
 	)

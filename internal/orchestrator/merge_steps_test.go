@@ -33,7 +33,7 @@ func TestCheckApprovalStatus_Approved(t *testing.T) {
 	require.NoError(t, checkIns.InitSchema(ctx))
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent},
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
@@ -74,7 +74,7 @@ func TestCheckApprovalStatus_NotApproved(t *testing.T) {
 			require.NoError(t, checkIns.InitSchema(ctx))
 
 			orch := orchestrator.NewOrchestrator(
-				orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+				orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 				map[agent.Role]*agent.Agent{agent.RolePM: pmAgent},
 				checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 			)
@@ -103,7 +103,7 @@ func TestCheckApprovalStatus_Error(t *testing.T) {
 	require.NoError(t, checkIns.InitSchema(ctx))
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent},
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
@@ -129,7 +129,7 @@ func TestCheckApprovalStatus_PromptContainsPRNumber(t *testing.T) {
 	require.NoError(t, checkIns.InitSchema(ctx))
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent},
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
@@ -157,7 +157,7 @@ func TestExecuteMerge_Success(t *testing.T) {
 	require.NoError(t, checkIns.InitSchema(ctx))
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent},
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
@@ -186,7 +186,7 @@ func TestExecuteMerge_CIFail_ReturnsFalse(t *testing.T) {
 	require.NoError(t, checkIns.InitSchema(ctx))
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent},
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
@@ -213,7 +213,7 @@ func TestExecuteMerge_Error_ReturnsFalse(t *testing.T) {
 	require.NoError(t, checkIns.InitSchema(ctx))
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent},
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
@@ -240,7 +240,7 @@ func TestMergeAndComplete_ApprovalError_Announces(t *testing.T) {
 	require.NoError(t, checkIns.InitSchema(ctx))
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent},
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
@@ -268,7 +268,7 @@ func TestForceApproval_SubmitsGHReview(t *testing.T) {
 	require.NoError(t, checkIns.InitSchema(ctx))
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		map[agent.Role]*agent.Agent{agent.RoleReviewer: reviewerAgent},
 		checkIns, nil, nil,
 	)
@@ -299,7 +299,7 @@ func TestForceApproval_Error_DoesNotPanic(t *testing.T) {
 	require.NoError(t, checkIns.InitSchema(ctx))
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		map[agent.Role]*agent.Agent{agent.RoleReviewer: reviewerAgent},
 		checkIns, nil, nil,
 	)
@@ -349,7 +349,7 @@ func TestMergeAfterRetry_FullSuccess(t *testing.T) {
 	require.NoError(t, createErr)
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent},
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)

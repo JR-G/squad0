@@ -47,7 +47,7 @@ func TestResumePendingWork_ResumesApprovedItems(t *testing.T) {
 	agents := map[agent.Role]*agent.Agent{agent.RolePM: pmAgent}
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		agents, checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
 	orch.SetPipeline(pipeStore)
@@ -95,7 +95,7 @@ func TestResumePendingWork_PROpenedItem_TriggersReview(t *testing.T) {
 	}
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		agents, checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
 	orch.SetPipeline(pipeStore)
@@ -128,7 +128,7 @@ func TestResumePendingWork_WorkingItems_DoesNotPanic(t *testing.T) {
 	pmAgent := setupPMAgent(t, pmRunner)
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent},
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
@@ -159,7 +159,7 @@ func TestMergeAndComplete_NoPM_DoesNotPanic(t *testing.T) {
 
 	// No PM agent — mergeAndComplete should return early.
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		map[agent.Role]*agent.Agent{},
 		checkIns, nil, orchestrator.NewAssigner(nil, "TEST"),
 	)
@@ -187,7 +187,7 @@ func TestMergeAndComplete_MergeFails_AnnouncesFailure(t *testing.T) {
 	pmAgent := setupPMAgent(t, pmRunner)
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent},
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
@@ -223,7 +223,7 @@ func TestMergeAndComplete_Success_AdvancesToMerged(t *testing.T) {
 	pmAgent := setupPMAgent(t, pmRunner)
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent},
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)

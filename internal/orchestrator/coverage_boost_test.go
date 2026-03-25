@@ -118,7 +118,7 @@ func TestBreakDiscussionTie_NoMessages_ReturnsEmpty(t *testing.T) {
 	conversation := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		agents, checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
 	orch.SetConversationEngine(conversation)
@@ -167,7 +167,7 @@ func TestBreakDiscussionTie_PMError_ReturnsEmpty(t *testing.T) {
 	conversation := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		agents, checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
 	orch.SetConversationEngine(conversation)
@@ -217,7 +217,7 @@ func TestBreakDiscussionTie_PASSResponse_ReturnsEmpty(t *testing.T) {
 	conversation := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		agents, checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
 	orch.SetConversationEngine(conversation)
@@ -245,7 +245,7 @@ func TestVerifyTicketState_WithPM_DoesNotPanic(t *testing.T) {
 	require.NoError(t, checkIns.InitSchema(ctx))
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent},
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
@@ -277,7 +277,7 @@ func TestRunConversationalArchReview_Error_ReturnsApproved(t *testing.T) {
 	require.NoError(t, checkIns.InitSchema(ctx))
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		map[agent.Role]*agent.Agent{agent.RoleTechLead: tlAgent},
 		checkIns, nil, nil,
 	)
@@ -304,7 +304,7 @@ func TestMergeAndComplete_PMError_DoesNotPanic(t *testing.T) {
 	require.NoError(t, checkIns.InitSchema(ctx))
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent},
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
@@ -326,7 +326,7 @@ func TestMergeAndComplete_NoPMAgent_ReturnsEarly(t *testing.T) {
 	require.NoError(t, checkIns.InitSchema(ctx))
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		map[agent.Role]*agent.Agent{},
 		checkIns, nil, nil,
 	)
@@ -351,7 +351,7 @@ func TestStartReReview_NoReviewer_DoesNotPanic(t *testing.T) {
 	pmAgent := setupPMAgent(t, pmRunner)
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent},
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
@@ -387,7 +387,7 @@ func TestExtractAndStoreDecisions_NoDecisionSignals_DoesNotStore(t *testing.T) {
 	require.NoError(t, checkIns.InitSchema(ctx))
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		map[agent.Role]*agent.Agent{agent.RoleTechLead: tlAgent},
 		checkIns, nil, nil,
 	)
@@ -425,7 +425,7 @@ func TestMergeAfterRetry_PMError_DoesNotPanic(t *testing.T) {
 	require.NoError(t, checkIns.InitSchema(ctx))
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent, agent.RoleReviewer: reviewerAgent},
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)

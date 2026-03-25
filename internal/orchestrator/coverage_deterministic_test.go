@@ -167,7 +167,7 @@ func TestRunPMDuties_AllEngineersChecked(t *testing.T) {
 	}
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 3, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 3, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		agents, checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
 	orch.SetPipeline(pipeStore)

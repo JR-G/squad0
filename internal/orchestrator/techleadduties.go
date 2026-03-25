@@ -133,10 +133,10 @@ func (orch *Orchestrator) RunConversationalArchReview(ctx context.Context, prURL
 	}
 
 	outcome := ClassifyReviewOutcome(result.Transcript)
-	summary := agent.TruncateSummary(result.Transcript, 300)
+	prLink := orch.cfg.Links.PRLink(prURL)
 
 	orch.announceAsRole(ctx, "reviews",
-		fmt.Sprintf("Architecture review for %s: %s", ticket, summary),
+		fmt.Sprintf("Architecture review for %s — %s. Details on the PR. %s", ticket, outcome, prLink),
 		agent.RoleTechLead)
 
 	// Store any architectural decisions from the review.

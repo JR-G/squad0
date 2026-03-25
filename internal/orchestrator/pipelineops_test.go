@@ -89,7 +89,7 @@ func TestCreatePipelineItem_CreateAndAdvance(t *testing.T) {
 	pmAgent := setupPMAgent(t, pmRunner)
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent},
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
@@ -132,7 +132,7 @@ func TestStoreProjectEpisode_StoresEpisode(t *testing.T) {
 	pmAgent := setupPMAgent(t, pmRunner)
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent},
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
@@ -162,7 +162,7 @@ func TestPipelineOps_NilGuards_DoNotPanic(t *testing.T) {
 
 	// No pipeline or episode store set.
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent},
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
@@ -208,7 +208,7 @@ func TestStartFixUp_MissingEngineer_DoesNotPanic(t *testing.T) {
 	}
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 3, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 3, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		agents, checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
 	orch.SetPipeline(pipeStore)
@@ -263,7 +263,7 @@ func TestSetPipeline_And_SetProjectEpisodeStore(t *testing.T) {
 	pmAgent := setupPMAgent(t, pmRunner)
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent},
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
@@ -391,7 +391,7 @@ func TestReviewWithChangesRequested_TriggersFixUp(t *testing.T) {
 	}
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 3, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 3, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
 		agents, checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
 	orch.SetPipeline(pipeStore)

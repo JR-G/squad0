@@ -173,3 +173,143 @@ func TestChangesRequested_UsesPostAsRole(t *testing.T) {
 		orch.Wait()
 	})
 }
+
+func TestAcknowledgeThread_NoConversation_DoesNotPanic(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	memDB, memErr := memory.Open(ctx, ":memory:")
+	require.NoError(t, memErr)
+	t.Cleanup(func() { _ = memDB.Close() })
+
+	runner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"on it"}` + "\n")}
+	engAgent := buildAgent(t, runner, agent.RoleEngineer1, memDB)
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
+		map[agent.Role]*agent.Agent{agent.RoleEngineer1: engAgent},
+		checkIns, nil, nil,
+	)
+
+	// No conversation engine — should return without panic.
+	assert.NotPanics(t, func() {
+		orch.AcknowledgeThreadForTest(ctx, engAgent, agent.RoleEngineer1, "engineering")
+	})
+}
+
+func TestAcknowledgeThread_WithMessages_PostsAcknowledgment(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	memDB, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = memDB.Close() })
+
+	sqlDB, sqlErr := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, sqlErr)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	engRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"got it, diving in now"}` + "\n")}
+	engAgent := buildAgent(t, engRunner, agent.RoleEngineer1, memDB)
+
+	allRoles := agent.AllRoles()
+	agents := make(map[agent.Role]*agent.Agent, len(allRoles))
+	factStores := make(map[agent.Role]*memory.FactStore, len(allRoles))
+	agents[agent.RoleEngineer1] = engAgent
+	factStores[agent.RoleEngineer1] = memory.NewFactStore(memDB)
+
+	chatRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"PASS"}` + "\n")}
+	for _, role := range allRoles {
+		if role == agent.RoleEngineer1 {
+			continue
+		}
+		agents[role] = buildAgent(t, chatRunner, role, memDB)
+		factStores[role] = memory.NewFactStore(memDB)
+	}
+
+	server := newTestSlackServer()
+	t.Cleanup(server.Close)
+	bot := newTestSlackBot(server.URL)
+
+	conversation := orchestrator.NewConversationEngine(agents, factStores, bot, nil)
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
+		agents, checkIns, bot, nil,
+	)
+	orch.SetConversationEngine(conversation)
+
+	// Seed messages so acknowledgeThread has something to respond to.
+	conversation.OnMessage(ctx, "engineering", string(agent.RoleEngineer1), "picking up JAM-42")
+	conversation.OnMessage(ctx, "engineering", "ceo", "nice, keep me posted")
+
+	orch.AcknowledgeThreadForTest(ctx, engAgent, agent.RoleEngineer1, "engineering")
+
+	// Engineer should have been called with QuickChat to acknowledge.
+	engRunner.mu.Lock()
+	callCount := len(engRunner.calls)
+	engRunner.mu.Unlock()
+	assert.GreaterOrEqual(t, callCount, 1)
+}
+
+func TestAcknowledgeThread_LastMessageIsOwn_Skips(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	memDB, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = memDB.Close() })
+
+	sqlDB, sqlErr := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, sqlErr)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	engRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"PASS"}` + "\n")}
+	engAgent := buildAgent(t, engRunner, agent.RoleEngineer1, memDB)
+
+	allRoles := agent.AllRoles()
+	agents := make(map[agent.Role]*agent.Agent, len(allRoles))
+	factStores := make(map[agent.Role]*memory.FactStore, len(allRoles))
+	for _, role := range allRoles {
+		agents[role] = buildAgent(t, engRunner, role, memDB)
+		factStores[role] = memory.NewFactStore(memDB)
+	}
+
+	conversation := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
+		agents, checkIns, nil, nil,
+	)
+	orch.SetConversationEngine(conversation)
+
+	// Last message is from engineer-1 — should skip acknowledgment.
+	conversation.OnMessage(ctx, "engineering", "ceo", "hello")
+	conversation.OnMessage(ctx, "engineering", string(agent.RoleEngineer1), "picking up the ticket")
+
+	engRunner.mu.Lock()
+	beforeCount := len(engRunner.calls)
+	engRunner.mu.Unlock()
+
+	orch.AcknowledgeThreadForTest(ctx, engAgent, agent.RoleEngineer1, "engineering")
+
+	engRunner.mu.Lock()
+	afterCount := len(engRunner.calls)
+	engRunner.mu.Unlock()
+
+	// No new calls — skipped because last message was own.
+	assert.Equal(t, beforeCount, afterCount)
+}
