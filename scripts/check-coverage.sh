@@ -13,7 +13,7 @@ if [ -z "$TOTAL" ]; then
   exit 1
 fi
 
-TOTAL_INT=$(printf "%.0f" "$TOTAL")
+TOTAL_INT=$(echo "$TOTAL" | awk '{printf "%d", $1 + 0.5}')
 
 if [ "$TOTAL_INT" -lt "$MIN_COVERAGE" ]; then
   echo "ERROR: coverage ${TOTAL}% is below minimum ${MIN_COVERAGE}%"
