@@ -13,7 +13,7 @@ if [ -z "$TOTAL" ]; then
   exit 1
 fi
 
-TOTAL_INT=${TOTAL%.*}
+TOTAL_INT=$(printf "%.0f" "$TOTAL")
 
 if [ "$TOTAL_INT" -lt "$MIN_COVERAGE" ]; then
   echo "ERROR: coverage ${TOTAL}% is below minimum ${MIN_COVERAGE}%"
