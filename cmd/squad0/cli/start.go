@@ -18,6 +18,7 @@ import (
 	"github.com/JR-G/squad0/internal/logging"
 	"github.com/JR-G/squad0/internal/memory"
 	"github.com/JR-G/squad0/internal/orchestrator"
+	"github.com/JR-G/squad0/internal/pipeline"
 	"github.com/JR-G/squad0/internal/secrets"
 	"github.com/JR-G/squad0/internal/tui"
 	_ "github.com/mattn/go-sqlite3" // SQLite driver for coordination DB.
@@ -155,6 +156,15 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	)
 
 	orch.SetHealthMonitor(monitor)
+
+	pipelineStore := pipeline.NewWorkItemStore(coordDB)
+	if pipeErr := pipelineStore.InitSchema(ctx); pipeErr != nil {
+		return fmt.Errorf("initialising pipeline: %w", pipeErr)
+	}
+	orch.SetPipeline(pipelineStore)
+
+	projectEpisodeStore := memory.NewEpisodeStore(projectDB)
+	orch.SetProjectEpisodeStore(projectEpisodeStore)
 
 	if !workEnabled {
 		_, _ = fmt.Fprint(out, tui.StepWarn("Linear not configured — agents will chat but not work"))

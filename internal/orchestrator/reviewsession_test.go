@@ -25,13 +25,13 @@ func TestExtractPRURL_FindsURL(t *testing.T) {
 	}{
 		{
 			name:     "standard PR URL",
-			text:     "Opened PR at https://github.com/JR-G/makebook/pull/42",
-			expected: "https://github.com/JR-G/makebook/pull/42",
+			text:     "Opened PR at https://github.com/test-org/test-repo/pull/42",
+			expected: "https://github.com/test-org/test-repo/pull/42",
 		},
 		{
 			name:     "URL in middle of text",
-			text:     "Created https://github.com/JR-G/squad0/pull/7 for review",
-			expected: "https://github.com/JR-G/squad0/pull/7",
+			text:     "Created https://github.com/test-org/test-repo/pull/7 for review",
+			expected: "https://github.com/test-org/test-repo/pull/7",
 		},
 		{
 			name:     "no PR URL",
@@ -64,12 +64,12 @@ func TestExtractPRNumber_ReturnsNumber(t *testing.T) {
 	}{
 		{
 			name:     "standard URL",
-			prURL:    "https://github.com/JR-G/makebook/pull/42",
+			prURL:    "https://github.com/test-org/test-repo/pull/42",
 			expected: "42",
 		},
 		{
 			name:     "single digit",
-			prURL:    "https://github.com/JR-G/squad0/pull/7",
+			prURL:    "https://github.com/test-org/test-repo/pull/7",
 			expected: "7",
 		},
 		{
@@ -122,7 +122,7 @@ func TestStartReview_AssignsReviewer(t *testing.T) {
 	)
 
 	// Start a review — this spawns a goroutine.
-	orch.StartReviewForTest(ctx, "https://github.com/JR-G/makebook/pull/42", "JAM-7")
+	orch.StartReviewForTest(ctx, "https://github.com/test-org/test-repo/pull/42", "JAM-7")
 	orch.Wait()
 
 	// Reviewer should have been called with the PR number.
@@ -151,7 +151,7 @@ func TestStartReview_NoReviewer_DoesNotPanic(t *testing.T) {
 	)
 
 	assert.NotPanics(t, func() {
-		orch.StartReviewForTest(context.Background(), "https://github.com/JR-G/x/pull/1", "T-1")
+		orch.StartReviewForTest(context.Background(), "https://github.com/test-org/test-repo/pull/1", "T-1")
 	})
 }
 
@@ -187,7 +187,7 @@ func TestStartReview_ReviewerError_DoesNotPanic(t *testing.T) {
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
 
-	orch.StartReviewForTest(ctx, "https://github.com/JR-G/x/pull/1", "T-1")
+	orch.StartReviewForTest(ctx, "https://github.com/test-org/test-repo/pull/1", "T-1")
 	orch.Wait()
 
 	// Reviewer should be back to idle after failure.
@@ -200,12 +200,12 @@ func TestBuildReviewPrompt_ContainsPRNumber(t *testing.T) {
 	t.Parallel()
 
 	prompt := orchestrator.BuildReviewPrompt(
-		"https://github.com/JR-G/makebook/pull/42",
+		"https://github.com/test-org/test-repo/pull/42",
 		"JAM-7",
 	)
 
 	assert.Contains(t, prompt, "JAM-7")
 	assert.Contains(t, prompt, "gh pr diff 42")
 	assert.Contains(t, prompt, "gh pr view 42")
-	assert.Contains(t, prompt, "gh pr comment 42")
+	assert.Contains(t, prompt, "gh pr review 42")
 }

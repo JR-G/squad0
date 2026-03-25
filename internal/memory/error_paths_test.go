@@ -162,6 +162,13 @@ func TestEpisodeStore_EpisodesWithEmbeddings_ClosedDB_ReturnsError(t *testing.T)
 	assert.Error(t, err)
 }
 
+func TestEpisodeStore_EpisodesByTicket_ClosedDB_ReturnsError(t *testing.T) {
+	t.Parallel()
+	store := memory.NewEpisodeStore(closedTestDB(t))
+	_, err := store.EpisodesByTicket(context.Background(), "JAM-1")
+	assert.Error(t, err)
+}
+
 func TestFTSStore_SearchFacts_ClosedDB_ReturnsError(t *testing.T) {
 	t.Parallel()
 	store := memory.NewFTSStore(closedTestDB(t))

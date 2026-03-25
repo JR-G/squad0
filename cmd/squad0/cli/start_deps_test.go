@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -362,6 +363,63 @@ func TestCreateAgents_SetsDBPath(t *testing.T) {
 		assert.Contains(t, agentInstance.DBPath(), string(role),
 			"DB path should include role name")
 	}
+}
+
+func TestResolveStdin_NilDeps_ReturnsNil(t *testing.T) {
+	t.Parallel()
+	assert.Nil(t, cli.ResolveStdin(nil))
+}
+
+func TestResolveStdin_NilStdin_ReturnsNil(t *testing.T) {
+	t.Parallel()
+	assert.Nil(t, cli.ResolveStdin(&cli.SecretsCommandDeps{}))
+}
+
+func TestReadSecretValue_WithStdin_ReadsFromIt(t *testing.T) {
+	t.Parallel()
+
+	deps := &cli.SecretsCommandDeps{Stdin: strings.NewReader("my-secret\n")}
+
+	value, err := cli.ReadSecretValue(deps, "TEST")
+
+	require.NoError(t, err)
+	assert.Equal(t, "my-secret", value)
+}
+
+func TestResolveStdin_WithStdin_ReturnsIt(t *testing.T) {
+	t.Parallel()
+
+	reader := strings.NewReader("test")
+	deps := &cli.SecretsCommandDeps{Stdin: reader}
+
+	assert.Equal(t, reader, cli.ResolveStdin(deps))
+}
+
+func TestBuildLinkConfig_WithTargetRepo(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.DefaultConfig()
+	cfg.Linear.Workspace = "jamesrg"
+	cfg.GitHub.Owner = "JR-G"
+	cfg.Project.TargetRepo = "github.com/JR-G/makebook"
+
+	links := cli.BuildLinkConfig(cfg)
+
+	assert.Equal(t, "jamesrg", links.LinearWorkspace)
+	assert.Equal(t, "JR-G", links.GitHubOwner)
+	assert.Equal(t, "makebook", links.GitHubRepo)
+}
+
+func TestBuildLinkConfig_NoTargetRepo(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.DefaultConfig()
+	cfg.Linear.Workspace = "jamesrg"
+
+	links := cli.BuildLinkConfig(cfg)
+
+	assert.Equal(t, "jamesrg", links.LinearWorkspace)
+	assert.Empty(t, links.GitHubRepo)
 }
 
 func TestRunOrchestratorWithContext_CoordStoreFailure_ReturnsError(t *testing.T) {

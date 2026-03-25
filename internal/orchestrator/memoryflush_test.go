@@ -141,6 +141,27 @@ func TestTruncateTranscript_LongText_Truncated(t *testing.T) {
 	assert.Len(t, result, 50)
 }
 
+func TestFlushSessionMemory_ExtractorError_DoesNotPanic(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	extractorRunner := &fakeProcessRunner{
+		output: []byte(`{"type":"error","content":"rate limited"}` + "\n"),
+		err:    assert.AnError,
+	}
+	extractor := buildAgent(t, extractorRunner, agent.RolePM, db)
+	engineer := buildAgent(t, &fakeProcessRunner{output: []byte("{}\n")}, agent.RoleEngineer1, db)
+	engineer.SetMemoryStores(memory.NewGraphStore(db), memory.NewFactStore(db))
+
+	assert.NotPanics(t, func() {
+		orchestrator.FlushSessionMemory(ctx, extractor, engineer, "SQ-42", "some transcript")
+	})
+}
+
 func TestFlushSessionMemory_EmptyTranscript_ExtractsNothing(t *testing.T) {
 	t.Parallel()
 

@@ -139,6 +139,35 @@ func TestEpisodeStore_UpdateEmbedding_SetsEmbedding(t *testing.T) {
 	assert.InDelta(t, 0.5, float64(episode.Embedding[0]), 0.001)
 }
 
+func TestEpisodeStore_EpisodesByTicket_ReturnsMatching(t *testing.T) {
+	t.Parallel()
+
+	db := openTestDB(t)
+	store := memory.NewEpisodeStore(db)
+	ctx := context.Background()
+
+	_, _ = store.CreateEpisode(ctx, memory.Episode{Agent: "eng-1", Ticket: "JAM-42", Summary: "first attempt", Outcome: memory.OutcomeFailure})
+	_, _ = store.CreateEpisode(ctx, memory.Episode{Agent: "eng-2", Ticket: "JAM-42", Summary: "second attempt", Outcome: memory.OutcomeSuccess})
+	_, _ = store.CreateEpisode(ctx, memory.Episode{Agent: "eng-1", Ticket: "JAM-99", Summary: "different ticket", Outcome: memory.OutcomeSuccess})
+
+	episodes, err := store.EpisodesByTicket(ctx, "JAM-42")
+
+	require.NoError(t, err)
+	assert.Len(t, episodes, 2)
+}
+
+func TestEpisodeStore_EpisodesByTicket_NoResults(t *testing.T) {
+	t.Parallel()
+
+	db := openTestDB(t)
+	store := memory.NewEpisodeStore(db)
+
+	episodes, err := store.EpisodesByTicket(context.Background(), "NONEXISTENT")
+
+	require.NoError(t, err)
+	assert.Empty(t, episodes)
+}
+
 func TestEpisodeStore_EpisodesWithEmbeddings_FiltersNulls(t *testing.T) {
 	t.Parallel()
 

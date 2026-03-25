@@ -211,6 +211,21 @@ func ResolveTargetRepo(targetRepo string) string {
 	return resolveTargetRepo(targetRepo)
 }
 
+// ReadSecretValue exports readSecretValue for testing.
+func ReadSecretValue(deps *SecretsCommandDeps, name string) (string, error) {
+	return readSecretValue(deps, name)
+}
+
+// ResolveStdin exports resolveStdin for testing.
+func ResolveStdin(deps *SecretsCommandDeps) io.Reader {
+	return resolveStdin(deps)
+}
+
+// BuildLinkConfig exports buildLinkConfig for testing.
+func BuildLinkConfig(cfg config.Config) slack.LinkConfig {
+	return buildLinkConfig(cfg)
+}
+
 // ResolveMemoryBinaryPath exports resolveMemoryBinaryPath for testing.
 func ResolveMemoryBinaryPath() string {
 	return resolveMemoryBinaryPath()

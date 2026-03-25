@@ -16,6 +16,7 @@ type Assignment struct {
 	Ticket      string
 	Description string
 	WorkingDir  string
+	WorkItemID  int64
 }
 
 // Assigner uses the PM agent to decide ticket assignments for idle

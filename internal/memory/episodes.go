@@ -134,6 +134,20 @@ func (store *EpisodeStore) RecentEpisodes(ctx context.Context, limit int) ([]Epi
 	return scanEpisodes(rows)
 }
 
+// EpisodesByTicket returns all episodes for a given ticket, most recent first.
+func (store *EpisodeStore) EpisodesByTicket(ctx context.Context, ticket string) ([]Episode, error) {
+	rows, err := store.db.RawDB().QueryContext(ctx,
+		`SELECT id, agent, ticket, summary, embedding, outcome, created_at
+		 FROM episodes WHERE ticket = ? ORDER BY created_at DESC`, ticket,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("querying episodes for ticket %s: %w", ticket, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	return scanEpisodes(rows)
+}
+
 // UpdateEmbedding sets the embedding vector on an existing episode.
 func (store *EpisodeStore) UpdateEmbedding(ctx context.Context, id int64, embedding []float32) error {
 	blob := SerialiseVector(embedding)

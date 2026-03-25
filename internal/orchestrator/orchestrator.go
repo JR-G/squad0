@@ -12,6 +12,8 @@ import (
 	"github.com/JR-G/squad0/internal/coordination"
 	"github.com/JR-G/squad0/internal/health"
 	slack "github.com/JR-G/squad0/internal/integrations/slack"
+	"github.com/JR-G/squad0/internal/memory"
+	"github.com/JR-G/squad0/internal/pipeline"
 )
 
 // Orchestrator coordinates the squad0 agent team: polls for work via
@@ -32,9 +34,11 @@ type Orchestrator struct {
 
 	// Per-agent session cancellation. When pause is called, the cancel
 	// function fires and the running Claude Code process is killed.
-	sessionCancels map[agent.Role]context.CancelFunc
-	cancelsMu      sync.Mutex
-	roster         map[agent.Role]string
+	sessionCancels      map[agent.Role]context.CancelFunc
+	cancelsMu           sync.Mutex
+	roster              map[agent.Role]string
+	pipelineStore       *pipeline.WorkItemStore
+	projectEpisodeStore *memory.EpisodeStore
 }
 
 // Config holds orchestrator-level settings.
@@ -129,7 +133,7 @@ func (orch *Orchestrator) tick(ctx context.Context) {
 
 	log.Printf("tick: %d idle agents, roles: %v", len(idleRoles), idleRoles)
 
-	idleEngineers := orch.filterHealthyEngineers(idleRoles)
+	idleEngineers := orch.filterByWIP(ctx, orch.filterHealthyEngineers(idleRoles))
 	if len(idleEngineers) == 0 {
 		log.Println("tick: no idle engineers")
 		return
@@ -177,6 +181,17 @@ func (orch *Orchestrator) tick(ctx context.Context) {
 func (orch *Orchestrator) SetConversationEngine(engine *ConversationEngine) {
 	orch.conversation = engine
 	engine.SetPauseChecker(orch.IsPaused)
+}
+
+// SetPipeline connects the work item pipeline for WIP tracking.
+func (orch *Orchestrator) SetPipeline(store *pipeline.WorkItemStore) {
+	orch.pipelineStore = store
+}
+
+// SetProjectEpisodeStore connects the shared episode store for seance
+// — cross-session memory retrieval when tickets are reassigned.
+func (orch *Orchestrator) SetProjectEpisodeStore(store *memory.EpisodeStore) {
+	orch.projectEpisodeStore = store
 }
 
 // SetRoster stores the role→name mapping so lifecycle messages use
@@ -230,6 +245,7 @@ func (orch *Orchestrator) startWork(ctx context.Context, assignment Assignment) 
 	sessionCtx, cancel := context.WithCancel(ctx)
 	orch.registerSessionCancel(assignment.Role, cancel)
 
+	assignment.WorkItemID = orch.createPipelineItem(ctx, assignment)
 	go MoveTicketState(ctx, orch.agents[agent.RolePM], assignment.Ticket, "In Progress")
 
 	orch.wg.Add(1)
@@ -269,7 +285,8 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 	orch.writeMCPConfig(agentInstance, workSession.Dir())
 	defer func() { _ = agent.RemoveMCPConfig(workSession.Dir()) }()
 
-	prompt := BuildImplementationPrompt(assignment.Ticket, assignment.Description)
+	seanceCtx := BuildSeanceContext(ctx, orch.projectEpisodeStore, assignment.Ticket, role)
+	prompt := seanceCtx + BuildImplementationPrompt(assignment.Ticket, assignment.Description)
 
 	result, err := agentInstance.ExecuteTask(ctx, prompt, nil, workSession.Dir())
 	if err != nil {
@@ -287,6 +304,10 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 	name := orch.NameForRole(role)
 	prURL := ExtractPRURL(result.Transcript)
 
+	if prURL != "" {
+		orch.setPipelinePR(ctx, assignment.WorkItemID, prURL)
+	}
+
 	finishedMsg := fmt.Sprintf("Finished %s.", ticketLink)
 	if prURL != "" {
 		prLink := orch.cfg.Links.PRLink(prURL)
@@ -302,6 +323,8 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 	}
 	orch.announceAsRole(ctx, "reviews", reviewMsg, role)
 
+	orch.storeProjectEpisode(ctx, role, assignment.Ticket, result.Transcript)
+
 	pmAgent := orch.agents[agent.RolePM]
 	if pmAgent != nil {
 		go FlushSessionMemory(ctx, pmAgent, agentInstance, assignment.Ticket, result.Transcript)
@@ -309,7 +332,7 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 
 	if prURL != "" {
 		go MoveTicketState(ctx, orch.agents[agent.RolePM], assignment.Ticket, "In Review")
-		orch.startReview(ctx, prURL, assignment.Ticket)
+		orch.startReview(ctx, prURL, assignment.Ticket, assignment.WorkItemID, role)
 	}
 
 	_ = orch.checkIns.SetIdle(ctx, role)

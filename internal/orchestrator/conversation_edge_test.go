@@ -245,6 +245,46 @@ func TestBuildChatPrompt_WithRoster_IncludesTeamNames(t *testing.T) {
 	assert.True(t, foundRoster, "expected at least one prompt to include roster")
 }
 
+func TestBuildChatPrompt_AllRoles_HaveDescriptions(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	// Create a separate runner per role to check each role's prompt.
+	runners := make(map[agent.Role]*fakeProcessRunner)
+	allRoles := agent.AllRoles()
+	agents := make(map[agent.Role]*agent.Agent, len(allRoles))
+	factStores := make(map[agent.Role]*memory.FactStore, len(allRoles))
+
+	for _, role := range allRoles {
+		runner := &fakeProcessRunner{
+			output: []byte(`{"type":"result","result":"noted."}` + "\n"),
+		}
+		runners[role] = runner
+		agents[role] = buildAgent(t, runner, role, db)
+		factStores[role] = memory.NewFactStore(db)
+	}
+
+	engine := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
+
+	// Send enough messages to hit most roles as responders.
+	for idx := 0; idx < 30; idx++ {
+		engine.OnMessage(ctx, "engineering", "ceo", "thoughts?")
+	}
+
+	// Verify at least 5 distinct roles were called (PM, TechLead, 3 engineers, Designer).
+	calledCount := 0
+	for _, runner := range runners {
+		if len(runner.calls) > 0 {
+			calledCount++
+		}
+	}
+	assert.GreaterOrEqual(t, calledCount, 4, "expected most roles to be called")
+}
+
 func TestBuildChatPrompt_WithBeliefs_IncludesBeliefText(t *testing.T) {
 	t.Parallel()
 

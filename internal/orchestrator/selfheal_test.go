@@ -199,6 +199,37 @@ func TestSetRoster_And_NameForRole(t *testing.T) {
 	assert.Equal(t, "pm", orch.NameForRole(agent.RolePM))
 }
 
+func TestConversationEngine_PausedAgent_SkipsResponse(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	runner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"I should not respond."}` + "\n"),
+	}
+
+	allRoles := agent.AllRoles()
+	agents := make(map[agent.Role]*agent.Agent, len(allRoles))
+	factStores := make(map[agent.Role]*memory.FactStore, len(allRoles))
+	for _, role := range allRoles {
+		agents[role] = buildAgent(t, runner, role, db)
+		factStores[role] = memory.NewFactStore(db)
+	}
+
+	engine := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
+
+	engine.SetPauseChecker(func(_ context.Context, _ agent.Role) bool {
+		return true
+	})
+
+	engine.OnMessage(ctx, "engineering", "ceo", "anyone there?")
+
+	assert.Empty(t, runner.calls, "paused agents should not make any Claude calls")
+}
+
 func TestUpdateRoster_RefreshesConversationNames(t *testing.T) {
 	t.Parallel()
 

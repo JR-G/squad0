@@ -32,9 +32,9 @@ func TestPRLink_FormatsShortLink(t *testing.T) {
 
 	cfg := slack.LinkConfig{}
 
-	result := cfg.PRLink("https://github.com/JR-G/makebook/pull/42")
+	result := cfg.PRLink("https://github.com/test-org/test-repo/pull/42")
 
-	assert.Equal(t, "<https://github.com/JR-G/makebook/pull/42|PR #42>", result)
+	assert.Equal(t, "<https://github.com/test-org/test-repo/pull/42|PR #42>", result)
 }
 
 func TestLinkifyTickets_ReplacesAllTicketIDs(t *testing.T) {
