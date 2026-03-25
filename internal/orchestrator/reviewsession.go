@@ -418,6 +418,15 @@ func (orch *Orchestrator) startFixUp(ctx context.Context, prURL, ticket string, 
 
 	orch.advancePipeline(ctx, workItemID, pipeline.StageWorking)
 
+	_ = orch.checkIns.Upsert(ctx, coordination.CheckIn{
+		Agent:         engineerRole,
+		Ticket:        ticket,
+		Status:        coordination.StatusWorking,
+		FilesTouching: []string{},
+		Message:       fmt.Sprintf("fixing up %s", ticket),
+	})
+	defer func() { _ = orch.checkIns.SetIdle(ctx, engineerRole) }()
+
 	engineerName := orch.NameForRole(engineerRole)
 	log.Printf("fix-up: %s starting fix-up session for %s (%s)", engineerName, ticket, prURL)
 
