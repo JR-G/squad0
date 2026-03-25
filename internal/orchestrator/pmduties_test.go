@@ -223,3 +223,21 @@ func TestVerifyTicketState_NoPM_DoesNotPanic(t *testing.T) {
 		orch.VerifyTicketState(ctx, "JAM-1", "Done")
 	})
 }
+
+func TestFormatDuration_HoursAndMinutes(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "2h 41m", orchestrator.FormatDurationForTest(2*time.Hour+41*time.Minute))
+}
+
+func TestFormatDuration_MinutesOnly(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "45m", orchestrator.FormatDurationForTest(45*time.Minute))
+}
+
+func TestFormatDuration_Zero(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "0m", orchestrator.FormatDurationForTest(0))
+}

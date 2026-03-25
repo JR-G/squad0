@@ -107,16 +107,22 @@ func (orch *Orchestrator) checkStaleForEngineer(ctx context.Context, role agent.
 			continue
 		}
 
+		if orch.followedUp[item.ID] {
+			continue
+		}
+
 		age := time.Since(item.UpdatedAt)
 		if age <= staleWorkThreshold {
 			continue
 		}
 
+		orch.followedUp[item.ID] = true
+
 		name := orch.NameForRole(role)
 		ticketLink := orch.cfg.Links.TicketLink(item.Ticket)
 		orch.announceAsRole(ctx, "engineering",
 			fmt.Sprintf("Hey %s, how's %s going? It's been %s with no PR. Any blockers?",
-				name, ticketLink, age.Round(time.Minute)),
+				name, ticketLink, formatDuration(age)),
 			agent.RolePM)
 
 		log.Printf("pm: followed up on stale work item %s (%s, age: %s)", item.Ticket, role, age)
@@ -163,6 +169,23 @@ func (orch *Orchestrator) BreakDiscussionTie(ctx context.Context, channel string
 
 	orch.postAsRole(ctx, channel, decision, agent.RolePM)
 	return decision
+}
+
+// FormatDurationForTest exports formatDuration for testing.
+func FormatDurationForTest(d time.Duration) string {
+	return formatDuration(d)
+}
+
+// formatDuration returns a human-readable duration like "2h 41m" or "45m".
+func formatDuration(d time.Duration) string {
+	d = d.Round(time.Minute)
+	hours := int(d.Hours())
+	minutes := int(d.Minutes()) % 60
+
+	if hours > 0 {
+		return fmt.Sprintf("%dh %dm", hours, minutes)
+	}
+	return fmt.Sprintf("%dm", minutes)
 }
 
 // VerifyTicketState checks that the Linear board matches pipeline state.

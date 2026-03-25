@@ -39,6 +39,7 @@ type Orchestrator struct {
 	roster              map[agent.Role]string
 	pipelineStore       *pipeline.WorkItemStore
 	projectEpisodeStore *memory.EpisodeStore
+	followedUp          map[int64]bool
 }
 
 // Config holds orchestrator-level settings.
@@ -70,6 +71,7 @@ func NewOrchestrator(
 		bot:            bot,
 		assigner:       assigner,
 		sessionCancels: make(map[agent.Role]context.CancelFunc),
+		followedUp:     make(map[int64]bool),
 	}
 }
 
