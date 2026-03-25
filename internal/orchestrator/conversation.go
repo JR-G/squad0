@@ -102,9 +102,8 @@ func (engine *ConversationEngine) OnThreadMessage(ctx context.Context, channel, 
 	timeSinceLast := time.Since(state.lastMessage)
 	state.lastMessage = time.Now()
 
-	// Update the active thread. Human messages start fresh threads.
-	shouldUpdateThread := threadTS != "" && (isHumanMessage(sender) || state.threadTS == "")
-	if shouldUpdateThread {
+	// Update the active thread when a new threadTS is provided.
+	if threadTS != "" {
 		state.threadTS = threadTS
 	}
 
@@ -139,12 +138,44 @@ func (engine *ConversationEngine) OnThreadMessage(ctx context.Context, channel, 
 	candidates := engine.pickCandidates(sender, baseCount, recentCopy, mentioned)
 	log.Printf("chat: picked %v to respond", candidates)
 
+	var lastResponder string
 	for _, role := range candidates {
 		log.Printf("chat: %s responding...", role)
 		freshLines := engine.RecentMessages(channel)
 		engine.tryRespondInThread(ctx, channel, role, freshLines, activeThread)
+		lastResponder = string(role)
 		log.Printf("chat: %s finished", role)
 	}
+
+	// If any response ended with a question, trigger a follow-up round
+	// so the question doesn't die unanswered.
+	engine.followUpIfQuestion(ctx, channel, lastResponder, activeThread)
+}
+
+// followUpIfQuestion checks the most recent message in the channel.
+// If an agent just asked a question, pick one responder to answer it.
+func (engine *ConversationEngine) followUpIfQuestion(ctx context.Context, channel, lastResponder, threadTS string) {
+	recent := engine.RecentMessages(channel)
+	if len(recent) == 0 {
+		return
+	}
+
+	lastLine := recent[len(recent)-1]
+	if !containsQuestion(lastLine) {
+		return
+	}
+
+	log.Printf("chat: last response was a question, triggering follow-up")
+
+	mentioned := engine.findMentionedRoles(recent, lastResponder)
+	candidates := engine.pickCandidates(lastResponder, 1, recent, mentioned)
+	if len(candidates) == 0 {
+		return
+	}
+
+	role := candidates[0]
+	freshLines := engine.RecentMessages(channel)
+	engine.tryRespondInThread(ctx, channel, role, freshLines, threadTS)
 }
 
 // IsQuiet returns true if the channel has had no messages for at least

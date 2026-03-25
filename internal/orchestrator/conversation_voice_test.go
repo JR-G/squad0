@@ -171,3 +171,47 @@ func TestOnThreadMessage_MentionedAgent_RespondsEvenWhenDecayed(t *testing.T) {
 
 	assert.NotEmpty(t, eng1Runner.calls, "Callum should respond when mentioned even in decayed channel")
 }
+
+func TestFollowUpIfQuestion_AgentAsksQuestion_GetsResponse(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	// Engineer 1 asks a question, someone should follow up.
+	questionRunner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"What caused the first submission to fail?"}` + "\n"),
+	}
+	answerRunner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"The reviewer didn't run the gh command."}` + "\n"),
+	}
+
+	allRoles := agent.AllRoles()
+	agents := make(map[agent.Role]*agent.Agent, len(allRoles))
+	factStores := make(map[agent.Role]*memory.FactStore, len(allRoles))
+
+	agents[agent.RoleEngineer1] = buildAgent(t, questionRunner, agent.RoleEngineer1, db)
+	factStores[agent.RoleEngineer1] = memory.NewFactStore(db)
+
+	for _, role := range allRoles {
+		if role == agent.RoleEngineer1 {
+			continue
+		}
+		agents[role] = buildAgent(t, answerRunner, role, db)
+		factStores[role] = memory.NewFactStore(db)
+	}
+
+	engine := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
+
+	// Human message triggers eng1 who asks a question — follow-up should fire.
+	engine.OnMessage(ctx, "engineering", "ceo", "what happened with the review?")
+
+	// The answer runner should have been called (follow-up to the question).
+	answerRunner.mu.Lock()
+	callCount := len(answerRunner.calls)
+	answerRunner.mu.Unlock()
+
+	assert.GreaterOrEqual(t, callCount, 1, "expected at least one follow-up to the question")
+}
