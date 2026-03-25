@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/JR-G/squad0/internal/agent"
@@ -18,6 +19,7 @@ import (
 )
 
 type fakeProcessRunner struct {
+	mu     sync.Mutex
 	output []byte
 	err    error
 	calls  []fakeCall
@@ -30,7 +32,9 @@ type fakeCall struct {
 }
 
 func (runner *fakeProcessRunner) Run(_ context.Context, stdin, _ /* workingDir */, name string, args ...string) ([]byte, error) {
+	runner.mu.Lock()
 	runner.calls = append(runner.calls, fakeCall{stdin: stdin, name: name, args: args})
+	runner.mu.Unlock()
 	return runner.output, runner.err
 }
 
