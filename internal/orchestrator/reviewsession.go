@@ -30,16 +30,44 @@ const reviewPromptTemplate = `You are reviewing pull request #%s for ticket %s.
    - Style: does it follow the project's conventions?
    - Security: any injection, XSS, or auth issues?
 
-5. You MUST submit your review using one of these commands — this is mandatory:
+5. You MUST submit your review using one of these gh commands — this is MANDATORY:
    To approve: gh pr review %s --approve --body "your review summary"
    To request changes: gh pr review %s --request-changes --body "your detailed feedback"
 
-   Do NOT just say "approved" — you must run the gh pr review command.
-   "Approved with comments" is NOT approval — either approve or request changes.
+   IMPORTANT RULES:
+   - Do NOT say "approved with comments" — that is NOT an approval.
+   - If you have ANY concerns, use --request-changes. Don't be afraid to request changes.
+   - The pipeline handles the fix-up loop automatically — requesting changes is normal.
+   - Either fully approve or request changes. No middle ground.
+   - You MUST actually run the gh pr review command, not just say "approved".
 
 6. After submitting the review, verify it worked: gh pr view %s --json reviewDecision
 
 End your response with either APPROVED or CHANGES_REQUESTED on its own line.
+`
+
+const reReviewPromptTemplate = `You previously reviewed PR #%s for ticket %s and requested changes.
+The engineer has pushed fixes. Check that your specific concerns were addressed.
+
+## PR
+%s
+
+## Instructions
+1. Read your previous review comments: gh pr view %s --comments
+2. Read the latest diff: gh pr diff %s
+3. For EACH concern you raised previously, verify it was addressed:
+   - Was the fix correct?
+   - Were tests added or updated?
+   - Did the fix introduce new issues?
+
+4. Submit your review:
+   If ALL concerns were addressed: gh pr review %s --approve --body "All feedback addressed"
+   If concerns remain: gh pr review %s --request-changes --body "specific remaining issues"
+
+5. Verify the review: gh pr view %s --json reviewDecision
+
+Focus on YOUR previous comments specifically — don't re-review the entire diff.
+End with APPROVED or CHANGES_REQUESTED.
 `
 
 const fixUpPromptTemplate = `You need to address review feedback on your PR for ticket %s.
@@ -89,6 +117,12 @@ func BuildReviewPrompt(prURL, ticket string) string {
 	return fmt.Sprintf(reviewPromptTemplate, prNum, ticket, prURL, prNum, prNum, prNum, prNum, prNum, prNum)
 }
 
+// BuildReReviewPrompt creates the prompt for re-reviewing after fixes.
+func BuildReReviewPrompt(prURL, ticket string) string {
+	prNum := ExtractPRNumber(prURL)
+	return fmt.Sprintf(reReviewPromptTemplate, prNum, ticket, prURL, prNum, prNum, prNum, prNum, prNum)
+}
+
 // BuildFixUpPrompt creates the prompt for an engineer to address review feedback.
 func BuildFixUpPrompt(prURL, ticket string) string {
 	prNum := ExtractPRNumber(prURL)
@@ -96,18 +130,28 @@ func BuildFixUpPrompt(prURL, ticket string) string {
 }
 
 // ClassifyReviewOutcome scans the reviewer's transcript for approval
-// or change request signals. Defaults to approved to avoid blocking.
+// or change request signals. Defaults to changes_requested to avoid
+// merging unreviewed code.
 func ClassifyReviewOutcome(transcript string) ReviewOutcome {
 	upper := strings.ToUpper(transcript)
 
+	approveSignals := []string{"APPROVED", "LGTM", "LOOKS GOOD"}
 	changeSignals := []string{"CHANGES_REQUESTED", "REQUEST CHANGES", "NEEDS CHANGES", "PLEASE FIX"}
+
 	for _, signal := range changeSignals {
 		if strings.Contains(upper, signal) {
 			return ReviewChangesRequested
 		}
 	}
 
-	return ReviewApproved
+	for _, signal := range approveSignals {
+		if strings.Contains(upper, signal) {
+			return ReviewApproved
+		}
+	}
+
+	// Default to changes requested — don't silently approve.
+	return ReviewChangesRequested
 }
 
 // StartReviewForTest is an exported wrapper for testing.
@@ -147,12 +191,15 @@ func (orch *Orchestrator) startReview(ctx context.Context, prURL, ticket string,
 		defer orch.wg.Done()
 		defer func() { _ = orch.checkIns.SetIdle(ctx, agent.RoleReviewer) }()
 
-		orch.runReview(ctx, reviewer, prURL, ticket, workItemID, engineerRole)
+		orch.runReview(ctx, reviewer, prURL, ticket, workItemID, engineerRole, false)
 	}()
 }
 
-func (orch *Orchestrator) runReview(ctx context.Context, reviewer *agent.Agent, prURL, ticket string, workItemID int64, engineerRole agent.Role) {
+func (orch *Orchestrator) runReview(ctx context.Context, reviewer *agent.Agent, prURL, ticket string, workItemID int64, engineerRole agent.Role, isReReview bool) {
 	prompt := BuildReviewPrompt(prURL, ticket)
+	if isReReview {
+		prompt = BuildReReviewPrompt(prURL, ticket)
+	}
 
 	result, err := reviewer.DirectSession(ctx, prompt)
 	if err != nil {
@@ -168,7 +215,7 @@ func (orch *Orchestrator) runReview(ctx context.Context, reviewer *agent.Agent, 
 
 	switch outcome {
 	case ReviewApproved:
-		archOutcome := orch.runArchitectureReview(ctx, prURL, ticket)
+		archOutcome := orch.RunConversationalArchReview(ctx, prURL, ticket, engineerRole)
 		if archOutcome == ReviewChangesRequested {
 			orch.handleChangesRequested(ctx, prURL, ticket, workItemID, engineerRole, "Tech Lead requested architectural changes")
 			return
@@ -199,13 +246,39 @@ func (orch *Orchestrator) mergeAndComplete(ctx context.Context, prURL, ticket st
 		return
 	}
 
-	prompt := fmt.Sprintf("Merge this approved PR by running: gh pr merge %s --squash --delete-branch\n\nRespond with just 'done' or 'failed'.", prNum)
+	// Verify the PR actually has GitHub approval and CI passes.
+	prompt := fmt.Sprintf(`Before merging PR #%s, verify it's ready:
 
-	_, err := mergeAgent.DirectSession(ctx, prompt)
+1. Check review status: gh pr view %s --json reviewDecision
+   - If reviewDecision is not "APPROVED", stop and say "NOT_APPROVED"
+2. Check CI status: gh pr checks %s
+   - If any required checks are failing, stop and say "CI_FAILING"
+3. If both pass, merge: gh pr merge %s --squash --delete-branch
+
+Respond with "done", "NOT_APPROVED", or "CI_FAILING".`, prNum, prNum, prNum, prNum)
+
+	result, err := mergeAgent.DirectSession(ctx, prompt)
 	if err != nil {
 		log.Printf("merge failed for %s: %v", ticket, err)
 		orch.announceAsRole(ctx, "reviews",
 			fmt.Sprintf("%s approved but merge failed — needs manual merge", ticket),
+			agent.RolePM)
+		return
+	}
+
+	upper := strings.ToUpper(result.Transcript)
+	if strings.Contains(upper, "NOT_APPROVED") {
+		log.Printf("merge blocked for %s: PR not approved on GitHub", ticket)
+		orch.announceAsRole(ctx, "reviews",
+			fmt.Sprintf("%s review approved locally but GitHub reviewDecision is not APPROVED — reviewer may not have run gh pr review", ticket),
+			agent.RolePM)
+		return
+	}
+
+	if strings.Contains(upper, "CI_FAILING") {
+		log.Printf("merge blocked for %s: CI failing", ticket)
+		orch.announceAsRole(ctx, "reviews",
+			fmt.Sprintf("%s approved but CI is failing — cannot merge until checks pass", ticket),
 			agent.RolePM)
 		return
 	}
@@ -220,56 +293,9 @@ func (orch *Orchestrator) mergeAndComplete(ctx context.Context, prURL, ticket st
 		agent.RolePM)
 }
 
-const archReviewPromptTemplate = `You are the Tech Lead reviewing the architecture of a PR for ticket %s.
-
-## PR
-%s
-
-## Instructions
-1. Read the PR diff: gh pr diff %s
-2. Focus on architectural concerns:
-   - Does this fit the system's existing design?
-   - Are module boundaries respected?
-   - Are dependencies between components reasonable?
-   - Will this scale? Will it cause problems later?
-   - Are there better patterns for this?
-3. If you have architectural concerns, post them:
-   gh pr review %s --request-changes --body "your architectural feedback"
-4. If the architecture is sound, approve:
-   gh pr review %s --approve --body "Architecture looks good"
-
-Focus on design and structure, not code style or minor bugs — the Reviewer handles those.
-End with APPROVED or CHANGES_REQUESTED on its own line.
-`
-
 // RunArchitectureReviewForTest exports runArchitectureReview for testing.
 func (orch *Orchestrator) RunArchitectureReviewForTest(ctx context.Context, prURL, ticket string) ReviewOutcome {
-	return orch.runArchitectureReview(ctx, prURL, ticket)
-}
-
-func (orch *Orchestrator) runArchitectureReview(ctx context.Context, prURL, ticket string) ReviewOutcome {
-	techLead, ok := orch.agents[agent.RoleTechLead]
-	if !ok {
-		return ReviewApproved
-	}
-
-	prNum := ExtractPRNumber(prURL)
-	prompt := fmt.Sprintf(archReviewPromptTemplate, ticket, prURL, prNum, prNum, prNum)
-
-	result, err := techLead.DirectSession(ctx, prompt)
-	if err != nil {
-		log.Printf("architecture review failed for %s: %v", ticket, err)
-		return ReviewApproved
-	}
-
-	outcome := ClassifyReviewOutcome(result.Transcript)
-	summary := agent.TruncateSummary(result.Transcript, 300)
-
-	orch.announceAsRole(ctx, "reviews",
-		fmt.Sprintf("Architecture review for %s: %s", ticket, summary),
-		agent.RoleTechLead)
-
-	return outcome
+	return orch.RunConversationalArchReview(ctx, prURL, ticket, "")
 }
 
 func (orch *Orchestrator) handleChangesRequested(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role, reviewSummary string) {
@@ -304,5 +330,18 @@ func (orch *Orchestrator) startFixUp(ctx context.Context, prURL, ticket string, 
 	}
 
 	_ = result
-	orch.startReview(ctx, prURL, ticket, workItemID, engineerRole)
+
+	// Re-review: reviewer specifically checks their previous comments.
+	orch.startReReview(ctx, prURL, ticket, workItemID, engineerRole)
+}
+
+func (orch *Orchestrator) startReReview(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role) {
+	reviewer, ok := orch.agents[agent.RoleReviewer]
+	if !ok {
+		log.Printf("no reviewer agent for re-review")
+		return
+	}
+
+	orch.advancePipeline(ctx, workItemID, pipeline.StageReviewing)
+	orch.runReview(ctx, reviewer, prURL, ticket, workItemID, engineerRole, true)
 }

@@ -117,7 +117,7 @@ func TestClassifyReviewOutcome_Approved(t *testing.T) {
 		{"LGTM", "Looks good to me. LGTM.", orchestrator.ReviewApproved},
 		{"changes requested", "CHANGES_REQUESTED\nPlease fix the nil check", orchestrator.ReviewChangesRequested},
 		{"please fix", "PLEASE FIX the auth handler", orchestrator.ReviewChangesRequested},
-		{"unclear defaults to approved", "I looked at the code.", orchestrator.ReviewApproved},
+		{"unclear defaults to changes requested", "I looked at the code.", orchestrator.ReviewChangesRequested},
 	}
 
 	for _, tt := range tests {

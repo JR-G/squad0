@@ -34,6 +34,11 @@ func NewWorkItemStore(db *sql.DB) *WorkItemStore {
 	return &WorkItemStore{db: db}
 }
 
+// DB returns the underlying database for administrative operations.
+func (store *WorkItemStore) DB() *sql.DB {
+	return store.db
+}
+
 // InitSchema creates the work_items table if it does not exist.
 func (store *WorkItemStore) InitSchema(ctx context.Context) error {
 	_, err := store.db.ExecContext(ctx, `
