@@ -94,3 +94,84 @@ func TestAssemblePrompt_FactsOnly_ShowsFactsSection(t *testing.T) {
 	assert.NotContains(t, result, "## Beliefs")
 	assert.NotContains(t, result, "## Recent Sessions")
 }
+
+func TestExtractVoiceSection_ExtractsVoice(t *testing.T) {
+	t.Parallel()
+
+	personality := `# Engineer
+
+## Voice
+
+You speak carefully and cautiously.
+
+## How You Work
+
+- Plan before coding
+`
+
+	result := agent.ExtractVoiceSection(personality)
+	assert.Contains(t, result, "You speak carefully and cautiously.")
+	assert.NotContains(t, result, "Plan before coding")
+}
+
+func TestExtractVoiceSection_ExtractsBothSections(t *testing.T) {
+	t.Parallel()
+
+	personality := `# PM
+
+## Voice
+
+Crisp and decisive.
+
+## Communication Style
+
+You address people directly.
+
+## How You Work
+
+- Think in priorities
+`
+
+	result := agent.ExtractVoiceSection(personality)
+	assert.Contains(t, result, "Crisp and decisive.")
+	assert.Contains(t, result, "You address people directly.")
+	assert.NotContains(t, result, "Think in priorities")
+}
+
+func TestExtractVoiceSection_NoVoice_ReturnsEmpty(t *testing.T) {
+	t.Parallel()
+
+	personality := `# Engineer
+
+## How You Work
+
+- Write code
+`
+
+	result := agent.ExtractVoiceSection(personality)
+	assert.Empty(t, result)
+}
+
+func TestLoadVoice_ReturnsVoiceSection(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	content := "# PM\n\n## Voice\n\nCrisp and decisive.\n\n## How You Work\n\n- Stay focused\n"
+	err := os.WriteFile(filepath.Join(dir, "pm.md"), []byte(content), 0o644)
+	require.NoError(t, err)
+
+	loader := agent.NewPersonalityLoader(dir)
+	voice := loader.LoadVoice(agent.RolePM)
+
+	assert.Contains(t, voice, "Crisp and decisive.")
+	assert.NotContains(t, voice, "Stay focused")
+}
+
+func TestLoadVoice_MissingFile_ReturnsEmpty(t *testing.T) {
+	t.Parallel()
+
+	loader := agent.NewPersonalityLoader(t.TempDir())
+	voice := loader.LoadVoice(agent.RolePM)
+
+	assert.Empty(t, voice)
+}

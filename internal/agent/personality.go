@@ -101,6 +101,47 @@ func writeEpisodesSection(builder *strings.Builder, episodes []memory.Episode) {
 	builder.WriteString("\n")
 }
 
+// ExtractVoiceSection returns the ## Voice and ## Communication Style
+// sections from a personality markdown file. Returns empty string if
+// neither section is found.
+func ExtractVoiceSection(personality string) string {
+	var builder strings.Builder
+	lines := strings.Split(personality, "\n")
+	capturing := false
+
+	for _, line := range lines {
+		isHeader := strings.HasPrefix(line, "## ")
+		isVoiceHeader := strings.HasPrefix(line, "## Voice") || strings.HasPrefix(line, "## Communication Style")
+
+		if isVoiceHeader {
+			capturing = true
+			builder.WriteString(line + "\n")
+			continue
+		}
+
+		if isHeader && capturing {
+			capturing = false
+			continue
+		}
+
+		if capturing {
+			builder.WriteString(line + "\n")
+		}
+	}
+
+	return strings.TrimSpace(builder.String())
+}
+
+// LoadVoice reads the personality file for the given role and extracts
+// only the Voice and Communication Style sections.
+func (loader *PersonalityLoader) LoadVoice(role Role) string {
+	base, err := loader.LoadBase(role)
+	if err != nil {
+		return ""
+	}
+	return ExtractVoiceSection(base)
+}
+
 // RetrieveMemoryContext loads relevant memories for a session using the
 // retrieval pipeline.
 func RetrieveMemoryContext(ctx context.Context, retriever *memory.Retriever, taskDescription string, filePaths []string) (memory.RetrievalContext, error) {
