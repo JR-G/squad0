@@ -19,6 +19,8 @@ type PauseChecker func(ctx context.Context, role agent.Role) bool
 
 // ConversationEngine manages organic agent conversations in Slack.
 // Event-driven — triggered by incoming messages, not polling.
+// Uses time-based decay: conversations stay alive while messages
+// are recent, and die naturally when the thread goes quiet.
 type ConversationEngine struct {
 	agents       map[agent.Role]*agent.Agent
 	factStores   map[agent.Role]*memory.FactStore
@@ -26,12 +28,12 @@ type ConversationEngine struct {
 	mu           sync.Mutex
 	channels     map[string]*channelState
 	roster       map[agent.Role]string
+	voices       map[agent.Role]string
 	pauseChecker PauseChecker
 }
 
 type channelState struct {
 	recentLines []string
-	roundCount  int
 	lastMessage time.Time
 	threadTS    string // Slack timestamp of the current conversation thread
 }
@@ -49,6 +51,22 @@ func NewConversationEngine(
 		bot:        bot,
 		channels:   make(map[string]*channelState),
 		roster:     roster,
+		voices:     make(map[agent.Role]string),
+	}
+}
+
+// SetVoices loads personality voice sections for all agents so chat
+// prompts include each agent's distinct communication style.
+func (engine *ConversationEngine) SetVoices(loader *agent.PersonalityLoader) {
+	if loader == nil {
+		return
+	}
+
+	engine.mu.Lock()
+	defer engine.mu.Unlock()
+
+	for role := range engine.agents {
+		engine.voices[role] = loader.LoadVoice(role)
 	}
 }
 
@@ -69,10 +87,6 @@ func (engine *ConversationEngine) UpdateRoster(roster map[agent.Role]string) {
 }
 
 // OnMessage is called when any message arrives in a channel.
-// It decides if agents should respond and triggers lightweight sessions.
-// threadTS is the Slack timestamp of the message that started the
-// thread. Pass empty string for non-threaded messages — the engine
-// will use the channel's current active thread.
 func (engine *ConversationEngine) OnMessage(ctx context.Context, channel, sender, text string) {
 	engine.OnThreadMessage(ctx, channel, sender, text, "")
 }
@@ -84,47 +98,67 @@ func (engine *ConversationEngine) OnThreadMessage(ctx context.Context, channel, 
 	engine.mu.Lock()
 	state := engine.getOrCreateChannel(channel)
 
-	timeSinceLast := time.Since(state.lastMessage)
-	if timeSinceLast > 5*time.Minute {
-		state.roundCount = 0
-	}
-
 	state.recentLines = appendRecent(state.recentLines, fmt.Sprintf("%s: %s", sender, text))
+	timeSinceLast := time.Since(state.lastMessage)
 	state.lastMessage = time.Now()
 
 	// Update the active thread. Human messages start fresh threads.
-	// Agent messages keep the existing thread going.
 	shouldUpdateThread := threadTS != "" && (isHumanMessage(sender) || state.threadTS == "")
 	if shouldUpdateThread {
 		state.threadTS = threadTS
 	}
 
 	activeThread := state.threadTS
-
-	state.roundCount = nextRoundCount(sender, state.roundCount)
-	roundCount := state.roundCount
 	recentCopy := make([]string, len(state.recentLines))
 	copy(recentCopy, state.recentLines)
 	engine.mu.Unlock()
 
-	respondersCount := decideResponderCount(roundCount)
-	log.Printf("chat: channel=%s sender=%s round=%d responders=%d thread=%s",
-		channel, sender, roundCount, respondersCount, activeThread)
+	// Mentioned agents always respond, regardless of decay.
+	mentioned := engine.findMentionedRoles(recentCopy, sender)
 
-	if respondersCount == 0 {
+	// Time-based decay: respond if conversation is alive.
+	baseCount := decideBaseResponders(timeSinceLast, isHumanMessage(sender))
+
+	// Questions always get at least one response.
+	if baseCount == 0 && containsQuestion(text) {
+		baseCount = 1
+	}
+
+	// Mentioned agents bypass decay entirely.
+	if baseCount == 0 && len(mentioned) > 0 {
+		baseCount = len(mentioned)
+	}
+
+	log.Printf("chat: channel=%s sender=%s timeSince=%s responders=%d mentioned=%v thread=%s",
+		channel, sender, timeSinceLast.Round(time.Second), baseCount, mentioned, activeThread)
+
+	if baseCount == 0 && len(mentioned) == 0 {
 		return
 	}
 
-	candidates := engine.pickCandidates(sender, respondersCount, recentCopy)
+	candidates := engine.pickCandidates(sender, baseCount, recentCopy, mentioned)
 	log.Printf("chat: picked %v to respond", candidates)
 
 	for _, role := range candidates {
 		log.Printf("chat: %s responding...", role)
-		// Re-read recent lines so each responder sees prior replies.
 		freshLines := engine.RecentMessages(channel)
 		engine.tryRespondInThread(ctx, channel, role, freshLines, activeThread)
 		log.Printf("chat: %s finished", role)
 	}
+}
+
+// IsQuiet returns true if the channel has had no messages for at least
+// the given threshold duration.
+func (engine *ConversationEngine) IsQuiet(channel string, threshold time.Duration) bool {
+	engine.mu.Lock()
+	defer engine.mu.Unlock()
+
+	state, ok := engine.channels[channel]
+	if !ok {
+		return true
+	}
+
+	return time.Since(state.lastMessage) >= threshold
 }
 
 // BreakSilence is called periodically to have an agent start a
@@ -165,7 +199,8 @@ func (engine *ConversationEngine) RecentMessages(channel string) []string {
 	return result
 }
 
-// ResetRound resets the conversation round counter for a channel.
+// ResetRound resets the conversation for a channel by treating it as
+// fresh. Kept for API compatibility.
 func (engine *ConversationEngine) ResetRound(channel string) {
 	engine.mu.Lock()
 	defer engine.mu.Unlock()
@@ -174,7 +209,8 @@ func (engine *ConversationEngine) ResetRound(channel string) {
 	if !ok {
 		return
 	}
-	state.roundCount = 0
+	// Reset by making the last message appear recent.
+	state.lastMessage = time.Now()
 }
 
 // SetLastMessageTime sets the last message time for a channel. Used in
@@ -207,7 +243,11 @@ func (engine *ConversationEngine) tryRespondInThread(ctx context.Context, channe
 		return
 	}
 
-	prompt := buildChatPrompt(role, channel, recentLines, engine.topBeliefs(ctx, role), engine.roster)
+	engine.mu.Lock()
+	voiceText := engine.voices[role]
+	engine.mu.Unlock()
+
+	prompt := buildChatPrompt(role, channel, recentLines, engine.topBeliefs(ctx, role), engine.roster, voiceText)
 
 	transcript, err := agentInstance.QuickChat(ctx, prompt)
 	if err != nil {
@@ -266,9 +306,7 @@ func (engine *ConversationEngine) topBeliefs(ctx context.Context, role agent.Rol
 	return result
 }
 
-func (engine *ConversationEngine) pickCandidates(sender string, count int, recentLines []string) []agent.Role {
-	mentioned := engine.findMentionedRoles(recentLines, sender)
-
+func (engine *ConversationEngine) pickCandidates(sender string, count int, _ []string, mentioned []agent.Role) []agent.Role {
 	allRoles := agent.AllRoles()
 	eligible := make([]agent.Role, 0, len(allRoles))
 	mentionedSet := make(map[agent.Role]bool, len(mentioned))
@@ -304,9 +342,7 @@ func (engine *ConversationEngine) pickCandidates(sender string, count int, recen
 	return result
 }
 
-// findMentionedRoles checks the last message for agent names. Returns
-// only the mentioned agents (excluding the sender). When someone says
-// "Callum, what do you think?" — only Callum is returned.
+// findMentionedRoles checks the last message for agent names.
 func (engine *ConversationEngine) findMentionedRoles(recentLines []string, sender string) []agent.Role {
 	if len(recentLines) == 0 {
 		return nil
@@ -327,131 +363,34 @@ func (engine *ConversationEngine) findMentionedRoles(recentLines []string, sende
 	return mentioned
 }
 
-func buildChatPrompt(role agent.Role, channel string, recentLines, beliefs []string, roster map[agent.Role]string) string {
-	var builder strings.Builder
-
-	name := roster[role]
-	if name == "" {
-		name = string(role)
-	}
-
-	builder.WriteString(fmt.Sprintf("Your name is %s. You are %s. ", name, roleDescription(role)))
-	builder.WriteString("James is the CEO — he built the team and has final say. When he speaks, pay attention and respond helpfully.")
-
-	if len(beliefs) > 0 {
-		builder.WriteString("\n\nThings you believe from experience: ")
-		builder.WriteString(strings.Join(beliefs, "; "))
-		builder.WriteString(".")
-	}
-
-	writeRoster(&builder, role, roster)
-
-	fmt.Fprintf(&builder, "\n\nConversation in #%s:\n", channel)
-
-	if len(recentLines) == 0 {
-		builder.WriteString("(quiet — nothing recent)\n")
-	}
-
-	for _, line := range recentLines {
-		fmt.Fprintf(&builder, "> %s\n", line)
-	}
-
-	lastMessage := ""
-	if len(recentLines) > 0 {
-		lastMessage = recentLines[len(recentLines)-1]
-	}
-
-	builder.WriteString("\nRespond to this conversation. You're talking to real teammates.")
-
-	if lastMessage != "" {
-		fmt.Fprintf(&builder, " The most recent message is: \"%s\" — engage with it directly.", lastMessage)
-	}
-
-	builder.WriteString(" Use people's names. Ask follow-up questions. Disagree if you disagree. Build on their ideas. Be yourself — your tone, your perspective, your opinions.")
-	builder.WriteString("\n\nKeep it to 1-3 sentences. Respond with ONLY what you'd type in Slack.")
-	builder.WriteString("\nNEVER include meta-commentary, parenthetical notes, stage directions, or alternatives.")
-	builder.WriteString("\nNEVER break character or mention being an AI.")
-	builder.WriteString("\nIf you genuinely have nothing to add, respond with exactly: PASS")
-
-	return builder.String()
+// DecideBaseRespondersForTest exports decideBaseResponders for testing.
+func DecideBaseRespondersForTest(timeSinceNanos int64, isHuman bool) int {
+	return decideBaseResponders(time.Duration(timeSinceNanos), isHuman)
 }
 
-func roleDescription(role agent.Role) string {
-	switch role {
-	case agent.RolePM:
-		return "the PM — you keep the team focused and unblocked"
-	case agent.RoleTechLead:
-		return "the tech lead — you think in systems and care about architecture"
-	case agent.RoleEngineer1:
-		return "an engineer — thorough, defensive, backend-leaning"
-	case agent.RoleEngineer2:
-		return "an engineer — fast, pragmatic, frontend-leaning"
-	case agent.RoleEngineer3:
-		return "an engineer — architectural, infra and DX focused"
-	case agent.RoleReviewer:
-		return "the reviewer — you catch bugs and ensure quality"
-	case agent.RoleDesigner:
-		return "the designer — you think from the user's perspective"
-	}
-	return string(role)
+// SetVoicesMap sets the voice text for each role directly. Used in testing.
+func (engine *ConversationEngine) SetVoicesMap(voices map[agent.Role]string) {
+	engine.mu.Lock()
+	defer engine.mu.Unlock()
+	engine.voices = voices
 }
 
-func writeRoster(builder *strings.Builder, self agent.Role, roster map[agent.Role]string) {
-	if len(roster) == 0 {
-		return
-	}
-
-	builder.WriteString("\n\nYour team: ")
-	rosterParts := make([]string, 0, len(roster))
-	for role, name := range roster {
-		if role != self {
-			rosterParts = append(rosterParts, fmt.Sprintf("%s (%s)", name, roleTitle(role)))
-		}
-	}
-	builder.WriteString(strings.Join(rosterParts, ", "))
-	builder.WriteString(". Use their names, not role IDs.")
-}
-
-func roleTitle(role agent.Role) string {
-	switch role {
-	case agent.RolePM:
-		return "PM"
-	case agent.RoleTechLead:
-		return "Tech Lead"
-	case agent.RoleEngineer1, agent.RoleEngineer2, agent.RoleEngineer3:
-		return "Engineer"
-	case agent.RoleReviewer:
-		return "Reviewer"
-	case agent.RoleDesigner:
-		return "Designer"
-	}
-	return string(role)
-}
-
-func decideResponderCount(roundCount int) int {
-	switch {
-	case roundCount <= 2:
+// decideBaseResponders uses time-based decay. Recent messages get full
+// engagement, older messages get less, and quiet channels get none.
+// Human messages always reset to full engagement.
+func decideBaseResponders(timeSinceLast time.Duration, isHuman bool) int {
+	if isHuman {
 		return 2
-	case roundCount <= 5:
-		return 1
-	case roundCount <= 8:
-		if rand.Float64() < 0.5 {
-			return 1
-		}
-		return 0
-	default:
-		if rand.Float64() < 0.2 {
-			return 1
-		}
-		return 0
 	}
-}
 
-func nextRoundCount(sender string, current int) int {
-	if isHumanMessage(sender) {
+	switch {
+	case timeSinceLast < 2*time.Minute:
+		return 2
+	case timeSinceLast < 5*time.Minute:
+		return 1
+	default:
 		return 0
 	}
-	return current + 1
 }
 
 func isHumanMessage(sender string) bool {
@@ -461,11 +400,6 @@ func isHumanMessage(sender string) bool {
 		}
 	}
 	return true
-}
-
-func containsPass(text string) bool {
-	upper := strings.ToUpper(text)
-	return strings.Contains(upper, "PASS")
 }
 
 func (engine *ConversationEngine) isRolePaused(ctx context.Context, role agent.Role) bool {
