@@ -82,7 +82,7 @@ func (orch *Orchestrator) Run(ctx context.Context) error {
 	}
 
 	log.Println("orchestrator started")
-	orch.postAsRole(ctx, "feed", "Squad0 is online. Ready to work.", agent.RolePM)
+	orch.announceAsRole(ctx, "feed", "Squad0 is online. Ready to work.", agent.RolePM)
 
 	ticker := time.NewTicker(orch.cfg.PollInterval)
 	defer ticker.Stop()
@@ -282,11 +282,11 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 
 	orch.recordSessionEnd(role, assignment.Ticket, true)
 
-	orch.postAsRole(ctx, "engineering",
+	orch.announceAsRole(ctx, "engineering",
 		fmt.Sprintf("Finished %s. PR should be up for review.", assignment.Ticket),
 		role)
 
-	orch.postAsRole(ctx, "reviews",
+	orch.announceAsRole(ctx, "reviews",
 		fmt.Sprintf("%s completed work on %s — please review", role, assignment.Ticket),
 		role)
 
@@ -320,6 +320,22 @@ func (orch *Orchestrator) postAsRole(ctx context.Context, channel, text string, 
 	if orch.conversation != nil {
 		go orch.conversation.OnThreadMessage(ctx, channel, string(role), text, ts)
 	}
+}
+
+// AnnounceForTest exports announceAsRole for testing.
+func (orch *Orchestrator) AnnounceForTest(ctx context.Context, channel, text string, role agent.Role) {
+	orch.announceAsRole(ctx, channel, text, role)
+}
+
+// announceAsRole posts a message without triggering the conversation
+// engine. Used for status updates and announcements that don't need
+// agent responses.
+func (orch *Orchestrator) announceAsRole(ctx context.Context, channel, text string, role agent.Role) {
+	if orch.bot == nil {
+		return
+	}
+
+	_ = orch.bot.PostAsRole(ctx, channel, text, role)
 }
 
 // cancelSession cancels a running session for the given role, if any.

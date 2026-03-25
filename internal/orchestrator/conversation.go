@@ -120,7 +120,9 @@ func (engine *ConversationEngine) OnThreadMessage(ctx context.Context, channel, 
 
 	for _, role := range candidates {
 		log.Printf("chat: %s responding...", role)
-		engine.tryRespondInThread(ctx, channel, role, recentCopy, activeThread)
+		// Re-read recent lines so each responder sees prior replies.
+		freshLines := engine.RecentMessages(channel)
+		engine.tryRespondInThread(ctx, channel, role, freshLines, activeThread)
 		log.Printf("chat: %s finished", role)
 	}
 }

@@ -170,6 +170,35 @@ func TestPauseAll_WithRunningSessions_CancelsAll(t *testing.T) {
 	assert.Len(t, idleRoles, 2)
 }
 
+func TestAnnounceAsRole_NilBot_DoesNotPanic(t *testing.T) {
+	t.Parallel()
+
+	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"[]"}` + "\n")}
+	orch, _ := setupLifecycleOrch(t)
+	_ = pmRunner
+
+	assert.NotPanics(t, func() {
+		orch.AnnounceForTest(context.Background(), "feed", "test", agent.RolePM)
+	})
+}
+
+func TestSetRoster_And_NameForRole(t *testing.T) {
+	t.Parallel()
+
+	orch, _ := setupLifecycleOrch(t)
+
+	assert.Equal(t, "engineer-1", orch.NameForRole(agent.RoleEngineer1))
+
+	orch.SetRoster(map[agent.Role]string{
+		agent.RoleEngineer1: "Callum",
+		agent.RoleEngineer2: "Mara",
+	})
+
+	assert.Equal(t, "Callum", orch.NameForRole(agent.RoleEngineer1))
+	assert.Equal(t, "Mara", orch.NameForRole(agent.RoleEngineer2))
+	assert.Equal(t, "pm", orch.NameForRole(agent.RolePM))
+}
+
 func TestUpdateRoster_RefreshesConversationNames(t *testing.T) {
 	t.Parallel()
 

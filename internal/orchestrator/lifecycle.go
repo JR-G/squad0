@@ -50,7 +50,7 @@ func (orch *Orchestrator) PauseAll(ctx context.Context) error {
 		}
 	}
 
-	orch.postAsRole(ctx, "feed", "All agents paused.", agent.RolePM)
+	orch.announceAsRole(ctx, "feed", "All agents paused.", agent.RolePM)
 	return nil
 }
 
@@ -62,7 +62,7 @@ func (orch *Orchestrator) ResumeAll(ctx context.Context) error {
 		}
 	}
 
-	orch.postAsRole(ctx, "feed", "All agents resumed.", agent.RolePM)
+	orch.announceAsRole(ctx, "feed", "All agents resumed.", agent.RolePM)
 	return nil
 }
 

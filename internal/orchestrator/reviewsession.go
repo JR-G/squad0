@@ -95,14 +95,14 @@ func (orch *Orchestrator) runReview(ctx context.Context, reviewer *agent.Agent, 
 	result, err := reviewer.DirectSession(ctx, prompt)
 	if err != nil {
 		log.Printf("review session failed for %s: %v", ticket, err)
-		orch.postAsRole(ctx, "reviews",
+		orch.announceAsRole(ctx, "reviews",
 			fmt.Sprintf("Couldn't complete review for %s — will try again later", ticket),
 			agent.RoleReviewer)
 		return
 	}
 
 	summary := agent.TruncateSummary(result.Transcript, 300)
-	orch.postAsRole(ctx, "reviews",
+	orch.announceAsRole(ctx, "reviews",
 		fmt.Sprintf("Reviewed PR for %s: %s", ticket, summary),
 		agent.RoleReviewer)
 }
