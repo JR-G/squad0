@@ -23,7 +23,8 @@ type IncomingMessage struct {
 	ChannelID string
 	User      string
 	Text      string
-	ThreadTS  string
+	Timestamp string // Message timestamp — used as thread root for replies
+	ThreadTS  string // Non-empty when message is itself a thread reply
 	IsDM      bool
 }
 
@@ -147,6 +148,30 @@ func (bot *Bot) PostThreadReply(ctx context.Context, channel, threadTS, text str
 func (bot *Bot) PostAsRole(ctx context.Context, channel, text string, role agent.Role) error {
 	persona := bot.personaForRole(role)
 	return bot.PostMessage(ctx, channel, text, persona)
+}
+
+// PostAsRoleWithTS sends a message and returns the Slack timestamp so
+// callers can start threads from it.
+func (bot *Bot) PostAsRoleWithTS(ctx context.Context, channel, text string, role agent.Role) (string, error) {
+	persona := bot.personaForRole(role)
+
+	channelID, err := bot.resolveChannel(channel)
+	if err != nil {
+		return "", err
+	}
+
+	if err := bot.limiter.Wait(ctx); err != nil {
+		return "", fmt.Errorf("rate limiter wait: %w", err)
+	}
+
+	opts := buildMessageOpts(text, persona)
+
+	_, ts, err := bot.client.PostMessageContext(ctx, channelID, opts...)
+	if err != nil {
+		return "", fmt.Errorf("posting to %s: %w", channel, err)
+	}
+
+	return ts, nil
 }
 
 // PostThreadAsRole sends a threaded reply as the given agent role's persona.

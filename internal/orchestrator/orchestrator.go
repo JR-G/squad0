@@ -34,6 +34,7 @@ type Orchestrator struct {
 	// function fires and the running Claude Code process is killed.
 	sessionCancels map[agent.Role]context.CancelFunc
 	cancelsMu      sync.Mutex
+	roster         map[agent.Role]string
 }
 
 // Config holds orchestrator-level settings.
@@ -177,6 +178,27 @@ func (orch *Orchestrator) SetConversationEngine(engine *ConversationEngine) {
 	engine.SetPauseChecker(orch.IsPaused)
 }
 
+// SetRoster stores the role→name mapping so lifecycle messages use
+// chosen names instead of role IDs.
+func (orch *Orchestrator) SetRoster(roster map[agent.Role]string) {
+	orch.roster = roster
+}
+
+// NameForRole returns the agent's chosen name, falling back to the
+// role ID if no name is known.
+func (orch *Orchestrator) NameForRole(role agent.Role) string {
+	if orch.roster == nil {
+		return string(role)
+	}
+
+	name, ok := orch.roster[role]
+	if !ok || name == string(role) {
+		return string(role)
+	}
+
+	return name
+}
+
 func (orch *Orchestrator) breakSilence(ctx context.Context) {
 	if orch.conversation == nil {
 		return
@@ -286,10 +308,17 @@ func (orch *Orchestrator) postAsRole(ctx context.Context, channel, text string, 
 	if orch.bot == nil {
 		return
 	}
-	_ = orch.bot.PostAsRole(ctx, channel, text, role)
+
+	// Post the message and capture its timestamp so conversation
+	// replies can thread under it.
+	ts, err := orch.bot.PostAsRoleWithTS(ctx, channel, text, role)
+	if err != nil {
+		log.Printf("postAsRole failed for %s in %s: %v", role, channel, err)
+		return
+	}
 
 	if orch.conversation != nil {
-		go orch.conversation.OnMessage(ctx, channel, string(role), text)
+		go orch.conversation.OnThreadMessage(ctx, channel, string(role), text, ts)
 	}
 }
 

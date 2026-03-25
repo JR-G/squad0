@@ -370,6 +370,47 @@ func TestConversationEngine_TryRespond_BotPostError_DoesNotPanic(t *testing.T) {
 	})
 }
 
+func TestConversationEngine_OnThreadMessage_ThreadsResponses(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	runner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"Good point."}` + "\n"),
+	}
+
+	allRoles := agent.AllRoles()
+	agents := make(map[agent.Role]*agent.Agent, len(allRoles))
+	factStores := make(map[agent.Role]*memory.FactStore, len(allRoles))
+	for _, role := range allRoles {
+		agents[role] = buildAgent(t, runner, role, db)
+		factStores[role] = memory.NewFactStore(db)
+	}
+
+	var postedThreadTS string
+	handler := http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
+		_ = req.ParseForm()
+		postedThreadTS = req.FormValue("thread_ts")
+		resp := map[string]interface{}{"ok": true, "channel": "C001", "ts": "999.999"}
+		writer.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(writer).Encode(resp)
+	})
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+
+	bot := newTestSlackBot(server.URL)
+	engine := orchestrator.NewConversationEngine(agents, factStores, bot, nil)
+
+	// Human message with a thread timestamp — responses should thread under it.
+	engine.OnThreadMessage(ctx, "engineering", "ceo", "What about caching?", "1234.5678")
+
+	// At least one response should have been posted in the thread.
+	assert.Equal(t, "1234.5678", postedThreadTS)
+}
+
 func TestConversationEngine_AppendRecent_TruncatesAt15(t *testing.T) {
 	t.Parallel()
 

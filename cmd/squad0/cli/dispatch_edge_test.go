@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -13,10 +15,47 @@ import (
 	"github.com/JR-G/squad0/internal/agent"
 	"github.com/JR-G/squad0/internal/coordination"
 	slack "github.com/JR-G/squad0/internal/integrations/slack"
+	"github.com/JR-G/squad0/internal/memory"
 	"github.com/JR-G/squad0/internal/orchestrator"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type fakeTestRunner struct {
+	output []byte
+}
+
+func (runner *fakeTestRunner) Run(_ context.Context, _, _, _ string, _ ...string) ([]byte, error) {
+	return runner.output, nil
+}
+
+func openTestMemDB(ctx context.Context) (*memory.DB, error) {
+	return memory.Open(ctx, ":memory:")
+}
+
+func buildTestAgentForDispatch(t *testing.T, runner agent.ProcessRunner, role agent.Role, memDB *memory.DB) *agent.Agent {
+	t.Helper()
+
+	personalityDir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(personalityDir, role.PersonalityFile()),
+		[]byte("You are "+string(role)+"."),
+		0o644,
+	))
+
+	graphStore := memory.NewGraphStore(memDB)
+	factStore := memory.NewFactStore(memDB)
+	episodeStore := memory.NewEpisodeStore(memDB)
+	ftsStore := memory.NewFTSStore(memDB)
+
+	embedder := memory.NewEmbedder("http://localhost:11434", "test-model")
+	hybridSearcher := memory.NewHybridSearcher(ftsStore, episodeStore, embedder, 0.5, 0.5)
+	retriever := memory.NewRetriever(graphStore, factStore, episodeStore, hybridSearcher, ftsStore, 2, 20)
+	loader := agent.NewPersonalityLoader(personalityDir)
+	session := agent.NewSession(runner)
+
+	return agent.NewAgent(role, "test-model", session, loader, retriever, memDB, episodeStore, embedder)
+}
 
 func TestRouteCommand_StatusError_ReturnsErrorMessage(t *testing.T) {
 	t.Parallel()
@@ -145,6 +184,47 @@ func TestHandleMessage_EngineeringChannel_WithConversationEngine(t *testing.T) {
 	assert.NotPanics(t, func() {
 		dispatcher.HandleMessage(ctx, msg)
 	})
+}
+
+func TestHandleMessage_WithConversation_RoutesToEngine(t *testing.T) {
+	t.Parallel()
+
+	server := newTestSlackServer()
+	defer server.Close()
+
+	bot := newTestBot(server.URL)
+	orch, _ := newTestOrchestrator(t, bot)
+
+	// Create a minimal conversation engine.
+	ctx := context.Background()
+	memDB, err := openTestMemDB(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = memDB.Close() })
+
+	runner := &fakeTestRunner{output: []byte(`{"type":"result","result":"PASS"}` + "\n")}
+	agents := map[agent.Role]*agent.Agent{
+		agent.RoleEngineer1: buildTestAgentForDispatch(t, runner, agent.RoleEngineer1, memDB),
+	}
+	factStores := map[agent.Role]*memory.FactStore{
+		agent.RoleEngineer1: memory.NewFactStore(memDB),
+	}
+	conversation := orchestrator.NewConversationEngine(agents, factStores, bot, nil)
+
+	dispatcher := cli.NewCommandDispatcherWithConversation(orch, bot, conversation)
+
+	msg := slack.IncomingMessage{
+		Channel:   "engineering",
+		User:      "U001",
+		Text:      "thoughts on the API design?",
+		Timestamp: "1234.5678",
+		IsDM:      false,
+	}
+
+	assert.NotPanics(t, func() {
+		dispatcher.HandleMessage(ctx, msg)
+	})
+	// Give the goroutine time to run.
+	time.Sleep(50 * time.Millisecond)
 }
 
 func TestHandleMessage_FeedChannel_DoesNotPanic(t *testing.T) {

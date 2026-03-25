@@ -33,6 +33,7 @@ type channelState struct {
 	recentLines []string
 	roundCount  int
 	lastMessage time.Time
+	threadTS    string // Slack timestamp of the current conversation thread
 }
 
 // NewConversationEngine creates a ConversationEngine.
@@ -69,7 +70,17 @@ func (engine *ConversationEngine) UpdateRoster(roster map[agent.Role]string) {
 
 // OnMessage is called when any message arrives in a channel.
 // It decides if agents should respond and triggers lightweight sessions.
+// threadTS is the Slack timestamp of the message that started the
+// thread. Pass empty string for non-threaded messages — the engine
+// will use the channel's current active thread.
 func (engine *ConversationEngine) OnMessage(ctx context.Context, channel, sender, text string) {
+	engine.OnThreadMessage(ctx, channel, sender, text, "")
+}
+
+// OnThreadMessage is like OnMessage but with an explicit thread
+// timestamp. When threadTS is non-empty, responses are posted as
+// thread replies to that message.
+func (engine *ConversationEngine) OnThreadMessage(ctx context.Context, channel, sender, text, threadTS string) {
 	engine.mu.Lock()
 	state := engine.getOrCreateChannel(channel)
 
@@ -81,6 +92,15 @@ func (engine *ConversationEngine) OnMessage(ctx context.Context, channel, sender
 	state.recentLines = appendRecent(state.recentLines, fmt.Sprintf("%s: %s", sender, text))
 	state.lastMessage = time.Now()
 
+	// Update the active thread. Human messages start fresh threads.
+	// Agent messages keep the existing thread going.
+	shouldUpdateThread := threadTS != "" && (isHumanMessage(sender) || state.threadTS == "")
+	if shouldUpdateThread {
+		state.threadTS = threadTS
+	}
+
+	activeThread := state.threadTS
+
 	state.roundCount = nextRoundCount(sender, state.roundCount)
 	roundCount := state.roundCount
 	recentCopy := make([]string, len(state.recentLines))
@@ -88,7 +108,8 @@ func (engine *ConversationEngine) OnMessage(ctx context.Context, channel, sender
 	engine.mu.Unlock()
 
 	respondersCount := decideResponderCount(roundCount)
-	log.Printf("chat: channel=%s sender=%s round=%d responders=%d", channel, sender, roundCount, respondersCount)
+	log.Printf("chat: channel=%s sender=%s round=%d responders=%d thread=%s",
+		channel, sender, roundCount, respondersCount, activeThread)
 
 	if respondersCount == 0 {
 		return
@@ -99,7 +120,7 @@ func (engine *ConversationEngine) OnMessage(ctx context.Context, channel, sender
 
 	for _, role := range candidates {
 		log.Printf("chat: %s responding...", role)
-		engine.tryRespond(ctx, channel, role, recentCopy)
+		engine.tryRespondInThread(ctx, channel, role, recentCopy, activeThread)
 		log.Printf("chat: %s finished", role)
 	}
 }
@@ -124,7 +145,7 @@ func (engine *ConversationEngine) BreakSilence(ctx context.Context) {
 		return
 	}
 
-	engine.tryRespond(ctx, "engineering", role, recentCopy)
+	engine.tryRespondInThread(ctx, "engineering", role, recentCopy, "")
 }
 
 // RecentMessages returns the conversation context for a channel.
@@ -173,7 +194,7 @@ func (engine *ConversationEngine) getOrCreateChannel(channel string) *channelSta
 	return state
 }
 
-func (engine *ConversationEngine) tryRespond(ctx context.Context, channel string, role agent.Role, recentLines []string) {
+func (engine *ConversationEngine) tryRespondInThread(ctx context.Context, channel string, role agent.Role, recentLines []string, threadTS string) {
 	if engine.isRolePaused(ctx, role) {
 		log.Printf("chat: %s is paused, skipping", role)
 		return
@@ -205,9 +226,9 @@ func (engine *ConversationEngine) tryRespond(ctx context.Context, channel string
 		return
 	}
 
-	err = engine.bot.PostAsRole(ctx, channel, text, role)
-	if err != nil {
-		log.Printf("chat: failed to post for %s in %s: %v", role, channel, err)
+	postErr := engine.postResponse(ctx, channel, text, role, threadTS)
+	if postErr != nil {
+		log.Printf("chat: failed to post for %s in %s: %v", role, channel, postErr)
 		return
 	}
 
@@ -215,6 +236,13 @@ func (engine *ConversationEngine) tryRespond(ctx context.Context, channel string
 	state := engine.getOrCreateChannel(channel)
 	state.recentLines = appendRecent(state.recentLines, fmt.Sprintf("%s: %s", role, text))
 	engine.mu.Unlock()
+}
+
+func (engine *ConversationEngine) postResponse(ctx context.Context, channel, text string, role agent.Role, threadTS string) error {
+	if threadTS != "" {
+		return engine.bot.PostThreadAsRole(ctx, channel, threadTS, text, role)
+	}
+	return engine.bot.PostAsRole(ctx, channel, text, role)
 }
 
 func (engine *ConversationEngine) topBeliefs(ctx context.Context, role agent.Role) []string {
@@ -279,7 +307,7 @@ func buildChatPrompt(role agent.Role, channel string, recentLines, beliefs []str
 
 	writeRoster(&builder, role, roster)
 
-	fmt.Fprintf(&builder, "\n\nRecent messages in #%s:\n", channel)
+	fmt.Fprintf(&builder, "\n\nConversation in #%s:\n", channel)
 
 	if len(recentLines) == 0 {
 		builder.WriteString("(quiet — nothing recent)\n")
@@ -289,13 +317,22 @@ func buildChatPrompt(role agent.Role, channel string, recentLines, beliefs []str
 		fmt.Fprintf(&builder, "> %s\n", line)
 	}
 
-	builder.WriteString("\nYou're part of this team. Respond naturally — react to what's been said, share your perspective, ask a question, or build on the conversation. Be yourself. Keep it to 1-2 sentences.")
-	builder.WriteString("\n\nRules:")
-	builder.WriteString("\n- Respond ONLY with what you'd actually say in Slack. Nothing else.")
-	builder.WriteString("\n- NEVER include meta-commentary, alternatives, stage directions, or parenthetical notes.")
-	builder.WriteString("\n- NEVER explain what you're doing or why. Just say it.")
-	builder.WriteString("\n- NEVER mention that you're an AI, a model, or playing a character.")
-	builder.WriteString("\n- If you have nothing to add, respond with exactly: PASS")
+	lastMessage := ""
+	if len(recentLines) > 0 {
+		lastMessage = recentLines[len(recentLines)-1]
+	}
+
+	builder.WriteString("\nRespond to this conversation. You're talking to real teammates.")
+
+	if lastMessage != "" {
+		fmt.Fprintf(&builder, " The most recent message is: \"%s\" — engage with it directly.", lastMessage)
+	}
+
+	builder.WriteString(" Use people's names. Ask follow-up questions. Disagree if you disagree. Build on their ideas. Be yourself — your tone, your perspective, your opinions.")
+	builder.WriteString("\n\nKeep it to 1-3 sentences. Respond with ONLY what you'd type in Slack.")
+	builder.WriteString("\nNEVER include meta-commentary, parenthetical notes, stage directions, or alternatives.")
+	builder.WriteString("\nNEVER break character or mention being an AI.")
+	builder.WriteString("\nIf you genuinely have nothing to add, respond with exactly: PASS")
 
 	return builder.String()
 }
@@ -354,11 +391,11 @@ func roleTitle(role agent.Role) string {
 
 func decideResponderCount(roundCount int) int {
 	switch {
-	case roundCount <= 1:
+	case roundCount <= 2:
 		return 2
-	case roundCount <= 3:
-		return 1
 	case roundCount <= 5:
+		return 1
+	case roundCount <= 8:
 		if rand.Float64() < 0.5 {
 			return 1
 		}

@@ -94,6 +94,7 @@ func (bot *Bot) HandleMessageEvent(ctx context.Context, event *slackevents.Messa
 		ChannelID: event.Channel,
 		User:      event.User,
 		Text:      event.Text,
+		Timestamp: event.TimeStamp,
 		ThreadTS:  event.ThreadTimeStamp,
 		IsDM:      isDM,
 	}

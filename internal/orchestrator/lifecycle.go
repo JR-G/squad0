@@ -26,7 +26,6 @@ func (orch *Orchestrator) PauseAgent(ctx context.Context, role agent.Role) error
 		return fmt.Errorf("pausing %s: %w", role, err)
 	}
 
-	orch.postAsRole(ctx, "feed", fmt.Sprintf("%s has been paused.", role), agent.RolePM)
 	return nil
 }
 
@@ -38,7 +37,6 @@ func (orch *Orchestrator) ResumeAgent(ctx context.Context, role agent.Role) erro
 		return fmt.Errorf("resuming %s: %w", role, err)
 	}
 
-	orch.postAsRole(ctx, "feed", fmt.Sprintf("%s has been resumed.", role), agent.RolePM)
 	return nil
 }
 
@@ -51,6 +49,8 @@ func (orch *Orchestrator) PauseAll(ctx context.Context) error {
 			return err
 		}
 	}
+
+	orch.postAsRole(ctx, "feed", "All agents paused.", agent.RolePM)
 	return nil
 }
 
@@ -61,6 +61,8 @@ func (orch *Orchestrator) ResumeAll(ctx context.Context) error {
 			return err
 		}
 	}
+
+	orch.postAsRole(ctx, "feed", "All agents resumed.", agent.RolePM)
 	return nil
 }
 

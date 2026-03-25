@@ -39,9 +39,16 @@ func (dispatcher *commandDispatcher) handleMessage(ctx context.Context, msg slac
 		return
 	}
 
-	if dispatcher.conversation != nil {
-		go dispatcher.conversation.OnMessage(ctx, msg.Channel, msg.User, msg.Text)
+	if dispatcher.conversation == nil {
+		return
 	}
+
+	threadTS := msg.ThreadTS
+	if threadTS == "" {
+		threadTS = msg.Timestamp
+	}
+
+	go dispatcher.conversation.OnThreadMessage(ctx, msg.Channel, msg.User, msg.Text, threadTS)
 }
 
 func (dispatcher *commandDispatcher) handleCommand(ctx context.Context, text string) {

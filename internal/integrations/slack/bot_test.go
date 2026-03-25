@@ -255,6 +255,33 @@ func TestNewBot_CreatesWithDefaultURL(t *testing.T) {
 	assert.NotNil(t, bot.SocketClient())
 }
 
+func TestBot_PostAsRoleWithTS_ReturnsTimestamp(t *testing.T) {
+	t.Parallel()
+
+	handler := http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
+		resp := map[string]interface{}{"ok": true, "channel": "C001", "ts": "1234567890.123456"}
+		writer.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(writer).Encode(resp)
+	})
+
+	bot := newTestBot(t, handler)
+
+	ts, err := bot.PostAsRoleWithTS(context.Background(), "engineering", "hello", agent.RolePM)
+
+	require.NoError(t, err)
+	assert.Equal(t, "1234567890.123456", ts)
+}
+
+func TestBot_PostAsRoleWithTS_UnknownChannel_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	bot := newTestBot(t, slackOKHandler())
+
+	_, err := bot.PostAsRoleWithTS(context.Background(), "nonexistent", "hello", agent.RolePM)
+
+	require.Error(t, err)
+}
+
 func TestBot_PostMessage_RateLimiterCancelledContext_ReturnsError(t *testing.T) {
 	t.Parallel()
 

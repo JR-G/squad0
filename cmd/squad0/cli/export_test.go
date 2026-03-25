@@ -95,6 +95,16 @@ func NewCommandDispatcher(orch *orchestrator.Orchestrator, bot *slack.Bot) *Comm
 	return &CommandDispatcherWrapper{inner: newCommandDispatcher(orch, bot, nil, nil)}
 }
 
+// NewCommandDispatcherWithConversation exports newCommandDispatcher
+// with a conversation engine for testing threaded message routing.
+func NewCommandDispatcherWithConversation(
+	orch *orchestrator.Orchestrator,
+	bot *slack.Bot,
+	conversation *orchestrator.ConversationEngine,
+) *CommandDispatcherWrapper {
+	return &CommandDispatcherWrapper{inner: newCommandDispatcher(orch, bot, conversation, nil)}
+}
+
 // HandleMessage exports handleMessage for testing.
 func (wrapper *CommandDispatcherWrapper) HandleMessage(ctx context.Context, msg slack.IncomingMessage) {
 	wrapper.inner.handleMessage(ctx, msg)

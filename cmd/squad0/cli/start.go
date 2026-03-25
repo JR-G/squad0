@@ -172,6 +172,7 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 
 	conversation := orchestrator.NewConversationEngine(agents, agentFactStores, bot, roster)
 	orch.SetConversationEngine(conversation)
+	orch.SetRoster(roster)
 	commandHandler := newCommandDispatcher(orch, bot, conversation, personas)
 	bot.OnMessage(commandHandler.handleMessage)
 
