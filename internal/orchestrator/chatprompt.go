@@ -56,6 +56,7 @@ func buildChatPrompt(role agent.Role, channel string, recentLines, beliefs []str
 	builder.WriteString("\n\nKeep it to 1-3 sentences. Respond with ONLY what you'd type in Slack.")
 	builder.WriteString("\nNEVER include meta-commentary, parenthetical notes, stage directions, or alternatives.")
 	builder.WriteString("\nNEVER break character or mention being an AI.")
+	builder.WriteString("\nNEVER describe the project, your tech stack, or your role — just talk like a person.")
 	builder.WriteString("\nIf you genuinely have nothing to add, respond with exactly: PASS")
 
 	return builder.String()

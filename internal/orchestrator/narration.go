@@ -47,7 +47,8 @@ func (orch *Orchestrator) acknowledgeThread(ctx context.Context, agentInstance *
 		tail = tail[len(tail)-3:]
 	}
 
-	prompt := fmt.Sprintf("Reply to your teammates with a quick acknowledgment (1 sentence) before diving into work:\n\n%s",
+	prompt := fmt.Sprintf("You're an engineer on the team. Your teammates just replied to you in Slack. "+
+		"Reply with a quick acknowledgment (1 sentence max). Do NOT describe the project or your role — just respond naturally to what they said:\n\n%s",
 		strings.Join(tail, "\n"))
 	response, err := agentInstance.QuickChat(ctx, prompt)
 	if err != nil {
