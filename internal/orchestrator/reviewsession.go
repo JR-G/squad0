@@ -114,6 +114,7 @@ func (orch *Orchestrator) startReview(ctx context.Context, prURL, ticket string,
 }
 
 func (orch *Orchestrator) runReview(ctx context.Context, reviewer *agent.Agent, prURL, ticket string, workItemID int64, engineerRole agent.Role, isReReview bool) {
+	log.Printf("review: starting review of %s (re-review=%v)", ticket, isReReview)
 	prompt := BuildReviewPrompt(prURL, ticket)
 	if isReReview {
 		prompt = BuildReReviewPrompt(prURL, ticket)
@@ -433,6 +434,8 @@ func (orch *Orchestrator) startReReview(ctx context.Context, prURL, ticket strin
 		return
 	}
 
+	log.Printf("re-review: starting re-review of %s for %s", ticket, prURL)
 	orch.advancePipeline(ctx, workItemID, pipeline.StageReviewing)
 	orch.runReview(ctx, reviewer, prURL, ticket, workItemID, engineerRole, true)
+	log.Printf("re-review: completed re-review of %s", ticket)
 }
