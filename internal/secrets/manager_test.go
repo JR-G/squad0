@@ -134,3 +134,30 @@ func TestManager_Set_InvalidName_ReturnsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "unrecognised secret name")
 	assert.Contains(t, err.Error(), "INVALID_SECRET")
 }
+
+func TestManager_GetOptional_Found_ReturnsValue(t *testing.T) {
+	t.Parallel()
+
+	runner := newFakeRunner()
+	runner.On("security find-generic-password -s squad0 -a GITHUB_APP_ID -w", []byte("12345\n"), nil)
+	mgr := newTestManager(runner)
+
+	value, err := mgr.GetOptional(context.Background(), "GITHUB_APP_ID")
+
+	require.NoError(t, err)
+	assert.Equal(t, "12345", value)
+}
+
+func TestManager_GetOptional_NotFound_ReturnsEmpty(t *testing.T) {
+	t.Parallel()
+
+	runner := newFakeRunner()
+	notFound := []byte("could not be found")
+	runner.On("security find-generic-password -s squad0 -a GITHUB_APP_ID -w", notFound, &exec.ExitError{})
+	mgr := newTestManager(runner)
+
+	value, err := mgr.GetOptional(context.Background(), "GITHUB_APP_ID")
+
+	require.NoError(t, err)
+	assert.Empty(t, value)
+}

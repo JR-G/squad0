@@ -230,3 +230,13 @@ func BuildLinkConfig(cfg config.Config) slack.LinkConfig {
 func ResolveMemoryBinaryPath() string {
 	return resolveMemoryBinaryPath()
 }
+
+// ConfigureGitHubAppToken exports configureGitHubAppToken for testing.
+func ConfigureGitHubAppToken(ctx context.Context, agents map[agent.Role]*agent.Agent, loader SecretLoader, out io.Writer) {
+	configureGitHubAppToken(ctx, agents, loader, out)
+}
+
+// ApplyGitHubAppTokenWithURL exports applyGitHubAppTokenWithURL for testing with a mock API.
+func ApplyGitHubAppTokenWithURL(ctx context.Context, agents map[agent.Role]*agent.Agent, appID, installID, privateKey, apiURL string, out io.Writer) {
+	applyGitHubAppTokenWithURL(ctx, agents, appID, installID, privateKey, apiURL, out)
+}

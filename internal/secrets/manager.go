@@ -108,6 +108,17 @@ func (mgr *Manager) Set(ctx context.Context, name, value string) error {
 	return mgr.keychain.Set(ctx, name, value)
 }
 
+// GetOptional retrieves a single secret by name. Returns empty string
+// and nil error if the secret doesn't exist. Used for optional secrets
+// like GitHub App credentials.
+func (mgr *Manager) GetOptional(ctx context.Context, name string) (string, error) {
+	value, err := mgr.keychain.Get(ctx, name)
+	if errors.Is(err, ErrSecretNotFound) {
+		return "", nil
+	}
+	return value, err
+}
+
 func (mgr *Manager) checkPresence(ctx context.Context) (map[string]bool, error) {
 	status := make(map[string]bool, len(RequiredSecrets))
 

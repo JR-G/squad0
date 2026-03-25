@@ -14,6 +14,7 @@ import (
 	"github.com/JR-G/squad0/internal/config"
 	"github.com/JR-G/squad0/internal/coordination"
 	"github.com/JR-G/squad0/internal/health"
+	gh "github.com/JR-G/squad0/internal/integrations/github"
 	slack "github.com/JR-G/squad0/internal/integrations/slack"
 	"github.com/JR-G/squad0/internal/logging"
 	"github.com/JR-G/squad0/internal/memory"
@@ -187,6 +188,8 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	orch.SetRoster(roster)
 	commandHandler := newCommandDispatcher(orch, bot, conversation, personas, buildLinkConfig(cfg))
 	bot.OnMessage(commandHandler.handleMessage)
+
+	configureGitHubAppToken(ctx, agents, deps.SecretLoader, out)
 
 	_, _ = fmt.Fprint(out, tui.StepDone("All systems ready"))
 	_, _ = fmt.Fprintln(out)
@@ -433,6 +436,63 @@ func resolveMemoryBinaryPath() string {
 	}
 
 	return ""
+}
+
+func configureGitHubAppToken(ctx context.Context, agents map[agent.Role]*agent.Agent, loader SecretLoader, out io.Writer) {
+	appID, installID, privateKey := loadGitHubAppSecrets(ctx, loader)
+	if appID == "" || installID == "" || privateKey == "" {
+		_, _ = fmt.Fprint(out, tui.StepWarn("GitHub App not configured — reviews use owner token"))
+		return
+	}
+
+	applyGitHubAppTokenWithURL(ctx, agents, appID, installID, privateKey, "", out)
+}
+
+func applyGitHubAppTokenWithURL(ctx context.Context, agents map[agent.Role]*agent.Agent, appID, installID, privateKey, apiURL string, out io.Writer) {
+	provider, err := createAppTokenProvider(appID, installID, privateKey, apiURL)
+	if err != nil {
+		_, _ = fmt.Fprint(out, tui.StepFail(fmt.Sprintf("GitHub App key invalid: %v", err)))
+		return
+	}
+
+	token, tokenErr := provider.Token(ctx)
+	if tokenErr != nil {
+		_, _ = fmt.Fprint(out, tui.StepFail(fmt.Sprintf("GitHub App token failed: %v", tokenErr)))
+		return
+	}
+
+	for _, role := range []agent.Role{agent.RoleReviewer, agent.RolePM, agent.RoleTechLead} {
+		if a, ok := agents[role]; ok {
+			a.SetGHToken(token)
+		}
+	}
+
+	_, _ = fmt.Fprint(out, tui.StepDone("GitHub App token configured for reviews"))
+}
+
+// OptionalSecretGetter can retrieve optional secrets that may not exist.
+type OptionalSecretGetter interface {
+	GetOptional(ctx context.Context, name string) (string, error)
+}
+
+func loadGitHubAppSecrets(ctx context.Context, loader SecretLoader) (appID, installID, privateKey string) {
+	getter, ok := loader.(OptionalSecretGetter)
+	if !ok {
+		return "", "", ""
+	}
+
+	appID, _ = getter.GetOptional(ctx, "GITHUB_APP_ID")
+	installID, _ = getter.GetOptional(ctx, "GITHUB_APP_INSTALLATION_ID")
+	privateKey, _ = getter.GetOptional(ctx, "GITHUB_APP_PRIVATE_KEY")
+
+	return appID, installID, privateKey
+}
+
+func createAppTokenProvider(appID, installID, privateKey, apiURL string) (*gh.AppTokenProvider, error) {
+	if apiURL != "" {
+		return gh.NewAppTokenProviderWithURL(appID, installID, privateKey, apiURL)
+	}
+	return gh.NewAppTokenProvider(appID, installID, privateKey)
 }
 
 func parseCronToInterval(_ string) time.Duration {

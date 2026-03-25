@@ -3,6 +3,14 @@ package cli_test
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/json"
+	"encoding/pem"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -11,6 +19,7 @@ import (
 	"github.com/JR-G/squad0/internal/agent"
 	"github.com/JR-G/squad0/internal/config"
 	"github.com/JR-G/squad0/internal/memory"
+	"github.com/JR-G/squad0/internal/secrets"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -267,4 +276,165 @@ func TestOpenAllDatabases_CancelledContext_ReturnsError(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, projectDB)
 	assert.Nil(t, agentDBs)
+}
+
+type stubSecretLoader struct{}
+
+func (s *stubSecretLoader) LoadAll(_ context.Context) (secrets.Secrets, error) {
+	return secrets.Secrets{SlackBotToken: "xoxb-test", SlackAppToken: "xapp-test"}, nil
+}
+
+type stubSecretLoaderWithApp struct {
+	secrets map[string]string
+}
+
+func (s *stubSecretLoaderWithApp) LoadAll(_ context.Context) (secrets.Secrets, error) {
+	return secrets.Secrets{SlackBotToken: "xoxb-test", SlackAppToken: "xapp-test"}, nil
+}
+
+func (s *stubSecretLoaderWithApp) GetOptional(_ context.Context, name string) (string, error) {
+	return s.secrets[name], nil
+}
+
+func TestConfigureGitHubAppToken_NoManager_ShowsWarning(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	var buf bytes.Buffer
+
+	agents := make(map[agent.Role]*agent.Agent)
+
+	// Stub loader isn't a *secrets.Manager, so loadGitHubAppSecrets returns empty.
+	cli.ConfigureGitHubAppToken(ctx, agents, &stubSecretLoader{}, &buf)
+
+	assert.Contains(t, buf.String(), "GitHub App not configured")
+}
+
+func TestApplyGitHubAppToken_InvalidKey_ShowsFail(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	agents := make(map[agent.Role]*agent.Agent)
+
+	cli.ApplyGitHubAppTokenWithURL(context.Background(), agents, "123", "456", "not a pem", "", &buf)
+
+	assert.Contains(t, buf.String(), "GitHub App key invalid")
+}
+
+func TestApplyGitHubAppToken_ValidKey_APIError_ShowsFail(t *testing.T) {
+	t.Parallel()
+
+	// Generate a real RSA key for the test.
+	pemData := generateTestPEMForCLI(t)
+	var buf bytes.Buffer
+	agents := make(map[agent.Role]*agent.Agent)
+
+	// No mock server — the provider will try to hit api.github.com and fail.
+	// But NewAppTokenProvider succeeds, Token() fails.
+	cli.ApplyGitHubAppTokenWithURL(context.Background(), agents, "123", "456", pemData, "", &buf)
+
+	assert.Contains(t, buf.String(), "GitHub App token failed")
+}
+
+func generateTestPEMForCLI(t *testing.T) string {
+	t.Helper()
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	keyBytes := x509.MarshalPKCS1PrivateKey(key)
+	block := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: keyBytes}
+
+	return string(pem.EncodeToMemory(block))
+}
+
+func TestConfigureGitHubAppToken_WithValidApp_APIError_ShowsFail(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	var buf bytes.Buffer
+
+	pemData := generateTestPEMForCLI(t)
+
+	loader := &stubSecretLoaderWithApp{
+		secrets: map[string]string{
+			"GITHUB_APP_ID":              "123",
+			"GITHUB_APP_INSTALLATION_ID": "456",
+			"GITHUB_APP_PRIVATE_KEY":     pemData,
+		},
+	}
+
+	agents := make(map[agent.Role]*agent.Agent)
+
+	cli.ConfigureGitHubAppToken(ctx, agents, loader, &buf)
+
+	assert.Contains(t, buf.String(), "GitHub App token failed")
+}
+
+func TestApplyGitHubAppToken_WithMockAPI_SetsTokenOnAgents(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	var buf bytes.Buffer
+
+	pemData := generateTestPEMForCLI(t)
+
+	// Mock GitHub API that returns a valid installation token.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		resp := map[string]interface{}{
+			"token":      "ghs_test_token_abc",
+			"expires_at": time.Now().Add(time.Hour).Format(time.RFC3339),
+		}
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	t.Cleanup(server.Close)
+
+	// Use ApplyGitHubAppTokenWithURL to point at mock server.
+	agents := createTestAgents(t)
+
+	cli.ApplyGitHubAppTokenWithURL(ctx, agents, "123", "456", pemData, server.URL, &buf)
+
+	assert.Contains(t, buf.String(), "GitHub App token configured")
+}
+
+func TestConfigureGitHubAppToken_EmptySecrets_ShowsWarning(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	var buf bytes.Buffer
+
+	// Has GetOptional but returns empty strings.
+	loader := &stubSecretLoaderWithApp{secrets: map[string]string{}}
+	agents := make(map[agent.Role]*agent.Agent)
+
+	cli.ConfigureGitHubAppToken(ctx, agents, loader, &buf)
+
+	assert.Contains(t, buf.String(), "GitHub App not configured")
+}
+
+func createTestAgents(t *testing.T) map[agent.Role]*agent.Agent {
+	t.Helper()
+
+	ctx := context.Background()
+	personalityDir := t.TempDir()
+
+	for _, role := range agent.AllRoles() {
+		require.NoError(t, os.WriteFile(
+			filepath.Join(personalityDir, role.PersonalityFile()),
+			[]byte("You are "+string(role)+"."), 0o644,
+		))
+	}
+
+	agents := make(map[agent.Role]*agent.Agent, len(agent.AllRoles()))
+	for _, role := range agent.AllRoles() {
+		memDB, err := memory.Open(ctx, ":memory:")
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = memDB.Close() })
+
+		modelMap := cli.BuildModelMap(config.DefaultConfig())
+		agents[role] = cli.BuildSingleAgent(role, memDB, memory.NewEmbedder("http://localhost:11434", "test"), modelMap, agent.NewPersonalityLoader(personalityDir))
+	}
+
+	return agents
 }

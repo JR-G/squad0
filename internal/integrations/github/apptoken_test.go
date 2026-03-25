@@ -119,3 +119,22 @@ func TestToken_APIError_ReturnsError(t *testing.T) {
 	require.Error(t, tokenErr)
 	assert.Contains(t, tokenErr.Error(), "401")
 }
+
+func TestToken_MalformedJSON_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	pemData := generateTestPEM(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`not json`))
+	}))
+	t.Cleanup(server.Close)
+
+	provider, err := gh.NewAppTokenProviderWithURL("123", "456", pemData, server.URL)
+	require.NoError(t, err)
+
+	_, tokenErr := provider.Token(context.Background())
+	require.Error(t, tokenErr)
+	assert.Contains(t, tokenErr.Error(), "parsing token response")
+}
