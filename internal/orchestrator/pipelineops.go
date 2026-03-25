@@ -131,12 +131,20 @@ func (orch *Orchestrator) resumeWorkItem(ctx context.Context, item pipeline.Work
 
 	case pipeline.StageChangesRequested:
 		if item.PRURL != "" {
-			orch.startFixUp(ctx, item.PRURL, item.Ticket, item.ID, item.Engineer)
+			orch.wg.Add(1)
+			go func() {
+				defer orch.wg.Done()
+				orch.startFixUp(ctx, item.PRURL, item.Ticket, item.ID, item.Engineer)
+			}()
 		}
 
 	case pipeline.StageApproved:
 		if item.PRURL != "" {
-			orch.mergeAndComplete(ctx, item.PRURL, item.Ticket, item.ID, item.Engineer)
+			orch.wg.Add(1)
+			go func() {
+				defer orch.wg.Done()
+				orch.mergeAndComplete(ctx, item.PRURL, item.Ticket, item.ID, item.Engineer)
+			}()
 		}
 
 	case pipeline.StageWorking:
@@ -144,7 +152,11 @@ func (orch *Orchestrator) resumeWorkItem(ctx context.Context, item pipeline.Work
 		// address comments / rebase rather than starting from scratch.
 		if item.PRURL != "" {
 			log.Printf("work item %s has open PR — sending engineer back to fix up", item.Ticket)
-			orch.startFixUp(ctx, item.PRURL, item.Ticket, item.ID, item.Engineer)
+			orch.wg.Add(1)
+			go func() {
+				defer orch.wg.Done()
+				orch.startFixUp(ctx, item.PRURL, item.Ticket, item.ID, item.Engineer)
+			}()
 			return
 		}
 		log.Printf("work item %s was mid-implementation — engineer will re-pick it up", item.Ticket)

@@ -32,7 +32,16 @@ func TestResumePendingWork_ResumesApprovedItems(t *testing.T) {
 	require.NoError(t, memErr)
 	t.Cleanup(func() { _ = db.Close() })
 
-	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"done"}` + "\n")}
+	// Step-based merge: checkApprovalStatus → executeMerge → verifyMerged → MoveTicketState.
+	pmRunner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"APPROVED"}` + "\n"),
+		outputs: [][]byte{
+			[]byte(`{"type":"result","result":"APPROVED"}` + "\n"),
+			[]byte(`{"type":"result","result":"done"}` + "\n"),
+			[]byte(`{"type":"result","result":"MERGED"}` + "\n"),
+			[]byte(`{"type":"result","result":"done"}` + "\n"),
+		},
+	}
 	pmAgent := setupPMAgent(t, pmRunner)
 
 	agents := map[agent.Role]*agent.Agent{agent.RolePM: pmAgent}
@@ -53,6 +62,7 @@ func TestResumePendingWork_ResumesApprovedItems(t *testing.T) {
 	defer cancel()
 
 	_ = orch.Run(timedCtx)
+	orch.Wait()
 
 	assert.NotEmpty(t, pmRunner.calls)
 }

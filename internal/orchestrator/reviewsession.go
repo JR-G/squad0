@@ -408,6 +408,9 @@ func (orch *Orchestrator) startFixUp(ctx context.Context, prURL, ticket string, 
 
 	orch.advancePipeline(ctx, workItemID, pipeline.StageWorking)
 
+	engineerName := orch.NameForRole(engineerRole)
+	log.Printf("fix-up: %s starting fix-up session for %s (%s)", engineerName, ticket, prURL)
+
 	prompt := BuildFixUpPrompt(prURL, ticket)
 
 	result, err := engineerAgent.ExecuteTask(ctx, prompt, nil, orch.cfg.TargetRepoDir)
@@ -416,6 +419,7 @@ func (orch *Orchestrator) startFixUp(ctx context.Context, prURL, ticket string, 
 		return
 	}
 
+	log.Printf("fix-up: %s completed fix-up for %s", engineerName, ticket)
 	_ = result
 
 	// Re-review: reviewer specifically checks their previous comments.
