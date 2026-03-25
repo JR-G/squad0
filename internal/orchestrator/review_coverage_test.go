@@ -119,6 +119,10 @@ func TestMergeAndComplete_Success_AdvancesPipeline(t *testing.T) {
 
 	pmRunner := &fakeProcessRunner{
 		output: []byte(`{"type":"result","result":"done"}` + "\n"),
+		outputs: [][]byte{
+			[]byte(`{"type":"result","result":"done"}` + "\n"),
+			[]byte(`{"type":"result","result":"MERGED"}` + "\n"),
+		},
 	}
 	pmAgent := setupPMAgent(t, pmRunner)
 
@@ -259,16 +263,22 @@ func TestRetryApproval_ReviewerReapproves_ThenMerges(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = memDB.Close() })
 
-	// PM returns NOT_APPROVED first (triggers retryApproval), then "done" for merge.
+	// PM: (1) NOT_APPROVED → retryApproval, (2) done → merge, (3) MERGED → verify.
 	pmRunner := &fakeProcessRunner{
 		output: []byte(`{"type":"result","result":"NOT_APPROVED"}` + "\n"),
 		outputs: [][]byte{
 			[]byte(`{"type":"result","result":"NOT_APPROVED"}` + "\n"),
 			[]byte(`{"type":"result","result":"done"}` + "\n"),
+			[]byte(`{"type":"result","result":"MERGED"}` + "\n"),
 		},
 	}
+	// Reviewer: (1) re-approve, (2) verify → APPROVED.
 	reviewRunner := &fakeProcessRunner{
 		output: []byte(`{"type":"result","result":"done"}` + "\n"),
+		outputs: [][]byte{
+			[]byte(`{"type":"result","result":"done"}` + "\n"),
+			[]byte(`{"type":"result","result":"APPROVED"}` + "\n"),
+		},
 	}
 
 	sqlDB, sqlErr := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")

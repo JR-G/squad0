@@ -198,6 +198,15 @@ Respond with "done", "NOT_APPROVED", or "CI_FAILING".`, prNum, prNum, prNum, prN
 		return
 	}
 
+	// Don't trust the agent — verify the PR is actually merged.
+	if !orch.verifyMerged(ctx, mergeAgent, prNum) {
+		log.Printf("merge verification failed for %s: PR not merged despite agent claiming success", ticket)
+		orch.announceAsRole(ctx, "reviews",
+			fmt.Sprintf("%s merge was attempted but PR is still open — needs manual merge", ticket),
+			agent.RolePM)
+		return
+	}
+
 	orch.advancePipeline(ctx, workItemID, pipeline.StageMerged)
 	go MoveTicketState(ctx, mergeAgent, ticket, "Done")
 
@@ -206,6 +215,24 @@ Respond with "done", "NOT_APPROVED", or "CI_FAILING".`, prNum, prNum, prNum, prN
 	orch.announceAsRole(ctx, "feed",
 		fmt.Sprintf("Merged %s — %s", ticketLink, prLink),
 		agent.RolePM)
+}
+
+// VerifyMergedForTest exports verifyMerged for testing.
+func (orch *Orchestrator) VerifyMergedForTest(ctx context.Context, verifyAgent *agent.Agent, prNum string) bool {
+	return orch.verifyMerged(ctx, verifyAgent, prNum)
+}
+
+// verifyMerged checks the actual GitHub PR state to confirm it was merged.
+// Never trust an agent's claim — always verify.
+func (orch *Orchestrator) verifyMerged(ctx context.Context, verifyAgent *agent.Agent, prNum string) bool {
+	prompt := fmt.Sprintf("Run this command and respond with ONLY the output, nothing else:\ngh pr view %s --json state --jq .state", prNum)
+
+	result, err := verifyAgent.DirectSession(ctx, prompt)
+	if err != nil {
+		return false
+	}
+
+	return strings.Contains(strings.ToUpper(result.Transcript), "MERGED")
 }
 
 func (orch *Orchestrator) retryApproval(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role) {
@@ -229,19 +256,27 @@ func (orch *Orchestrator) retryApproval(ctx context.Context, prURL, ticket strin
 		"Then verify: gh pr view %s --json reviewDecision\n\n"+
 		"Respond with just 'done' or 'failed'.", prNum, prNum, prNum)
 
-	result, err := reviewer.DirectSession(ctx, prompt)
+	_, err := reviewer.DirectSession(ctx, prompt)
 	if err != nil {
 		log.Printf("retry approval failed for %s: %v", ticket, err)
 		return
 	}
 
-	if !strings.Contains(strings.ToUpper(result.Transcript), "DONE") {
-		log.Printf("retry approval did not succeed for %s: %s", ticket, result.Transcript)
+	// Don't trust the reviewer — verify the approval actually landed.
+	verifyPrompt := fmt.Sprintf("Run this and respond with ONLY the output:\ngh pr view %s --json reviewDecision --jq .reviewDecision", prNum)
+
+	verifyResult, verifyErr := reviewer.DirectSession(ctx, verifyPrompt)
+	if verifyErr != nil {
+		log.Printf("approval verification failed for %s: %v", ticket, verifyErr)
 		return
 	}
 
-	// Re-approval worked — retry the merge (which will re-check approval + CI).
-	log.Printf("retry approval succeeded for %s, retrying merge", ticket)
+	if !strings.Contains(strings.ToUpper(verifyResult.Transcript), "APPROVED") {
+		log.Printf("retry approval did not land for %s: %s", ticket, verifyResult.Transcript)
+		return
+	}
+
+	log.Printf("retry approval verified for %s, retrying merge", ticket)
 	orch.mergeAndComplete(ctx, prURL, ticket, workItemID, engineerRole)
 }
 

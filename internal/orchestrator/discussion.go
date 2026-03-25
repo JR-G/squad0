@@ -76,6 +76,9 @@ func (orch *Orchestrator) runDiscussionPhase(ctx context.Context, agentInstance 
 	// Wait until the thread goes quiet instead of a fixed timer.
 	orch.waitForQuiet(ctx, "engineering")
 
+	// PM makes the call if the discussion didn't converge.
+	orch.BreakDiscussionTie(ctx, "engineering")
+
 	// Collect the discussion for the implementation prompt.
 	return orch.collectDiscussion(ctx, "engineering")
 }
