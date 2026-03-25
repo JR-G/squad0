@@ -282,20 +282,27 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 
 	orch.recordSessionEnd(role, assignment.Ticket, true)
 
-	orch.announceAsRole(ctx, "engineering",
-		fmt.Sprintf("Finished %s. PR should be up for review.", assignment.Ticket),
-		role)
+	name := orch.NameForRole(role)
+	prURL := ExtractPRURL(result.Transcript)
 
-	orch.announceAsRole(ctx, "reviews",
-		fmt.Sprintf("%s completed work on %s — please review", role, assignment.Ticket),
-		role)
+	finishedMsg := fmt.Sprintf("Finished %s.", assignment.Ticket)
+	if prURL != "" {
+		finishedMsg = fmt.Sprintf("Finished %s — PR: %s", assignment.Ticket, prURL)
+	}
+
+	orch.announceAsRole(ctx, "engineering", finishedMsg, role)
+
+	reviewMsg := fmt.Sprintf("%s completed work on %s — please review", name, assignment.Ticket)
+	if prURL != "" {
+		reviewMsg = fmt.Sprintf("%s completed %s — review: %s", name, assignment.Ticket, prURL)
+	}
+	orch.announceAsRole(ctx, "reviews", reviewMsg, role)
 
 	pmAgent := orch.agents[agent.RolePM]
 	if pmAgent != nil {
 		go FlushSessionMemory(ctx, pmAgent, agentInstance, assignment.Ticket, result.Transcript)
 	}
 
-	prURL := ExtractPRURL(result.Transcript)
 	if prURL != "" {
 		go MoveTicketState(ctx, orch.agents[agent.RolePM], assignment.Ticket, "In Review")
 		orch.startReview(ctx, prURL, assignment.Ticket)
