@@ -43,14 +43,16 @@ type Orchestrator struct {
 
 // Config holds orchestrator-level settings.
 type Config struct {
-	PollInterval     time.Duration
-	MaxParallel      int
-	CooldownAfter    time.Duration
-	WorkEnabled      bool
-	TargetRepoDir    string
-	MemoryBinaryPath string
-	Links            slack.LinkConfig
-	DiscussionWait   time.Duration
+	PollInterval      time.Duration
+	MaxParallel       int
+	CooldownAfter     time.Duration
+	WorkEnabled       bool
+	TargetRepoDir     string
+	MemoryBinaryPath  string
+	Links             slack.LinkConfig
+	DiscussionWait    time.Duration
+	QuietThreshold    time.Duration
+	QuietPollInterval time.Duration
 }
 
 // NewOrchestrator creates an Orchestrator with all dependencies injected.
@@ -126,6 +128,9 @@ func (orch *Orchestrator) tick(ctx context.Context) {
 		orch.breakSilence(ctx)
 		return
 	}
+
+	// PM checks for stale work and follows up.
+	orch.RunPMDuties(ctx)
 
 	idleRoles, err := orch.checkIns.IdleAgents(ctx)
 	if err != nil {

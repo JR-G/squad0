@@ -10,7 +10,12 @@ import (
 	"github.com/JR-G/squad0/internal/agent"
 )
 
-const defaultDiscussionWait = 20 * time.Second
+const (
+	defaultDiscussionWait    = 20 * time.Second
+	defaultQuietThreshold    = 5 * time.Second
+	defaultQuietPollInterval = 2 * time.Second
+	maxDiscussionWait        = 3 * time.Minute
+)
 
 // RunDiscussionForTest exports runDiscussionPhase for testing.
 func (orch *Orchestrator) RunDiscussionForTest(ctx context.Context, agentInstance *agent.Agent, assignment Assignment) string {
@@ -65,22 +70,72 @@ func (orch *Orchestrator) runDiscussionPhase(ctx context.Context, agentInstance 
 			orch.cfg.Links.TicketLink(assignment.Ticket), plan),
 		role)
 
-	// Wait for teammates to respond.
+	// Tech Lead weighs in on every discussion.
+	orch.TechLeadDiscussionReview(ctx, "engineering", plan, assignment.Ticket)
+
+	// Wait until the thread goes quiet instead of a fixed timer.
+	orch.waitForQuiet(ctx, "engineering")
+
+	// Collect the discussion for the implementation prompt.
+	return orch.collectDiscussion(ctx, "engineering")
+}
+
+// waitForQuiet polls the conversation engine until the channel has been
+// quiet for quietThreshold, or maxDiscussionWait is reached. Falls back
+// to the configured DiscussionWait if no conversation engine is available.
+func (orch *Orchestrator) waitForQuiet(ctx context.Context, channel string) {
+	if orch.conversation == nil {
+		orch.waitFixed(ctx)
+		return
+	}
+
+	maxWait := maxDiscussionWait
+	if orch.cfg.DiscussionWait > 0 && orch.cfg.DiscussionWait < maxWait {
+		maxWait = orch.cfg.DiscussionWait
+	}
+
+	threshold := orch.cfg.QuietThreshold
+	if threshold == 0 {
+		threshold = defaultQuietThreshold
+	}
+
+	pollInterval := orch.cfg.QuietPollInterval
+	if pollInterval == 0 {
+		pollInterval = defaultQuietPollInterval
+	}
+
+	deadline := time.After(maxWait)
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	log.Printf("discussion: waiting for quiet (threshold=%s, max=%s)", threshold, maxWait)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-deadline:
+			log.Printf("discussion: max wait reached, proceeding")
+			return
+		case <-ticker.C:
+			if orch.conversation.IsQuiet(channel, threshold) {
+				log.Printf("discussion: channel quiet, proceeding")
+				return
+			}
+		}
+	}
+}
+
+func (orch *Orchestrator) waitFixed(ctx context.Context) {
 	wait := orch.cfg.DiscussionWait
 	if wait == 0 {
 		wait = defaultDiscussionWait
 	}
-	log.Printf("discussion: waiting %s for team feedback on %s", wait, assignment.Ticket)
+	log.Printf("discussion: no conversation engine, waiting %s", wait)
 	select {
 	case <-time.After(wait):
 	case <-ctx.Done():
-		return ""
 	}
-
-	// Collect the discussion for the implementation prompt.
-	discussion := orch.collectDiscussion(ctx, "engineering")
-
-	return discussion
 }
 
 func (orch *Orchestrator) collectDiscussion(_ context.Context, channel string) string {

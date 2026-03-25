@@ -48,7 +48,7 @@ func TestDiscussionPhase_PostsPlan(t *testing.T) {
 	bot := newTestSlackBot(server.URL)
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, QuietThreshold: 10 * time.Millisecond, QuietPollInterval: 5 * time.Millisecond, DiscussionWait: 100 * time.Millisecond},
 		agents, checkIns, bot, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
 
@@ -90,7 +90,7 @@ func TestDiscussionPhase_PassResponse_ReturnsEmpty(t *testing.T) {
 	engAgent := buildAgent(t, passRunner, agent.RoleEngineer1, db)
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, QuietThreshold: 10 * time.Millisecond, QuietPollInterval: 5 * time.Millisecond, DiscussionWait: 100 * time.Millisecond},
 		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent, agent.RoleEngineer1: engAgent},
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
@@ -128,7 +128,7 @@ func TestDiscussionPhase_Error_ReturnsEmpty(t *testing.T) {
 	engAgent := buildAgent(t, errRunner, agent.RoleEngineer1, db)
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, QuietThreshold: 10 * time.Millisecond, QuietPollInterval: 5 * time.Millisecond, DiscussionWait: 100 * time.Millisecond},
 		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent, agent.RoleEngineer1: engAgent},
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
@@ -188,7 +188,7 @@ func TestDiscussionPhase_WithConversation_CollectsMessages(t *testing.T) {
 	conversation := orchestrator.NewConversationEngine(agents, factStores, bot, nil)
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, QuietThreshold: 10 * time.Millisecond, QuietPollInterval: 5 * time.Millisecond, DiscussionWait: 100 * time.Millisecond},
 		agents, checkIns, bot, orchestrator.NewAssigner(agents[agent.RolePM], "TEST"),
 	)
 	orch.SetConversationEngine(conversation)
@@ -220,7 +220,7 @@ func TestArchitectureReview_NoTechLead_ReturnsApproved(t *testing.T) {
 
 	// No tech lead in agents.
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, QuietThreshold: 10 * time.Millisecond, QuietPollInterval: 5 * time.Millisecond, DiscussionWait: 100 * time.Millisecond},
 		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent},
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
@@ -254,7 +254,7 @@ func TestArchitectureReview_WithTechLead_ReturnsOutcome(t *testing.T) {
 	techLead := buildAgent(t, techLeadRunner, agent.RoleTechLead, db)
 
 	orch := orchestrator.NewOrchestrator(
-		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, QuietThreshold: 10 * time.Millisecond, QuietPollInterval: 5 * time.Millisecond, DiscussionWait: 100 * time.Millisecond},
 		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent, agent.RoleTechLead: techLead},
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
