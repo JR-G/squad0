@@ -6,6 +6,7 @@ target_repo = "github.com/JR-G/makebook"
 [linear]
 team_id = "253f49a0-1b89-4553-8efc-5dba439a4e6d"
 project_id = ""
+workspace = "jamesrg"
 
 [slack]
 bot_token_env = "SLACK_BOT_TOKEN"

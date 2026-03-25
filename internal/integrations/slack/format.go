@@ -11,6 +11,11 @@ import (
 // FormatStatusForSlack renders agent check-ins as Slack-formatted text.
 // Uses personas to show chosen names instead of role IDs.
 func FormatStatusForSlack(checkIns []coordination.CheckIn, personas map[agent.Role]Persona) string {
+	return FormatStatusWithLinks(checkIns, personas, LinkConfig{})
+}
+
+// FormatStatusWithLinks renders agent check-ins with ticket links.
+func FormatStatusWithLinks(checkIns []coordination.CheckIn, personas map[agent.Role]Persona, links LinkConfig) string {
 	if len(checkIns) == 0 {
 		return "No agents registered yet."
 	}
@@ -23,7 +28,7 @@ func FormatStatusForSlack(checkIns []coordination.CheckIn, personas map[agent.Ro
 		status := formatSlackStatus(checkIn.Status)
 		builder.WriteString(fmt.Sprintf("*%s*  %s\n", name, status))
 
-		writeTicketLine(&builder, checkIn)
+		writeTicketLine(&builder, checkIn, links)
 
 		if len(checkIn.FilesTouching) > 0 {
 			builder.WriteString(fmt.Sprintf("    Files: %s\n", strings.Join(checkIn.FilesTouching, ", ")))
@@ -48,20 +53,21 @@ func displayNameForStatus(role agent.Role, personas map[agent.Role]Persona) stri
 	return persona.DisplayName()
 }
 
-func writeTicketLine(builder *strings.Builder, checkIn coordination.CheckIn) {
+func writeTicketLine(builder *strings.Builder, checkIn coordination.CheckIn, links LinkConfig) {
 	if checkIn.Ticket == "" {
 		return
 	}
 
+	ticket := links.TicketLink(checkIn.Ticket)
 	defaultMsg := fmt.Sprintf("working on %s", checkIn.Ticket)
 	hasCustomMessage := checkIn.Message != "" && checkIn.Message != defaultMsg
 
 	if hasCustomMessage {
-		fmt.Fprintf(builder, "    `%s` — %s\n", checkIn.Ticket, checkIn.Message)
+		fmt.Fprintf(builder, "    %s — %s\n", ticket, checkIn.Message)
 		return
 	}
 
-	fmt.Fprintf(builder, "    `%s`\n", checkIn.Ticket)
+	fmt.Fprintf(builder, "    %s\n", ticket)
 }
 
 func formatSlackStatus(status coordination.Status) string {

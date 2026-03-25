@@ -149,6 +149,7 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 			WorkEnabled:      workEnabled,
 			TargetRepoDir:    targetRepoDir,
 			MemoryBinaryPath: resolveMemoryBinaryPath(),
+			Links:            buildLinkConfig(cfg),
 		},
 		agents, checkInStore, bot, assigner,
 	)
@@ -173,7 +174,7 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	conversation := orchestrator.NewConversationEngine(agents, agentFactStores, bot, roster)
 	orch.SetConversationEngine(conversation)
 	orch.SetRoster(roster)
-	commandHandler := newCommandDispatcher(orch, bot, conversation, personas)
+	commandHandler := newCommandDispatcher(orch, bot, conversation, personas, buildLinkConfig(cfg))
 	bot.OnMessage(commandHandler.handleMessage)
 
 	_, _ = fmt.Fprint(out, tui.StepDone("All systems ready"))
@@ -394,6 +395,19 @@ func resolveTargetRepo(targetRepo string) string {
 
 	repoName := filepath.Base(targetRepo)
 	return filepath.Join(home, "repos", repoName)
+}
+
+func buildLinkConfig(cfg config.Config) slack.LinkConfig {
+	repo := ""
+	if cfg.Project.TargetRepo != "" {
+		repo = filepath.Base(cfg.Project.TargetRepo)
+	}
+
+	return slack.LinkConfig{
+		LinearWorkspace: cfg.Linear.Workspace,
+		GitHubOwner:     cfg.GitHub.Owner,
+		GitHubRepo:      repo,
+	}
 }
 
 func resolveMemoryBinaryPath() string {

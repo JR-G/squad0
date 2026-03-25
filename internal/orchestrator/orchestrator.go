@@ -45,6 +45,7 @@ type Config struct {
 	WorkEnabled      bool
 	TargetRepoDir    string
 	MemoryBinaryPath string
+	Links            slack.LinkConfig
 }
 
 // NewOrchestrator creates an Orchestrator with all dependencies injected.
@@ -249,8 +250,9 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 
 	orch.recordSessionStart(role)
 
+	ticketLink := orch.cfg.Links.TicketLink(assignment.Ticket)
 	orch.postAsRole(ctx, "engineering",
-		fmt.Sprintf("Picking up %s: %s", assignment.Ticket, assignment.Description),
+		fmt.Sprintf("Picking up %s: %s", ticketLink, assignment.Description),
 		role)
 
 	workSession, err := NewWorkSession(ctx, orch.cfg.TargetRepoDir, role, assignment.Ticket)
@@ -285,16 +287,18 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 	name := orch.NameForRole(role)
 	prURL := ExtractPRURL(result.Transcript)
 
-	finishedMsg := fmt.Sprintf("Finished %s.", assignment.Ticket)
+	finishedMsg := fmt.Sprintf("Finished %s.", ticketLink)
 	if prURL != "" {
-		finishedMsg = fmt.Sprintf("Finished %s — PR: %s", assignment.Ticket, prURL)
+		prLink := orch.cfg.Links.PRLink(prURL)
+		finishedMsg = fmt.Sprintf("Finished %s — %s", ticketLink, prLink)
 	}
 
 	orch.announceAsRole(ctx, "engineering", finishedMsg, role)
 
-	reviewMsg := fmt.Sprintf("%s completed work on %s — please review", name, assignment.Ticket)
+	reviewMsg := fmt.Sprintf("%s completed %s — please review", name, ticketLink)
 	if prURL != "" {
-		reviewMsg = fmt.Sprintf("%s completed %s — review: %s", name, assignment.Ticket, prURL)
+		prLink := orch.cfg.Links.PRLink(prURL)
+		reviewMsg = fmt.Sprintf("%s completed %s — %s", name, ticketLink, prLink)
 	}
 	orch.announceAsRole(ctx, "reviews", reviewMsg, role)
 

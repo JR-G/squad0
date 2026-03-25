@@ -92,7 +92,7 @@ type CommandDispatcherWrapper struct {
 
 // NewCommandDispatcher exports newCommandDispatcher for testing.
 func NewCommandDispatcher(orch *orchestrator.Orchestrator, bot *slack.Bot) *CommandDispatcherWrapper {
-	return &CommandDispatcherWrapper{inner: newCommandDispatcher(orch, bot, nil, nil)}
+	return &CommandDispatcherWrapper{inner: newCommandDispatcher(orch, bot, nil, nil, slack.LinkConfig{})}
 }
 
 // NewCommandDispatcherWithConversation exports newCommandDispatcher
@@ -102,7 +102,7 @@ func NewCommandDispatcherWithConversation(
 	bot *slack.Bot,
 	conversation *orchestrator.ConversationEngine,
 ) *CommandDispatcherWrapper {
-	return &CommandDispatcherWrapper{inner: newCommandDispatcher(orch, bot, conversation, nil)}
+	return &CommandDispatcherWrapper{inner: newCommandDispatcher(orch, bot, conversation, nil, slack.LinkConfig{})}
 }
 
 // HandleMessage exports handleMessage for testing.

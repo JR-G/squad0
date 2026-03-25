@@ -31,6 +31,7 @@ type ProjectConfig struct {
 type LinearConfig struct {
 	TeamID    string `toml:"team_id"`
 	ProjectID string `toml:"project_id"`
+	Workspace string `toml:"workspace"`
 }
 
 // SlackConfig holds Slack integration settings.
