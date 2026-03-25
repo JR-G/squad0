@@ -235,7 +235,7 @@ func (orch *Orchestrator) RunArchitectureReviewForTest(ctx context.Context, prUR
 	return orch.RunConversationalArchReview(ctx, prURL, ticket, "")
 }
 
-func (orch *Orchestrator) handleChangesRequested(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role, reviewSummary string) {
+func (orch *Orchestrator) handleChangesRequested(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role, _ string) {
 	orch.advancePipeline(ctx, workItemID, pipeline.StageChangesRequested)
 
 	if orch.shouldEscalate(ctx, workItemID, ticket) {
@@ -243,8 +243,9 @@ func (orch *Orchestrator) handleChangesRequested(ctx context.Context, prURL, tic
 	}
 
 	engineerName := orch.NameForRole(engineerRole)
+	prLink := orch.cfg.Links.PRLink(prURL)
 	orch.postAsRole(ctx, "reviews",
-		fmt.Sprintf("%s, changes requested on %s: %s. Fixing now.", engineerName, ticket, reviewSummary),
+		fmt.Sprintf("%s, changes requested on %s — review comments are on the PR. %s", engineerName, ticket, prLink),
 		agent.RoleReviewer)
 
 	orch.startFixUp(ctx, prURL, ticket, workItemID, engineerRole)
