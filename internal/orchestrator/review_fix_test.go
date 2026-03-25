@@ -56,8 +56,8 @@ func TestBuildFixUpPrompt_ContainsAllComments(t *testing.T) {
 		"JAM-7",
 	)
 
-	assert.Contains(t, prompt, "Read ALL review comments on the PR: gh pr view 42 --comments")
+	assert.Contains(t, prompt, "Read ALL review comments on the PR: gh pr view https://github.com/test-org/test-repo/pull/42 --comments")
 	assert.Contains(t, prompt, "For EACH comment, address it specifically")
-	assert.Contains(t, prompt, "gh pr comment 42 --body")
+	assert.Contains(t, prompt, "gh pr comment https://github.com/test-org/test-repo/pull/42 --body")
 	assert.Contains(t, prompt, "Addressed all feedback")
 }

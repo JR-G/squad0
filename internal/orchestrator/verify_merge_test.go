@@ -36,7 +36,7 @@ func TestVerifyMerged_ReturnsMerged(t *testing.T) {
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
 
-	assert.True(t, orch.VerifyMergedForTest(ctx, pmAgent, "42"))
+	assert.True(t, orch.VerifyMergedForTest(ctx, pmAgent, "https://github.com/test-org/test-repo/pull/42"))
 }
 
 func TestVerifyMerged_ReturnsOpen(t *testing.T) {
@@ -61,7 +61,7 @@ func TestVerifyMerged_ReturnsOpen(t *testing.T) {
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
 
-	assert.False(t, orch.VerifyMergedForTest(ctx, pmAgent, "42"))
+	assert.False(t, orch.VerifyMergedForTest(ctx, pmAgent, "https://github.com/test-org/test-repo/pull/42"))
 }
 
 func TestVerifyMerged_Error_ReturnsFalse(t *testing.T) {
@@ -87,5 +87,5 @@ func TestVerifyMerged_Error_ReturnsFalse(t *testing.T) {
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
 
-	assert.False(t, orch.VerifyMergedForTest(ctx, pmAgent, "42"))
+	assert.False(t, orch.VerifyMergedForTest(ctx, pmAgent, "https://github.com/test-org/test-repo/pull/42"))
 }

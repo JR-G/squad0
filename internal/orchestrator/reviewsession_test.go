@@ -125,9 +125,9 @@ func TestStartReview_AssignsReviewer(t *testing.T) {
 	orch.StartReviewForTest(ctx, "https://github.com/test-org/test-repo/pull/42", "JAM-7")
 	orch.Wait()
 
-	// Reviewer should have been called with the PR number.
+	// Reviewer should have been called with the PR URL.
 	require.NotEmpty(t, reviewRunner.calls)
-	assert.Contains(t, reviewRunner.calls[0].stdin, "gh pr diff 42")
+	assert.Contains(t, reviewRunner.calls[0].stdin, "gh pr diff https://github.com/test-org/test-repo/pull/42")
 }
 
 func TestStartReview_NoReviewer_DoesNotPanic(t *testing.T) {
@@ -205,10 +205,11 @@ func TestBuildReviewPrompt_ContainsPRNumber(t *testing.T) {
 	)
 
 	assert.Contains(t, prompt, "JAM-7")
-	assert.Contains(t, prompt, "gh pr diff 42")
-	assert.Contains(t, prompt, "gh pr view 42")
-	assert.Contains(t, prompt, "gh pr review 42")
-	assert.Contains(t, prompt, "gh pr comment 42")
+	assert.Contains(t, prompt, "#42")
+	assert.Contains(t, prompt, "gh pr diff https://github.com/test-org/test-repo/pull/42")
+	assert.Contains(t, prompt, "gh pr view https://github.com/test-org/test-repo/pull/42")
+	assert.Contains(t, prompt, "gh pr review https://github.com/test-org/test-repo/pull/42")
+	assert.Contains(t, prompt, "gh pr comment https://github.com/test-org/test-repo/pull/42")
 }
 
 func TestBuildReviewPrompt_ContainsPRCommentStep(t *testing.T) {
@@ -219,7 +220,7 @@ func TestBuildReviewPrompt_ContainsPRCommentStep(t *testing.T) {
 		"JAM-1",
 	)
 
-	assert.Contains(t, prompt, "gh pr comment 10 --body")
+	assert.Contains(t, prompt, "gh pr comment https://github.com/test-org/test-repo/pull/10 --body")
 	assert.Contains(t, prompt, "numbered items for each issue")
 	assert.Contains(t, prompt, "SHORT summary only")
 }
@@ -233,4 +234,103 @@ func TestBuildReviewPrompt_VerifyRetryInstruction(t *testing.T) {
 	)
 
 	assert.Contains(t, prompt, "reviewDecision is still empty after your review, try again")
+}
+
+func TestExtractRepo_ReturnsOwnerRepo(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		prURL    string
+		expected string
+	}{
+		{
+			name:     "standard URL",
+			prURL:    "https://github.com/JR-G/makebook/pull/11",
+			expected: "JR-G/makebook",
+		},
+		{
+			name:     "different org",
+			prURL:    "https://github.com/test-org/test-repo/pull/42",
+			expected: "test-org/test-repo",
+		},
+		{
+			name:     "no match",
+			prURL:    "not a url",
+			expected: "",
+		},
+		{
+			name:     "empty",
+			prURL:    "",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			result := orchestrator.ExtractRepo(tt.prURL)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestBuildReviewPrompt_UsesURLForGHCommands(t *testing.T) {
+	t.Parallel()
+
+	prompt := orchestrator.BuildReviewPrompt(
+		"https://github.com/test-org/test-repo/pull/42",
+		"JAM-7",
+	)
+
+	// Display text uses PR number.
+	assert.Contains(t, prompt, "#42")
+
+	// gh commands use full URL, not bare number.
+	assert.NotContains(t, prompt, "gh pr diff 42")
+	assert.NotContains(t, prompt, "gh pr view 42")
+}
+
+func TestBuildReReviewPrompt_UsesURLForGHCommands(t *testing.T) {
+	t.Parallel()
+
+	prompt := orchestrator.BuildReReviewPrompt(
+		"https://github.com/test-org/test-repo/pull/42",
+		"JAM-7",
+	)
+
+	// Display text uses PR number.
+	assert.Contains(t, prompt, "#42")
+
+	// gh commands use full URL.
+	assert.NotContains(t, prompt, "gh pr diff 42")
+	assert.NotContains(t, prompt, "gh pr view 42")
+}
+
+func TestBuildFixUpPrompt_ContainsCIChecks(t *testing.T) {
+	t.Parallel()
+
+	prompt := orchestrator.BuildFixUpPrompt(
+		"https://github.com/test-org/test-repo/pull/42",
+		"JAM-7",
+	)
+
+	assert.Contains(t, prompt, "gh pr checks https://github.com/test-org/test-repo/pull/42")
+	assert.Contains(t, prompt, "Check CI status")
+	assert.Contains(t, prompt, "Verify CI passes after pushing")
+}
+
+func TestBuildFixUpPrompt_UsesURLForGHCommands(t *testing.T) {
+	t.Parallel()
+
+	prompt := orchestrator.BuildFixUpPrompt(
+		"https://github.com/test-org/test-repo/pull/42",
+		"JAM-7",
+	)
+
+	// gh commands use full URL, not bare number.
+	assert.NotContains(t, prompt, "gh pr view 42")
+	assert.NotContains(t, prompt, "gh pr diff 42")
+	assert.NotContains(t, prompt, "gh pr comment 42")
+	assert.NotContains(t, prompt, "gh pr checks 42")
 }

@@ -25,10 +25,10 @@ func TestBuildReReviewPrompt_ContainsPRInfo(t *testing.T) {
 	)
 
 	assert.Contains(t, prompt, "JAM-7")
-	assert.Contains(t, prompt, "gh pr view 42 --comments")
-	assert.Contains(t, prompt, "gh pr diff 42")
+	assert.Contains(t, prompt, "gh pr view https://github.com/test-org/test-repo/pull/42 --comments")
+	assert.Contains(t, prompt, "gh pr diff https://github.com/test-org/test-repo/pull/42")
 	assert.Contains(t, prompt, "previously reviewed")
-	assert.Contains(t, prompt, "gh pr comment 42 --body")
+	assert.Contains(t, prompt, "gh pr comment https://github.com/test-org/test-repo/pull/42 --body")
 }
 
 func TestBuildReReviewPrompt_VerifyRetryInstruction(t *testing.T) {

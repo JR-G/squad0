@@ -263,7 +263,7 @@ func TestArchitectureReview_WithTechLead_ReturnsOutcome(t *testing.T) {
 
 	assert.Equal(t, orchestrator.ReviewApproved, outcome)
 	require.NotEmpty(t, techLeadRunner.calls)
-	assert.Contains(t, techLeadRunner.calls[0].stdin, "gh pr diff 1")
+	assert.Contains(t, techLeadRunner.calls[0].stdin, "gh pr diff https://github.com/test-org/test-repo/pull/1")
 }
 
 func TestFilterPassResponse(t *testing.T) {
