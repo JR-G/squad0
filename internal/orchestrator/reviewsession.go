@@ -14,7 +14,7 @@ import (
 
 const maxReviewCycles = 3
 
-const reviewPromptTemplate = `You are reviewing a pull request for ticket %s.
+const reviewPromptTemplate = `You are reviewing pull request #%s for ticket %s.
 
 ## PR
 %s
@@ -30,11 +30,15 @@ const reviewPromptTemplate = `You are reviewing a pull request for ticket %s.
    - Style: does it follow the project's conventions?
    - Security: any injection, XSS, or auth issues?
 
-5. Post your review as a GitHub PR review:
-   If approved: gh pr review %s --approve --body "your summary"
-   If changes needed: gh pr review %s --request-changes --body "your feedback"
+5. You MUST submit your review using one of these commands — this is mandatory:
+   To approve: gh pr review %s --approve --body "your review summary"
+   To request changes: gh pr review %s --request-changes --body "your detailed feedback"
 
-Be constructive and specific. Reference line numbers. If it looks good, approve it.
+   Do NOT just say "approved" — you must run the gh pr review command.
+   "Approved with comments" is NOT approval — either approve or request changes.
+
+6. After submitting the review, verify it worked: gh pr view %s --json reviewDecision
+
 End your response with either APPROVED or CHANGES_REQUESTED on its own line.
 `
 
@@ -82,7 +86,7 @@ func ExtractPRNumber(prURL string) string {
 // BuildReviewPrompt creates the prompt for a reviewer session.
 func BuildReviewPrompt(prURL, ticket string) string {
 	prNum := ExtractPRNumber(prURL)
-	return fmt.Sprintf(reviewPromptTemplate, ticket, prURL, prNum, prNum, prNum, prNum, prNum)
+	return fmt.Sprintf(reviewPromptTemplate, prNum, ticket, prURL, prNum, prNum, prNum, prNum, prNum, prNum)
 }
 
 // BuildFixUpPrompt creates the prompt for an engineer to address review feedback.
@@ -175,9 +179,45 @@ func (orch *Orchestrator) runReview(ctx context.Context, reviewer *agent.Agent, 
 			fmt.Sprintf("Approved %s: %s", ticket, summary),
 			agent.RoleReviewer)
 
+		orch.mergeAndComplete(ctx, prURL, ticket, workItemID)
+
 	case ReviewChangesRequested:
 		orch.handleChangesRequested(ctx, prURL, ticket, workItemID, engineerRole, summary)
 	}
+}
+
+// MergeForTest exports mergeAndComplete for testing.
+func (orch *Orchestrator) MergeForTest(ctx context.Context, prURL, ticket string, workItemID int64) {
+	orch.mergeAndComplete(ctx, prURL, ticket, workItemID)
+}
+
+func (orch *Orchestrator) mergeAndComplete(ctx context.Context, prURL, ticket string, workItemID int64) {
+	prNum := ExtractPRNumber(prURL)
+
+	mergeAgent := orch.agents[agent.RolePM]
+	if mergeAgent == nil {
+		return
+	}
+
+	prompt := fmt.Sprintf("Merge this approved PR by running: gh pr merge %s --squash --delete-branch\n\nRespond with just 'done' or 'failed'.", prNum)
+
+	_, err := mergeAgent.DirectSession(ctx, prompt)
+	if err != nil {
+		log.Printf("merge failed for %s: %v", ticket, err)
+		orch.announceAsRole(ctx, "reviews",
+			fmt.Sprintf("%s approved but merge failed — needs manual merge", ticket),
+			agent.RolePM)
+		return
+	}
+
+	orch.advancePipeline(ctx, workItemID, pipeline.StageMerged)
+	go MoveTicketState(ctx, mergeAgent, ticket, "Done")
+
+	ticketLink := orch.cfg.Links.TicketLink(ticket)
+	prLink := orch.cfg.Links.PRLink(prURL)
+	orch.announceAsRole(ctx, "feed",
+		fmt.Sprintf("Merged %s — %s", ticketLink, prLink),
+		agent.RolePM)
 }
 
 const archReviewPromptTemplate = `You are the Tech Lead reviewing the architecture of a PR for ticket %s.

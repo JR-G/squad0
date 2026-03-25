@@ -89,6 +89,7 @@ func (orch *Orchestrator) Run(ctx context.Context) error {
 
 	log.Println("orchestrator started")
 	orch.announceAsRole(ctx, "feed", "Squad0 is online. Ready to work.", agent.RolePM)
+	orch.resumePendingWork(ctx)
 
 	ticker := time.NewTicker(orch.cfg.PollInterval)
 	defer ticker.Stop()

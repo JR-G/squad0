@@ -101,6 +101,51 @@ func (orch *Orchestrator) shouldEscalate(ctx context.Context, workItemID int64, 
 	return true
 }
 
+// resumePendingWork checks the pipeline for non-terminal work items
+// from a previous run and resumes them. Called on startup.
+func (orch *Orchestrator) resumePendingWork(ctx context.Context) {
+	if orch.pipelineStore == nil {
+		return
+	}
+
+	for role := range orch.agents {
+		openItems, err := orch.pipelineStore.OpenByEngineer(ctx, role)
+		if err != nil {
+			continue
+		}
+
+		for _, item := range openItems {
+			orch.resumeWorkItem(ctx, item)
+		}
+	}
+}
+
+func (orch *Orchestrator) resumeWorkItem(ctx context.Context, item pipeline.WorkItem) {
+	log.Printf("resuming %s (stage: %s, PR: %s)", item.Ticket, item.Stage, item.PRURL)
+
+	switch item.Stage { //nolint:exhaustive // only actionable stages handled
+	case pipeline.StagePROpened, pipeline.StageReviewing:
+		if item.PRURL != "" {
+			orch.startReview(ctx, item.PRURL, item.Ticket, item.ID, item.Engineer)
+		}
+
+	case pipeline.StageChangesRequested:
+		if item.PRURL != "" {
+			orch.startFixUp(ctx, item.PRURL, item.Ticket, item.ID, item.Engineer)
+		}
+
+	case pipeline.StageApproved:
+		if item.PRURL != "" {
+			orch.mergeAndComplete(ctx, item.PRURL, item.Ticket, item.ID)
+		}
+
+	case pipeline.StageWorking, pipeline.StageAssigned:
+		// These need the engineer to restart — they'll be picked up
+		// naturally if the ticket is still "Ready" on Linear.
+		log.Printf("work item %s was mid-implementation — engineer will re-pick it up", item.Ticket)
+	}
+}
+
 func (orch *Orchestrator) filterByWIP(ctx context.Context, roles []agent.Role) []agent.Role {
 	if orch.pipelineStore == nil {
 		return roles
