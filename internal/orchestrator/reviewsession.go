@@ -14,77 +14,6 @@ import (
 
 const maxReviewCycles = 3
 
-const reviewPromptTemplate = `You are reviewing pull request #%s for ticket %s.
-
-## PR
-%s
-
-## Instructions
-1. Read the PR diff: gh pr diff %s
-2. Read the PR description: gh pr view %s
-3. Check for review comments (CodeRabbit, humans, prior reviews): gh pr view %s --comments
-4. Analyse the changes for:
-   - Correctness: does the code do what the ticket asks?
-   - Bugs: off-by-one errors, nil pointer dereferences, race conditions
-   - Tests: are the changes adequately tested?
-   - Style: does it follow the project's conventions?
-   - Security: any injection, XSS, or auth issues?
-
-5. You MUST submit your review using one of these gh commands — this is MANDATORY:
-   To approve: gh pr review %s --approve --body "your review summary"
-   To request changes: gh pr review %s --request-changes --body "your detailed feedback"
-
-   IMPORTANT RULES:
-   - Do NOT say "approved with comments" — that is NOT an approval.
-   - If you have ANY concerns, use --request-changes. Don't be afraid to request changes.
-   - The pipeline handles the fix-up loop automatically — requesting changes is normal.
-   - Either fully approve or request changes. No middle ground.
-   - You MUST actually run the gh pr review command, not just say "approved".
-
-6. After submitting the review, verify it worked: gh pr view %s --json reviewDecision
-
-End your response with either APPROVED or CHANGES_REQUESTED on its own line.
-`
-
-const reReviewPromptTemplate = `You previously reviewed PR #%s for ticket %s and requested changes.
-The engineer has pushed fixes. Check that your specific concerns were addressed.
-
-## PR
-%s
-
-## Instructions
-1. Read your previous review comments: gh pr view %s --comments
-2. Read the latest diff: gh pr diff %s
-3. For EACH concern you raised previously, verify it was addressed:
-   - Was the fix correct?
-   - Were tests added or updated?
-   - Did the fix introduce new issues?
-
-4. Submit your review:
-   If ALL concerns were addressed: gh pr review %s --approve --body "All feedback addressed"
-   If concerns remain: gh pr review %s --request-changes --body "specific remaining issues"
-
-5. Verify the review: gh pr view %s --json reviewDecision
-
-Focus on YOUR previous comments specifically — don't re-review the entire diff.
-End with APPROVED or CHANGES_REQUESTED.
-`
-
-const fixUpPromptTemplate = `You need to address review feedback on your PR for ticket %s.
-
-## PR
-%s
-
-## Instructions
-1. Read the review comments: gh pr view %s --comments
-2. Read the current diff: gh pr diff %s
-3. Address every piece of feedback — fix the code, update tests, handle edge cases
-4. Commit your fixes with conventional commit messages
-5. Push to the same branch — do NOT create a new PR
-
-Focus on what the reviewer asked for. Don't refactor unrelated code.
-`
-
 var prURLPattern = regexp.MustCompile(`https://github\.com/[^/]+/[^/]+/pull/\d+`)
 
 // ReviewOutcome classifies what the reviewer decided.
@@ -109,24 +38,6 @@ func ExtractPRNumber(prURL string) string {
 		return ""
 	}
 	return prURL[idx+1:]
-}
-
-// BuildReviewPrompt creates the prompt for a reviewer session.
-func BuildReviewPrompt(prURL, ticket string) string {
-	prNum := ExtractPRNumber(prURL)
-	return fmt.Sprintf(reviewPromptTemplate, prNum, ticket, prURL, prNum, prNum, prNum, prNum, prNum, prNum)
-}
-
-// BuildReReviewPrompt creates the prompt for re-reviewing after fixes.
-func BuildReReviewPrompt(prURL, ticket string) string {
-	prNum := ExtractPRNumber(prURL)
-	return fmt.Sprintf(reReviewPromptTemplate, prNum, ticket, prURL, prNum, prNum, prNum, prNum, prNum)
-}
-
-// BuildFixUpPrompt creates the prompt for an engineer to address review feedback.
-func BuildFixUpPrompt(prURL, ticket string) string {
-	prNum := ExtractPRNumber(prURL)
-	return fmt.Sprintf(fixUpPromptTemplate, ticket, prURL, prNum, prNum)
 }
 
 // ClassifyReviewOutcome scans the reviewer's transcript for approval
@@ -238,6 +149,11 @@ func (orch *Orchestrator) MergeForTest(ctx context.Context, prURL, ticket string
 	orch.mergeAndComplete(ctx, prURL, ticket, workItemID, "")
 }
 
+// MergeWithEngineerForTest exports mergeAndComplete with engineer role for testing.
+func (orch *Orchestrator) MergeWithEngineerForTest(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role) {
+	orch.mergeAndComplete(ctx, prURL, ticket, workItemID, engineerRole)
+}
+
 func (orch *Orchestrator) mergeAndComplete(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role) {
 	prNum := ExtractPRNumber(prURL)
 
@@ -277,7 +193,7 @@ Respond with "done", "NOT_APPROVED", or "CI_FAILING".`, prNum, prNum, prNum, prN
 		log.Printf("merge blocked for %s: CI failing", ticket)
 		engineerName := orch.NameForRole(engineerRole)
 		orch.postAsRole(ctx, "reviews",
-			fmt.Sprintf("%s is approved but CI is failing — %s, can you check?", ticket, engineerName),
+			fmt.Sprintf("%s is approved but CI is failing — %s, can you fix and push?", ticket, engineerName),
 			agent.RolePM)
 		return
 	}
@@ -319,42 +235,14 @@ func (orch *Orchestrator) retryApproval(ctx context.Context, prURL, ticket strin
 		return
 	}
 
-	if strings.Contains(strings.ToUpper(result.Transcript), "DONE") {
-		orch.mergeAfterRetry(ctx, prURL, ticket, workItemID, engineerRole)
+	if !strings.Contains(strings.ToUpper(result.Transcript), "DONE") {
+		log.Printf("retry approval did not succeed for %s: %s", ticket, result.Transcript)
 		return
 	}
 
-	log.Printf("retry approval did not succeed for %s: %s", ticket, result.Transcript)
-}
-
-// mergeAfterRetry merges the PR without re-checking approval status.
-// Called after retryApproval has already fixed the GitHub review.
-func (orch *Orchestrator) mergeAfterRetry(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role) {
-	prNum := ExtractPRNumber(prURL)
-
-	mergeAgent := orch.agents[agent.RolePM]
-	if mergeAgent == nil {
-		return
-	}
-
-	prompt := fmt.Sprintf("Merge this PR: gh pr merge %s --squash --delete-branch\nRespond with just 'done' or 'failed'.", prNum)
-
-	_, err := mergeAgent.DirectSession(ctx, prompt)
-	if err != nil {
-		log.Printf("merge after retry failed for %s: %v", ticket, err)
-		return
-	}
-
-	orch.advancePipeline(ctx, workItemID, pipeline.StageMerged)
-	go MoveTicketState(ctx, mergeAgent, ticket, "Done")
-
-	ticketLink := orch.cfg.Links.TicketLink(ticket)
-	prLink := orch.cfg.Links.PRLink(prURL)
-	orch.announceAsRole(ctx, "feed",
-		fmt.Sprintf("Merged %s — %s", ticketLink, prLink),
-		agent.RolePM)
-
-	_ = engineerRole
+	// Re-approval worked — retry the merge (which will re-check approval + CI).
+	log.Printf("retry approval succeeded for %s, retrying merge", ticket)
+	orch.mergeAndComplete(ctx, prURL, ticket, workItemID, engineerRole)
 }
 
 // RunArchitectureReviewForTest exports runArchitectureReview for testing.

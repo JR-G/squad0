@@ -19,10 +19,11 @@ import (
 )
 
 type fakeProcessRunner struct {
-	mu     sync.Mutex
-	output []byte
-	err    error
-	calls  []fakeCall
+	mu      sync.Mutex
+	output  []byte
+	err     error
+	calls   []fakeCall
+	outputs [][]byte // If set, returns outputs[callIndex] instead of output.
 }
 
 type fakeCall struct {
@@ -33,9 +34,14 @@ type fakeCall struct {
 
 func (runner *fakeProcessRunner) Run(_ context.Context, stdin, _ /* workingDir */, name string, args ...string) ([]byte, error) {
 	runner.mu.Lock()
+	callIdx := len(runner.calls)
 	runner.calls = append(runner.calls, fakeCall{stdin: stdin, name: name, args: args})
+	out := runner.output
+	if callIdx < len(runner.outputs) {
+		out = runner.outputs[callIdx]
+	}
 	runner.mu.Unlock()
-	return runner.output, runner.err
+	return out, runner.err
 }
 
 func setupPMAgent(t *testing.T, runner *fakeProcessRunner) *agent.Agent {

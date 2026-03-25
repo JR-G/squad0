@@ -259,15 +259,14 @@ func TestRetryApproval_ReviewerReapproves_ThenMerges(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = memDB.Close() })
 
-	// PM first says NOT_APPROVED, reviewer says done, PM then says done for merge.
-	pmCallCount := 0
+	// PM returns NOT_APPROVED first (triggers retryApproval), then "done" for merge.
 	pmRunner := &fakeProcessRunner{
 		output: []byte(`{"type":"result","result":"NOT_APPROVED"}` + "\n"),
+		outputs: [][]byte{
+			[]byte(`{"type":"result","result":"NOT_APPROVED"}` + "\n"),
+			[]byte(`{"type":"result","result":"done"}` + "\n"),
+		},
 	}
-	// Override to alternate responses.
-	originalPMRun := pmRunner.Run
-	_ = originalPMRun
-
 	reviewRunner := &fakeProcessRunner{
 		output: []byte(`{"type":"result","result":"done"}` + "\n"),
 	}
@@ -279,30 +278,43 @@ func TestRetryApproval_ReviewerReapproves_ThenMerges(t *testing.T) {
 	checkIns := coordination.NewCheckInStore(sqlDB)
 	require.NoError(t, checkIns.InitSchema(ctx))
 
+	pipeDB, pipeErr := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, pipeErr)
+	t.Cleanup(func() { _ = pipeDB.Close() })
+
+	pipeStore := pipeline.NewWorkItemStore(pipeDB)
+	require.NoError(t, pipeStore.InitSchema(ctx))
+
 	pmAgent := setupPMAgent(t, pmRunner)
 	reviewerAgent := buildAgent(t, reviewRunner, agent.RoleReviewer, memDB)
 
+	itemID, createErr := pipeStore.Create(ctx, pipeline.WorkItem{
+		Ticket: "JAM-5", Engineer: agent.RoleEngineer1, Stage: pipeline.StageApproved, Branch: "feat/jam-5",
+	})
+	require.NoError(t, createErr)
+
+	// No bot — postAsRole is a no-op, so PM runner call count is predictable.
 	orch := orchestrator.NewOrchestrator(
 		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
 		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent, agent.RoleReviewer: reviewerAgent},
 		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
+	orch.SetPipeline(pipeStore)
 
-	_ = pmCallCount
-
-	// retryApproval is triggered when merge finds NOT_APPROVED.
-	// The reviewer re-approves, then mergeAndComplete is called again.
-	// Since PM always returns NOT_APPROVED, it will loop once and stop
-	// (retryApproval only retries once). Just verify no panic/hang.
+	// PM call 1: NOT_APPROVED → retryApproval → reviewer done → PM call 2: done → merged.
 	assert.NotPanics(t, func() {
-		orch.MergeForTest(ctx, "https://github.com/test-org/test-repo/pull/5", "JAM-5", 0)
+		orch.MergeWithEngineerForTest(ctx, "https://github.com/test-org/test-repo/pull/5", "JAM-5", itemID, agent.RoleEngineer1)
 	})
 
-	// Reviewer should have been called to re-approve.
 	reviewRunner.mu.Lock()
 	callCount := len(reviewRunner.calls)
 	reviewRunner.mu.Unlock()
 	assert.GreaterOrEqual(t, callCount, 1)
+
+	// Pipeline should have advanced to merged.
+	item, getErr := pipeStore.GetByID(ctx, itemID)
+	require.NoError(t, getErr)
+	assert.Equal(t, pipeline.StageMerged, item.Stage)
 }
 
 func TestRetryApproval_NoReviewer_DoesNotPanic(t *testing.T) {

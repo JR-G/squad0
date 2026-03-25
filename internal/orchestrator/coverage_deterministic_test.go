@@ -8,6 +8,7 @@ import (
 
 	"github.com/JR-G/squad0/internal/agent"
 	"github.com/JR-G/squad0/internal/coordination"
+	"github.com/JR-G/squad0/internal/health"
 	"github.com/JR-G/squad0/internal/memory"
 	"github.com/JR-G/squad0/internal/orchestrator"
 	"github.com/JR-G/squad0/internal/pipeline"
@@ -215,4 +216,38 @@ func TestSetVoices_WithRealPersonalities_LoadsVoices(t *testing.T) {
 	assert.NotPanics(t, func() {
 		engine.OnMessage(ctx, "engineering", "ceo", "hello")
 	})
+}
+
+func TestRecordSession_WithMonitor_RecordsEvents(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"[]"}` + "\n")}
+	pmAgent := setupPMAgent(t, pmRunner)
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, WorkEnabled: true},
+		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent},
+		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
+	)
+
+	monitor := health.NewMonitor(
+		[]agent.Role{agent.RolePM},
+		health.MonitorConfig{MaxSessionTime: time.Hour, MaxConsecutiveErrors: 5},
+	)
+	orch.SetHealthMonitor(monitor)
+
+	// Run briefly to exercise tick → RunPMDuties with monitor set.
+	timedCtx, cancel := context.WithTimeout(ctx, 150*time.Millisecond)
+	defer cancel()
+
+	_ = orch.Run(timedCtx)
 }

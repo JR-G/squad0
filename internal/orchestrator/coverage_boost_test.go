@@ -434,3 +434,34 @@ func TestMergeAfterRetry_PMError_DoesNotPanic(t *testing.T) {
 		orch.MergeForTest(ctx, "https://github.com/test-org/test-repo/pull/1", "JAM-1", 0)
 	})
 }
+
+func TestStartReReview_NoReviewer_ReturnsEarly(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"[]"}` + "\n")}
+	pmAgent := setupPMAgent(t, pmRunner)
+
+	engRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"done"}` + "\n")}
+	engAgent := setupAgentWithRole(t, engRunner, agent.RoleEngineer1)
+
+	// No reviewer — startReReview returns early.
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, TargetRepoDir: t.TempDir()},
+		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent, agent.RoleEngineer1: engAgent},
+		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
+	)
+
+	// Trigger via changes requested → fix-up → re-review (no reviewer).
+	assert.NotPanics(t, func() {
+		orch.StartReviewWithItemForTest(ctx, "https://github.com/test-org/test-repo/pull/1", "T-1", 0, agent.RoleEngineer1)
+		orch.Wait()
+	})
+}
