@@ -77,12 +77,14 @@ const fixUpPromptTemplate = `You need to address review feedback on your PR for 
 ## Instructions
 1. Read ALL review comments on the PR: gh pr view %s --comments
 2. Read the current diff: gh pr diff %s
-3. For EACH comment, address it specifically. Don't skip any.
-4. Fix the code, update tests, handle edge cases
-5. If the branch is behind main, rebase: git fetch origin main && git rebase origin/main
-6. Commit your fixes with conventional commit messages
-7. Push to the same branch — do NOT create a new PR
-8. After fixing, reply to the review thread: gh pr comment %s --body 'Addressed all feedback: [brief summary of what you fixed]'
+3. Check CI status: gh pr checks %s
+4. For EACH comment, address it specifically. Don't skip any.
+5. Fix the code, update tests, handle edge cases
+6. If the branch is behind main, rebase: git fetch origin main && git rebase origin/main
+7. Commit your fixes with conventional commit messages
+8. Push to the same branch — do NOT create a new PR
+9. Verify CI passes after pushing: gh pr checks %s
+10. After fixing, reply to the review thread: gh pr comment %s --body 'Addressed all feedback: [brief summary of what you fixed]'
 
 Focus on what the reviewer asked for. Don't refactor unrelated code.
 `
@@ -90,17 +92,22 @@ Focus on what the reviewer asked for. Don't refactor unrelated code.
 // BuildReviewPrompt creates the prompt for a reviewer session.
 func BuildReviewPrompt(prURL, ticket string) string {
 	prNum := ExtractPRNumber(prURL)
-	return fmt.Sprintf(reviewPromptTemplate, prNum, ticket, prURL, prNum, prNum, prNum, prNum, prNum, prNum, prNum)
+	return fmt.Sprintf(reviewPromptTemplate,
+		prNum, ticket, prURL,
+		prURL, prURL, prURL, prURL, prURL, prURL, prURL)
 }
 
 // BuildReReviewPrompt creates the prompt for re-reviewing after fixes.
 func BuildReReviewPrompt(prURL, ticket string) string {
 	prNum := ExtractPRNumber(prURL)
-	return fmt.Sprintf(reReviewPromptTemplate, prNum, ticket, prURL, prNum, prNum, prNum, prNum, prNum, prNum)
+	return fmt.Sprintf(reReviewPromptTemplate,
+		prNum, ticket, prURL,
+		prURL, prURL, prURL, prURL, prURL, prURL)
 }
 
 // BuildFixUpPrompt creates the prompt for an engineer to address review feedback.
 func BuildFixUpPrompt(prURL, ticket string) string {
-	prNum := ExtractPRNumber(prURL)
-	return fmt.Sprintf(fixUpPromptTemplate, ticket, prURL, prNum, prNum, prNum)
+	return fmt.Sprintf(fixUpPromptTemplate,
+		ticket, prURL,
+		prURL, prURL, prURL, prURL, prURL)
 }

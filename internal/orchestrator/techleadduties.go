@@ -124,7 +124,7 @@ func (orch *Orchestrator) RunConversationalArchReview(ctx context.Context, prURL
 			"5. If the architecture is sound, run: "+
 			"gh pr review %s --approve --body \"Architecture looks good\"\n\n"+
 			"End with APPROVED or CHANGES_REQUESTED.",
-		prNum, ticket, prNum, prNum, prNum, prNum)
+		prNum, ticket, prURL, prURL, prURL, prURL)
 
 	result, err := techLead.DirectSession(ctx, reviewPrompt)
 	if err != nil {

@@ -16,6 +16,8 @@ const maxReviewCycles = 3
 
 var prURLPattern = regexp.MustCompile(`https://github\.com/[^/]+/[^/]+/pull/\d+`)
 
+var prRepoPattern = regexp.MustCompile(`https://github\.com/([^/]+/[^/]+)/pull/\d+`)
+
 // ReviewOutcome classifies what the reviewer decided.
 type ReviewOutcome string
 
@@ -45,6 +47,16 @@ func ExtractPRNumber(prURL string) string {
 		return ""
 	}
 	return prURL[idx+1:]
+}
+
+// ExtractRepo returns "owner/repo" from a GitHub PR URL.
+// For example, "https://github.com/JR-G/makebook/pull/11" returns "JR-G/makebook".
+func ExtractRepo(prURL string) string {
+	matches := prRepoPattern.FindStringSubmatch(prURL)
+	if len(matches) < 2 {
+		return ""
+	}
+	return matches[1]
 }
 
 // ClassifyReviewOutcome scans the reviewer's transcript for approval
@@ -134,6 +146,8 @@ func (orch *Orchestrator) runReview(ctx context.Context, reviewer *agent.Agent, 
 
 	switch outcome {
 	case ReviewApproved:
+		orch.forceApproval(ctx, reviewer, prURL, ticket)
+
 		archOutcome := orch.RunConversationalArchReview(ctx, prURL, ticket, engineerRole)
 		if archOutcome == ReviewChangesRequested {
 			orch.handleChangesRequested(ctx, prURL, ticket, workItemID, engineerRole, "Tech Lead requested architectural changes")
@@ -163,15 +177,13 @@ func (orch *Orchestrator) MergeWithEngineerForTest(ctx context.Context, prURL, t
 }
 
 func (orch *Orchestrator) mergeAndComplete(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role) {
-	prNum := ExtractPRNumber(prURL)
-
 	mergeAgent := orch.agents[agent.RolePM]
 	if mergeAgent == nil {
 		return
 	}
 
 	// Step 1: Verify review approval — single-purpose prompt.
-	approvalStatus := orch.checkApprovalStatus(ctx, mergeAgent, prNum)
+	approvalStatus := orch.checkApprovalStatus(ctx, mergeAgent, prURL)
 	if approvalStatus == approvalStatusNotApproved {
 		log.Printf("merge blocked for %s: PR not approved on GitHub, triggering re-approval", ticket)
 		orch.retryApproval(ctx, prURL, ticket, workItemID, engineerRole)
@@ -186,12 +198,12 @@ func (orch *Orchestrator) mergeAndComplete(ctx context.Context, prURL, ticket st
 	}
 
 	// Step 2: Merge — single-purpose prompt.
-	if !orch.executeMerge(ctx, mergeAgent, prNum, ticket, engineerRole) {
+	if !orch.executeMerge(ctx, mergeAgent, prURL, ticket, engineerRole) {
 		return
 	}
 
 	// Step 3: Verify the PR is actually merged (already existed).
-	if !orch.verifyMerged(ctx, mergeAgent, prNum) {
+	if !orch.verifyMerged(ctx, mergeAgent, prURL) {
 		log.Printf("merge verification failed for %s: PR not merged despite agent claiming success", ticket)
 		orch.announceAsRole(ctx, "reviews",
 			fmt.Sprintf("%s merge was attempted but PR is still open — needs manual merge", ticket),
@@ -211,8 +223,8 @@ func (orch *Orchestrator) mergeAndComplete(ctx context.Context, prURL, ticket st
 
 // checkApprovalStatus runs a single-purpose prompt to verify the PR's
 // GitHub review decision. Returns approvalStatusApproved, approvalStatusNotApproved, or approvalStatusError.
-func (orch *Orchestrator) checkApprovalStatus(ctx context.Context, mergeAgent *agent.Agent, prNum string) string {
-	prompt := fmt.Sprintf("Run: gh pr view %s --json reviewDecision --jq .reviewDecision — respond with ONLY the output", prNum)
+func (orch *Orchestrator) checkApprovalStatus(ctx context.Context, mergeAgent *agent.Agent, prURL string) string {
+	prompt := fmt.Sprintf("Run: gh pr view %s --json reviewDecision --jq .reviewDecision — respond with ONLY the output", prURL)
 
 	result, err := mergeAgent.DirectSession(ctx, prompt)
 	if err != nil {
@@ -238,14 +250,14 @@ func (orch *Orchestrator) checkApprovalStatus(ctx context.Context, mergeAgent *a
 }
 
 // CheckApprovalStatusForTest exports checkApprovalStatus for testing.
-func (orch *Orchestrator) CheckApprovalStatusForTest(ctx context.Context, mergeAgent *agent.Agent, prNum string) string {
-	return orch.checkApprovalStatus(ctx, mergeAgent, prNum)
+func (orch *Orchestrator) CheckApprovalStatusForTest(ctx context.Context, mergeAgent *agent.Agent, prURL string) string {
+	return orch.checkApprovalStatus(ctx, mergeAgent, prURL)
 }
 
 // executeMerge runs a single-purpose prompt to squash-merge the PR.
 // Returns true if the merge command succeeded.
-func (orch *Orchestrator) executeMerge(ctx context.Context, mergeAgent *agent.Agent, prNum, ticket string, engineerRole agent.Role) bool {
-	prompt := fmt.Sprintf("Run: gh pr merge %s --squash --delete-branch — respond with ONLY 'done' or the error message", prNum)
+func (orch *Orchestrator) executeMerge(ctx context.Context, mergeAgent *agent.Agent, prURL, ticket string, engineerRole agent.Role) bool {
+	prompt := fmt.Sprintf("Run: gh pr merge %s --squash --delete-branch — respond with ONLY 'done' or the error message", prURL)
 
 	result, err := mergeAgent.DirectSession(ctx, prompt)
 	if err != nil {
@@ -270,19 +282,19 @@ func (orch *Orchestrator) executeMerge(ctx context.Context, mergeAgent *agent.Ag
 }
 
 // ExecuteMergeForTest exports executeMerge for testing.
-func (orch *Orchestrator) ExecuteMergeForTest(ctx context.Context, mergeAgent *agent.Agent, prNum, ticket string, engineerRole agent.Role) bool {
-	return orch.executeMerge(ctx, mergeAgent, prNum, ticket, engineerRole)
+func (orch *Orchestrator) ExecuteMergeForTest(ctx context.Context, mergeAgent *agent.Agent, prURL, ticket string, engineerRole agent.Role) bool {
+	return orch.executeMerge(ctx, mergeAgent, prURL, ticket, engineerRole)
 }
 
 // VerifyMergedForTest exports verifyMerged for testing.
-func (orch *Orchestrator) VerifyMergedForTest(ctx context.Context, verifyAgent *agent.Agent, prNum string) bool {
-	return orch.verifyMerged(ctx, verifyAgent, prNum)
+func (orch *Orchestrator) VerifyMergedForTest(ctx context.Context, verifyAgent *agent.Agent, prURL string) bool {
+	return orch.verifyMerged(ctx, verifyAgent, prURL)
 }
 
 // verifyMerged checks the actual GitHub PR state to confirm it was merged.
 // Never trust an agent's claim — always verify.
-func (orch *Orchestrator) verifyMerged(ctx context.Context, verifyAgent *agent.Agent, prNum string) bool {
-	prompt := fmt.Sprintf("Run this command and respond with ONLY the output, nothing else:\ngh pr view %s --json state --jq .state", prNum)
+func (orch *Orchestrator) verifyMerged(ctx context.Context, verifyAgent *agent.Agent, prURL string) bool {
+	prompt := fmt.Sprintf("Run this command and respond with ONLY the output, nothing else:\ngh pr view %s --json state --jq .state", prURL)
 
 	result, err := verifyAgent.DirectSession(ctx, prompt)
 	if err != nil {
@@ -298,7 +310,6 @@ func (orch *Orchestrator) retryApproval(ctx context.Context, prURL, ticket strin
 		return
 	}
 
-	prNum := ExtractPRNumber(prURL)
 	reviewerName := orch.NameForRole(agent.RoleReviewer)
 	engineerName := orch.NameForRole(engineerRole)
 
@@ -308,7 +319,7 @@ func (orch *Orchestrator) retryApproval(ctx context.Context, prURL, ticket strin
 		agent.RolePM)
 
 	// Step 1: Single-purpose — submit the approval.
-	approvePrompt := fmt.Sprintf("Run: gh pr review %s --approve --body 'Approved' — respond with ONLY 'done' or the error", prNum)
+	approvePrompt := fmt.Sprintf("Run: gh pr review %s --approve --body 'Approved' — respond with ONLY 'done' or the error", prURL)
 
 	_, err := reviewer.DirectSession(ctx, approvePrompt)
 	if err != nil {
@@ -317,7 +328,7 @@ func (orch *Orchestrator) retryApproval(ctx context.Context, prURL, ticket strin
 	}
 
 	// Step 2: Single-purpose — verify the approval landed.
-	verifyPrompt := fmt.Sprintf("Run this and respond with ONLY the output:\ngh pr view %s --json reviewDecision --jq .reviewDecision", prNum)
+	verifyPrompt := fmt.Sprintf("Run this and respond with ONLY the output:\ngh pr view %s --json reviewDecision --jq .reviewDecision", prURL)
 
 	verifyResult, verifyErr := reviewer.DirectSession(ctx, verifyPrompt)
 	if verifyErr != nil {
@@ -342,14 +353,12 @@ func (orch *Orchestrator) MergeAfterRetryForTest(ctx context.Context, prURL, tic
 // mergeAfterRetry is mergeAndComplete without the retryApproval fallback.
 // Prevents infinite recursion: retryApproval → mergeAndComplete → retryApproval.
 func (orch *Orchestrator) mergeAfterRetry(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role) {
-	prNum := ExtractPRNumber(prURL)
-
 	mergeAgent := orch.agents[agent.RolePM]
 	if mergeAgent == nil {
 		return
 	}
 
-	approvalStatus := orch.checkApprovalStatus(ctx, mergeAgent, prNum)
+	approvalStatus := orch.checkApprovalStatus(ctx, mergeAgent, prURL)
 	if approvalStatus != approvalStatusApproved {
 		log.Printf("merge blocked for %s after retry: still not approved (%s)", ticket, approvalStatus)
 		orch.announceAsRole(ctx, "reviews",
@@ -358,11 +367,11 @@ func (orch *Orchestrator) mergeAfterRetry(ctx context.Context, prURL, ticket str
 		return
 	}
 
-	if !orch.executeMerge(ctx, mergeAgent, prNum, ticket, engineerRole) {
+	if !orch.executeMerge(ctx, mergeAgent, prURL, ticket, engineerRole) {
 		return
 	}
 
-	if !orch.verifyMerged(ctx, mergeAgent, prNum) {
+	if !orch.verifyMerged(ctx, mergeAgent, prURL) {
 		log.Printf("merge verification failed for %s after retry", ticket)
 		orch.announceAsRole(ctx, "reviews",
 			fmt.Sprintf("%s merge attempted after retry but PR is still open — needs manual merge", ticket),
@@ -425,6 +434,23 @@ func (orch *Orchestrator) startFixUp(ctx context.Context, prURL, ticket string, 
 
 	// Re-review: reviewer specifically checks their previous comments.
 	orch.startReReview(ctx, prURL, ticket, workItemID, engineerRole)
+}
+
+// forceApproval ensures the reviewer's GitHub approval is actually submitted.
+// Called after the reviewer says APPROVED in their transcript, because the
+// agent may have failed to run the gh pr review command despite saying it did.
+func (orch *Orchestrator) forceApproval(ctx context.Context, reviewer *agent.Agent, prURL, ticket string) {
+	prompt := fmt.Sprintf("Run: gh pr review %s --approve --body 'Approved' — respond with ONLY 'done' or the error.", prURL)
+
+	_, err := reviewer.DirectSession(ctx, prompt)
+	if err != nil {
+		log.Printf("force approval failed for %s: %v", ticket, err)
+	}
+}
+
+// ForceApprovalForTest exports forceApproval for testing.
+func (orch *Orchestrator) ForceApprovalForTest(ctx context.Context, reviewer *agent.Agent, prURL, ticket string) {
+	orch.forceApproval(ctx, reviewer, prURL, ticket)
 }
 
 func (orch *Orchestrator) startReReview(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role) {
