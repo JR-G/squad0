@@ -136,7 +136,7 @@ func (orch *Orchestrator) resumeWorkItem(ctx context.Context, item pipeline.Work
 
 	case pipeline.StageApproved:
 		if item.PRURL != "" {
-			orch.mergeAndComplete(ctx, item.PRURL, item.Ticket, item.ID)
+			orch.mergeAndComplete(ctx, item.PRURL, item.Ticket, item.ID, item.Engineer)
 		}
 
 	case pipeline.StageWorking, pipeline.StageAssigned:

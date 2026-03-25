@@ -120,7 +120,7 @@ func (orch *Orchestrator) checkStaleForEngineer(ctx context.Context, role agent.
 
 		name := orch.NameForRole(role)
 		ticketLink := orch.cfg.Links.TicketLink(item.Ticket)
-		orch.announceAsRole(ctx, "engineering",
+		orch.postAsRole(ctx, "engineering",
 			fmt.Sprintf("Hey %s, how's %s going? It's been %s with no PR. Any blockers?",
 				name, ticketLink, formatDuration(age)),
 			agent.RolePM)

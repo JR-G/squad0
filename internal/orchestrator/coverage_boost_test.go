@@ -396,3 +396,41 @@ func TestExtractAndStoreDecisions_NoDecisionSignals_DoesNotStore(t *testing.T) {
 	outcome := orch.RunConversationalArchReview(ctx, "https://github.com/test-org/test-repo/pull/1", "T-1", agent.RoleEngineer1)
 	assert.Equal(t, orchestrator.ReviewApproved, outcome)
 }
+
+func TestMergeAfterRetry_PMError_DoesNotPanic(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	pmRunner := &fakeProcessRunner{
+		output: []byte(`{"type":"error","content":"fail"}` + "\n"),
+		err:    assert.AnError,
+	}
+
+	// First call returns NOT_APPROVED, reviewer says done, second PM call fails.
+	reviewRunner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"done"}` + "\n"),
+	}
+	memDB, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = memDB.Close() })
+
+	pmAgent := setupPMAgent(t, pmRunner)
+	reviewerAgent := buildAgent(t, reviewRunner, agent.RoleReviewer, memDB)
+
+	sqlDB, sqlErr := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, sqlErr)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second},
+		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent, agent.RoleReviewer: reviewerAgent},
+		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
+	)
+
+	assert.NotPanics(t, func() {
+		orch.MergeForTest(ctx, "https://github.com/test-org/test-repo/pull/1", "JAM-1", 0)
+	})
+}

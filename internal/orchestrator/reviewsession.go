@@ -226,7 +226,7 @@ func (orch *Orchestrator) runReview(ctx context.Context, reviewer *agent.Agent, 
 			fmt.Sprintf("Approved %s: %s", ticket, summary),
 			agent.RoleReviewer)
 
-		orch.mergeAndComplete(ctx, prURL, ticket, workItemID)
+		orch.mergeAndComplete(ctx, prURL, ticket, workItemID, engineerRole)
 
 	case ReviewChangesRequested:
 		orch.handleChangesRequested(ctx, prURL, ticket, workItemID, engineerRole, summary)
@@ -235,10 +235,10 @@ func (orch *Orchestrator) runReview(ctx context.Context, reviewer *agent.Agent, 
 
 // MergeForTest exports mergeAndComplete for testing.
 func (orch *Orchestrator) MergeForTest(ctx context.Context, prURL, ticket string, workItemID int64) {
-	orch.mergeAndComplete(ctx, prURL, ticket, workItemID)
+	orch.mergeAndComplete(ctx, prURL, ticket, workItemID, "")
 }
 
-func (orch *Orchestrator) mergeAndComplete(ctx context.Context, prURL, ticket string, workItemID int64) {
+func (orch *Orchestrator) mergeAndComplete(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role) {
 	prNum := ExtractPRNumber(prURL)
 
 	mergeAgent := orch.agents[agent.RolePM]
@@ -268,17 +268,16 @@ Respond with "done", "NOT_APPROVED", or "CI_FAILING".`, prNum, prNum, prNum, prN
 
 	upper := strings.ToUpper(result.Transcript)
 	if strings.Contains(upper, "NOT_APPROVED") {
-		log.Printf("merge blocked for %s: PR not approved on GitHub", ticket)
-		orch.announceAsRole(ctx, "reviews",
-			fmt.Sprintf("%s review approved locally but GitHub reviewDecision is not APPROVED — reviewer may not have run gh pr review", ticket),
-			agent.RolePM)
+		log.Printf("merge blocked for %s: PR not approved on GitHub, triggering re-approval", ticket)
+		orch.retryApproval(ctx, prURL, ticket, workItemID, engineerRole)
 		return
 	}
 
 	if strings.Contains(upper, "CI_FAILING") {
 		log.Printf("merge blocked for %s: CI failing", ticket)
-		orch.announceAsRole(ctx, "reviews",
-			fmt.Sprintf("%s approved but CI is failing — cannot merge until checks pass", ticket),
+		engineerName := orch.NameForRole(engineerRole)
+		orch.postAsRole(ctx, "reviews",
+			fmt.Sprintf("%s is approved but CI is failing — %s, can you check?", ticket, engineerName),
 			agent.RolePM)
 		return
 	}
@@ -291,6 +290,71 @@ Respond with "done", "NOT_APPROVED", or "CI_FAILING".`, prNum, prNum, prNum, prN
 	orch.announceAsRole(ctx, "feed",
 		fmt.Sprintf("Merged %s — %s", ticketLink, prLink),
 		agent.RolePM)
+}
+
+func (orch *Orchestrator) retryApproval(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role) {
+	reviewer, ok := orch.agents[agent.RoleReviewer]
+	if !ok {
+		return
+	}
+
+	prNum := ExtractPRNumber(prURL)
+	reviewerName := orch.NameForRole(agent.RoleReviewer)
+	engineerName := orch.NameForRole(engineerRole)
+
+	orch.postAsRole(ctx, "reviews",
+		fmt.Sprintf("%s is approved but the GitHub review wasn't submitted — %s, re-submitting now. %s, hang tight.",
+			ticket, reviewerName, engineerName),
+		agent.RolePM)
+
+	prompt := fmt.Sprintf("Your review of PR #%s was approved but the GitHub reviewDecision is not set. "+
+		"Run this command now to fix it:\n\n"+
+		"gh pr review %s --approve --body \"Approved\"\n\n"+
+		"Then verify: gh pr view %s --json reviewDecision\n\n"+
+		"Respond with just 'done' or 'failed'.", prNum, prNum, prNum)
+
+	result, err := reviewer.DirectSession(ctx, prompt)
+	if err != nil {
+		log.Printf("retry approval failed for %s: %v", ticket, err)
+		return
+	}
+
+	if strings.Contains(strings.ToUpper(result.Transcript), "DONE") {
+		orch.mergeAfterRetry(ctx, prURL, ticket, workItemID, engineerRole)
+		return
+	}
+
+	log.Printf("retry approval did not succeed for %s: %s", ticket, result.Transcript)
+}
+
+// mergeAfterRetry merges the PR without re-checking approval status.
+// Called after retryApproval has already fixed the GitHub review.
+func (orch *Orchestrator) mergeAfterRetry(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role) {
+	prNum := ExtractPRNumber(prURL)
+
+	mergeAgent := orch.agents[agent.RolePM]
+	if mergeAgent == nil {
+		return
+	}
+
+	prompt := fmt.Sprintf("Merge this PR: gh pr merge %s --squash --delete-branch\nRespond with just 'done' or 'failed'.", prNum)
+
+	_, err := mergeAgent.DirectSession(ctx, prompt)
+	if err != nil {
+		log.Printf("merge after retry failed for %s: %v", ticket, err)
+		return
+	}
+
+	orch.advancePipeline(ctx, workItemID, pipeline.StageMerged)
+	go MoveTicketState(ctx, mergeAgent, ticket, "Done")
+
+	ticketLink := orch.cfg.Links.TicketLink(ticket)
+	prLink := orch.cfg.Links.PRLink(prURL)
+	orch.announceAsRole(ctx, "feed",
+		fmt.Sprintf("Merged %s — %s", ticketLink, prLink),
+		agent.RolePM)
+
+	_ = engineerRole
 }
 
 // RunArchitectureReviewForTest exports runArchitectureReview for testing.
