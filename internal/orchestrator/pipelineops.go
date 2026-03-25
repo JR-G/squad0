@@ -139,10 +139,18 @@ func (orch *Orchestrator) resumeWorkItem(ctx context.Context, item pipeline.Work
 			orch.mergeAndComplete(ctx, item.PRURL, item.Ticket, item.ID, item.Engineer)
 		}
 
-	case pipeline.StageWorking, pipeline.StageAssigned:
-		// These need the engineer to restart — they'll be picked up
-		// naturally if the ticket is still "Ready" on Linear.
+	case pipeline.StageWorking:
+		// If a PR already exists, the engineer needs to go back and
+		// address comments / rebase rather than starting from scratch.
+		if item.PRURL != "" {
+			log.Printf("work item %s has open PR — sending engineer back to fix up", item.Ticket)
+			orch.startFixUp(ctx, item.PRURL, item.Ticket, item.ID, item.Engineer)
+			return
+		}
 		log.Printf("work item %s was mid-implementation — engineer will re-pick it up", item.Ticket)
+
+	case pipeline.StageAssigned:
+		log.Printf("work item %s was assigned but not started — will be re-assigned", item.Ticket)
 	}
 }
 
