@@ -19,6 +19,7 @@ tasks:
     desc: Rebuild, kill existing process, and start fresh
     cmds:
       - go build -tags sqlite_fts5 -o bin/squad0 ./cmd/squad0
+      - go build -tags sqlite_fts5 -o bin/squad0-memory-mcp ./cmd/squad0-memory-mcp
       - pkill squad0 2>/dev/null || true
       - sleep 1
       - ./bin/squad0 start
