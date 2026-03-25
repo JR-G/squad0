@@ -115,7 +115,7 @@ func (engine *ConversationEngine) OnThreadMessage(ctx context.Context, channel, 
 		return
 	}
 
-	candidates := engine.pickCandidates(sender, respondersCount)
+	candidates := engine.pickCandidates(sender, respondersCount, recentCopy)
 	log.Printf("chat: picked %v to respond", candidates)
 
 	for _, role := range candidates {
@@ -266,15 +266,19 @@ func (engine *ConversationEngine) topBeliefs(ctx context.Context, role agent.Rol
 	return result
 }
 
-func (engine *ConversationEngine) pickCandidates(sender string, count int) []agent.Role {
+func (engine *ConversationEngine) pickCandidates(sender string, count int, recentLines []string) []agent.Role {
+	mentioned := engine.findMentionedRoles(recentLines, sender)
+
 	allRoles := agent.AllRoles()
 	eligible := make([]agent.Role, 0, len(allRoles))
+	mentionedSet := make(map[agent.Role]bool, len(mentioned))
+
+	for _, role := range mentioned {
+		mentionedSet[role] = true
+	}
 
 	for _, role := range allRoles {
-		if string(role) == sender {
-			continue
-		}
-		if role == agent.RoleReviewer {
+		if string(role) == sender || role == agent.RoleReviewer || mentionedSet[role] {
 			continue
 		}
 		eligible = append(eligible, role)
@@ -284,11 +288,43 @@ func (engine *ConversationEngine) pickCandidates(sender string, count int) []age
 		eligible[i], eligible[j] = eligible[j], eligible[i]
 	})
 
-	if count > len(eligible) {
-		count = len(eligible)
+	// Mentioned agents are guaranteed, then fill remaining slots.
+	remaining := count - len(mentioned)
+	if remaining < 0 {
+		remaining = 0
+	}
+	if remaining > len(eligible) {
+		remaining = len(eligible)
 	}
 
-	return eligible[:count]
+	result := make([]agent.Role, 0, len(mentioned)+remaining)
+	result = append(result, mentioned...)
+	result = append(result, eligible[:remaining]...)
+
+	return result
+}
+
+// findMentionedRoles checks the last message for agent names. Returns
+// only the mentioned agents (excluding the sender). When someone says
+// "Callum, what do you think?" — only Callum is returned.
+func (engine *ConversationEngine) findMentionedRoles(recentLines []string, sender string) []agent.Role {
+	if len(recentLines) == 0 {
+		return nil
+	}
+
+	lastLine := strings.ToLower(recentLines[len(recentLines)-1])
+
+	var mentioned []agent.Role
+	for role, name := range engine.roster {
+		if name == "" || name == string(role) || string(role) == sender {
+			continue
+		}
+		if strings.Contains(lastLine, strings.ToLower(name)) {
+			mentioned = append(mentioned, role)
+		}
+	}
+
+	return mentioned
 }
 
 func buildChatPrompt(role agent.Role, channel string, recentLines, beliefs []string, roster map[agent.Role]string) string {
@@ -300,11 +336,12 @@ func buildChatPrompt(role agent.Role, channel string, recentLines, beliefs []str
 	}
 
 	builder.WriteString(fmt.Sprintf("Your name is %s. You are %s. ", name, roleDescription(role)))
+	builder.WriteString("James is the CEO — he built the team and has final say. When he speaks, pay attention and respond helpfully.")
 
 	if len(beliefs) > 0 {
-		builder.WriteString("Things you believe from experience: ")
+		builder.WriteString("\n\nThings you believe from experience: ")
 		builder.WriteString(strings.Join(beliefs, "; "))
-		builder.WriteString(". ")
+		builder.WriteString(".")
 	}
 
 	writeRoster(&builder, role, roster)

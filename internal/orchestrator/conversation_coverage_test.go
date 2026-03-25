@@ -370,6 +370,50 @@ func TestConversationEngine_TryRespond_BotPostError_DoesNotPanic(t *testing.T) {
 	})
 }
 
+func TestConversationEngine_MentionedAgent_RespondsFirst(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	eng1Runner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"Yeah, I think we should add retry logic."}` + "\n"),
+	}
+	eng2Runner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"Agreed."}` + "\n"),
+	}
+
+	allRoles := agent.AllRoles()
+	agents := make(map[agent.Role]*agent.Agent, len(allRoles))
+	factStores := make(map[agent.Role]*memory.FactStore, len(allRoles))
+
+	// Engineer-1 gets its own runner so we can verify it was called.
+	agents[agent.RoleEngineer1] = buildAgent(t, eng1Runner, agent.RoleEngineer1, db)
+	factStores[agent.RoleEngineer1] = memory.NewFactStore(db)
+
+	for _, role := range allRoles {
+		if role == agent.RoleEngineer1 {
+			continue
+		}
+		agents[role] = buildAgent(t, eng2Runner, role, db)
+		factStores[role] = memory.NewFactStore(db)
+	}
+
+	roster := map[agent.Role]string{
+		agent.RoleEngineer1: "Callum",
+		agent.RoleEngineer2: "Mara",
+	}
+
+	engine := orchestrator.NewConversationEngine(agents, factStores, nil, roster)
+
+	// Mention Callum by name — he should definitely be among responders.
+	engine.OnMessage(ctx, "engineering", "ceo", "Callum, what do you think about the auth design?")
+
+	assert.NotEmpty(t, eng1Runner.calls, "Callum (engineer-1) should respond when mentioned by name")
+}
+
 func TestConversationEngine_OnThreadMessage_ThreadsResponses(t *testing.T) {
 	t.Parallel()
 
