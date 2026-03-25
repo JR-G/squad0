@@ -274,7 +274,6 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 	role := agentInstance.Role()
 
 	orch.recordSessionStart(role)
-
 	ticketLink := orch.cfg.Links.TicketLink(assignment.Ticket)
 
 	// Discussion phase — engineer posts plan, team responds.
@@ -293,6 +292,11 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 
 	orch.writeMCPConfig(agentInstance, workSession.Dir())
 	defer func() { _ = agent.RemoveMCPConfig(workSession.Dir()) }()
+
+	// Narrate — team sees the engineer is heads-down.
+	orch.postAsRole(ctx, "engineering",
+		fmt.Sprintf("Starting work on %s — heads down, will update when I have a PR.", ticketLink),
+		role)
 
 	seanceCtx := BuildSeanceContext(ctx, orch.projectEpisodeStore, assignment.Ticket, role)
 	prompt := seanceCtx + discussion + BuildImplementationPrompt(assignment.Ticket, assignment.Description)
