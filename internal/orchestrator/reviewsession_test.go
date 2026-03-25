@@ -208,4 +208,29 @@ func TestBuildReviewPrompt_ContainsPRNumber(t *testing.T) {
 	assert.Contains(t, prompt, "gh pr diff 42")
 	assert.Contains(t, prompt, "gh pr view 42")
 	assert.Contains(t, prompt, "gh pr review 42")
+	assert.Contains(t, prompt, "gh pr comment 42")
+}
+
+func TestBuildReviewPrompt_ContainsPRCommentStep(t *testing.T) {
+	t.Parallel()
+
+	prompt := orchestrator.BuildReviewPrompt(
+		"https://github.com/test-org/test-repo/pull/10",
+		"JAM-1",
+	)
+
+	assert.Contains(t, prompt, "gh pr comment 10 --body")
+	assert.Contains(t, prompt, "numbered items for each issue")
+	assert.Contains(t, prompt, "SHORT summary only")
+}
+
+func TestBuildReviewPrompt_VerifyRetryInstruction(t *testing.T) {
+	t.Parallel()
+
+	prompt := orchestrator.BuildReviewPrompt(
+		"https://github.com/test-org/test-repo/pull/5",
+		"JAM-2",
+	)
+
+	assert.Contains(t, prompt, "reviewDecision is still empty after your review, try again")
 }

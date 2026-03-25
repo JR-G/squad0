@@ -18,9 +18,15 @@ const reviewPromptTemplate = `You are reviewing pull request #%s for ticket %s.
    - Style: does it follow the project's conventions?
    - Security: any injection, XSS, or auth issues?
 
-5. You MUST submit your review using one of these gh commands — this is MANDATORY:
-   To approve: gh pr review %s --approve --body "your review summary"
-   To request changes: gh pr review %s --request-changes --body "your detailed feedback"
+5. Post your detailed findings as a PR comment so the engineer can see them inline:
+   gh pr comment %s --body 'your full review with numbered items for each issue'
+   Each issue should be a numbered item. Be specific about file, line, and what to fix.
+
+6. You MUST submit your review using one of these gh commands — this is MANDATORY:
+   To approve: gh pr review %s --approve --body "short summary of your review"
+   To request changes: gh pr review %s --request-changes --body "short summary of issues"
+
+   The --body here is a SHORT summary only — the detail is in the PR comment above.
 
    IMPORTANT RULES:
    - Do NOT say "approved with comments" — that is NOT an approval.
@@ -29,7 +35,8 @@ const reviewPromptTemplate = `You are reviewing pull request #%s for ticket %s.
    - Either fully approve or request changes. No middle ground.
    - You MUST actually run the gh pr review command, not just say "approved".
 
-6. After submitting the review, verify it worked: gh pr view %s --json reviewDecision
+7. After submitting the review, verify it worked: gh pr view %s --json reviewDecision
+   If the reviewDecision is still empty after your review, try again.
 
 End your response with either APPROVED or CHANGES_REQUESTED on its own line.
 `
@@ -48,11 +55,15 @@ The engineer has pushed fixes. Check that your specific concerns were addressed.
    - Were tests added or updated?
    - Did the fix introduce new issues?
 
-4. Submit your review:
-   If ALL concerns were addressed: gh pr review %s --approve --body "All feedback addressed"
-   If concerns remain: gh pr review %s --request-changes --body "specific remaining issues"
+4. Post your findings as a PR comment with numbered items:
+   gh pr comment %s --body 'your re-review findings'
 
-5. Verify the review: gh pr view %s --json reviewDecision
+5. Submit your review:
+   If ALL concerns were addressed: gh pr review %s --approve --body "All feedback addressed"
+   If concerns remain: gh pr review %s --request-changes --body "short summary of remaining issues"
+
+6. Verify the review: gh pr view %s --json reviewDecision
+   If the reviewDecision is still empty after your review, try again.
 
 Focus on YOUR previous comments specifically — don't re-review the entire diff.
 End with APPROVED or CHANGES_REQUESTED.
@@ -64,12 +75,14 @@ const fixUpPromptTemplate = `You need to address review feedback on your PR for 
 %s
 
 ## Instructions
-1. Read the review comments: gh pr view %s --comments
+1. Read ALL review comments on the PR: gh pr view %s --comments
 2. Read the current diff: gh pr diff %s
-3. Address every piece of feedback — fix the code, update tests, handle edge cases
-4. If the branch is behind main, rebase: git fetch origin main && git rebase origin/main
-5. Commit your fixes with conventional commit messages
-6. Push to the same branch — do NOT create a new PR
+3. For EACH comment, address it specifically. Don't skip any.
+4. Fix the code, update tests, handle edge cases
+5. If the branch is behind main, rebase: git fetch origin main && git rebase origin/main
+6. Commit your fixes with conventional commit messages
+7. Push to the same branch — do NOT create a new PR
+8. After fixing, reply to the review thread: gh pr comment %s --body 'Addressed all feedback: [brief summary of what you fixed]'
 
 Focus on what the reviewer asked for. Don't refactor unrelated code.
 `
@@ -77,17 +90,17 @@ Focus on what the reviewer asked for. Don't refactor unrelated code.
 // BuildReviewPrompt creates the prompt for a reviewer session.
 func BuildReviewPrompt(prURL, ticket string) string {
 	prNum := ExtractPRNumber(prURL)
-	return fmt.Sprintf(reviewPromptTemplate, prNum, ticket, prURL, prNum, prNum, prNum, prNum, prNum, prNum)
+	return fmt.Sprintf(reviewPromptTemplate, prNum, ticket, prURL, prNum, prNum, prNum, prNum, prNum, prNum, prNum)
 }
 
 // BuildReReviewPrompt creates the prompt for re-reviewing after fixes.
 func BuildReReviewPrompt(prURL, ticket string) string {
 	prNum := ExtractPRNumber(prURL)
-	return fmt.Sprintf(reReviewPromptTemplate, prNum, ticket, prURL, prNum, prNum, prNum, prNum, prNum)
+	return fmt.Sprintf(reReviewPromptTemplate, prNum, ticket, prURL, prNum, prNum, prNum, prNum, prNum, prNum)
 }
 
 // BuildFixUpPrompt creates the prompt for an engineer to address review feedback.
 func BuildFixUpPrompt(prURL, ticket string) string {
 	prNum := ExtractPRNumber(prURL)
-	return fmt.Sprintf(fixUpPromptTemplate, ticket, prURL, prNum, prNum)
+	return fmt.Sprintf(fixUpPromptTemplate, ticket, prURL, prNum, prNum, prNum)
 }

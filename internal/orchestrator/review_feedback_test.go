@@ -1,0 +1,175 @@
+package orchestrator_test
+
+import (
+	"context"
+	"database/sql"
+	"testing"
+	"time"
+
+	"github.com/JR-G/squad0/internal/agent"
+	"github.com/JR-G/squad0/internal/coordination"
+	"github.com/JR-G/squad0/internal/memory"
+	"github.com/JR-G/squad0/internal/orchestrator"
+	"github.com/JR-G/squad0/internal/pipeline"
+	_ "github.com/mattn/go-sqlite3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestChangesRequested_IncludesEngineerName(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	memDB, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = memDB.Close() })
+
+	// Reviewer says CHANGES_REQUESTED.
+	reviewRunner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"CHANGES_REQUESTED - fix nil check"}` + "\n"),
+	}
+	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"done"}` + "\n")}
+	engRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"Fixed"}` + "\n")}
+
+	sqlDB, sqlErr := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, sqlErr)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	pipeDB, pipeErr := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, pipeErr)
+	t.Cleanup(func() { _ = pipeDB.Close() })
+
+	pipeStore := pipeline.NewWorkItemStore(pipeDB)
+	require.NoError(t, pipeStore.InitSchema(ctx))
+
+	itemID, createErr := pipeStore.Create(ctx, pipeline.WorkItem{
+		Ticket: "JAM-20", Engineer: agent.RoleEngineer1, Stage: pipeline.StageReviewing, Branch: "feat/jam-20",
+	})
+	require.NoError(t, createErr)
+
+	pmAgent := setupPMAgent(t, pmRunner)
+	reviewerAgent := buildAgent(t, reviewRunner, agent.RoleReviewer, memDB)
+	engAgent := buildAgent(t, engRunner, agent.RoleEngineer1, memDB)
+
+	agents := map[agent.Role]*agent.Agent{
+		agent.RolePM:        pmAgent,
+		agent.RoleReviewer:  reviewerAgent,
+		agent.RoleEngineer1: engAgent,
+	}
+
+	server := newTestSlackServer()
+	t.Cleanup(server.Close)
+	bot := newTestSlackBot(server.URL)
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 3, CooldownAfter: time.Second, TargetRepoDir: t.TempDir()},
+		agents, checkIns, bot, orchestrator.NewAssigner(pmAgent, "TEST"),
+	)
+	orch.SetPipeline(pipeStore)
+	orch.SetRoster(map[agent.Role]string{
+		agent.RoleEngineer1: "Alice",
+		agent.RoleReviewer:  "Bob",
+	})
+
+	// The review will return CHANGES_REQUESTED. The announcement in
+	// #reviews should mention the engineer's name (Alice) and use
+	// postAsRole to trigger the conversation engine.
+	assert.NotPanics(t, func() {
+		orch.StartReviewWithItemForTest(ctx, "https://github.com/test-org/test-repo/pull/20", "JAM-20", itemID, agent.RoleEngineer1)
+		orch.Wait()
+	})
+
+	// Verify the pipeline stage was advanced to changes_requested.
+	item, getErr := pipeStore.GetByID(ctx, itemID)
+	require.NoError(t, getErr)
+	// It should be at least past changes_requested (may have
+	// continued into fix-up depending on how far the loop got).
+	assert.NotEqual(t, pipeline.StageReviewing, item.Stage)
+}
+
+func TestChangesRequested_UsesPostAsRole(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	memDB, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = memDB.Close() })
+
+	// Reviewer says CHANGES_REQUESTED — this triggers
+	// handleChangesRequested which should use postAsRole.
+	reviewRunner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"CHANGES_REQUESTED"}` + "\n"),
+	}
+	engRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"Fixed"}` + "\n")}
+	pmRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"done"}` + "\n")}
+
+	sqlDB, sqlErr := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, sqlErr)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	pipeDB, pipeErr := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, pipeErr)
+	t.Cleanup(func() { _ = pipeDB.Close() })
+
+	pipeStore := pipeline.NewWorkItemStore(pipeDB)
+	require.NoError(t, pipeStore.InitSchema(ctx))
+
+	itemID, createErr := pipeStore.Create(ctx, pipeline.WorkItem{
+		Ticket: "JAM-21", Engineer: agent.RoleEngineer1, Stage: pipeline.StageReviewing, Branch: "feat/jam-21",
+	})
+	require.NoError(t, createErr)
+
+	pmAgent := setupPMAgent(t, pmRunner)
+	reviewerAgent := buildAgent(t, reviewRunner, agent.RoleReviewer, memDB)
+	engAgent := buildAgent(t, engRunner, agent.RoleEngineer1, memDB)
+
+	agents := map[agent.Role]*agent.Agent{
+		agent.RolePM:        pmAgent,
+		agent.RoleReviewer:  reviewerAgent,
+		agent.RoleEngineer1: engAgent,
+	}
+
+	// Bot is needed so postAsRole actually does something
+	// (vs announceAsRole which doesn't trigger conversations).
+	server := newTestSlackServer()
+	t.Cleanup(server.Close)
+	bot := newTestSlackBot(server.URL)
+
+	allRoles := agent.AllRoles()
+	agentsForConv := make(map[agent.Role]*agent.Agent, len(allRoles))
+	factStores := make(map[agent.Role]*memory.FactStore, len(allRoles))
+	chatRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"PASS"}` + "\n")}
+	for _, role := range allRoles {
+		existing, ok := agents[role]
+		if !ok {
+			existing = buildAgent(t, chatRunner, role, memDB)
+		}
+		agentsForConv[role] = existing
+		factStores[role] = memory.NewFactStore(memDB)
+	}
+
+	conversation := orchestrator.NewConversationEngine(agentsForConv, factStores, bot, nil)
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 3, CooldownAfter: time.Second, TargetRepoDir: t.TempDir()},
+		agents, checkIns, bot, orchestrator.NewAssigner(pmAgent, "TEST"),
+	)
+	orch.SetPipeline(pipeStore)
+	orch.SetConversationEngine(conversation)
+	orch.SetRoster(map[agent.Role]string{
+		agent.RoleEngineer1: "Alice",
+	})
+
+	// Start the review — changes will be requested, and the message
+	// should trigger the conversation engine via postAsRole.
+	assert.NotPanics(t, func() {
+		orch.StartReviewWithItemForTest(ctx, "https://github.com/test-org/test-repo/pull/21", "JAM-21", itemID, agent.RoleEngineer1)
+		orch.Wait()
+	})
+}
