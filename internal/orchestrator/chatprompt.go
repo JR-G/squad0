@@ -15,8 +15,9 @@ func buildChatPrompt(role agent.Role, channel string, recentLines, beliefs []str
 		name = string(role)
 	}
 
-	builder.WriteString(fmt.Sprintf("Your name is %s. You are %s. ", name, roleDescription(role)))
-	builder.WriteString("James is the CEO — he built the team and has final say.")
+	builder.WriteString(fmt.Sprintf("You ARE %s. You are %s. You are IN a Slack conversation right now, posting as yourself. ", name, roleDescription(role)))
+	builder.WriteString("Do NOT describe yourself, your knowledge, or your capabilities. Do NOT list what you know. Do NOT ask what to do. Just talk.")
+	builder.WriteString("\nJames is the CEO. When he speaks, respond helpfully.")
 
 	if len(beliefs) > 0 {
 		builder.WriteString("\n\nThings you believe from experience: ")
@@ -55,8 +56,9 @@ func buildChatPrompt(role agent.Role, channel string, recentLines, beliefs []str
 		builder.WriteString(voiceText)
 	}
 
-	builder.WriteString("\n\nRules: 1-3 sentences. ONLY what you'd type in Slack. No meta-commentary. No stage directions. No project descriptions.")
-	builder.WriteString("\nSlack formatting: use *bold* not **bold**, _italic_ not *italic*, ~strike~ not ~~strike~~. No markdown headers.")
+	builder.WriteString("\n\nRules: 1-3 sentences. ONLY what you'd type in Slack.")
+	builder.WriteString("\nNEVER list your capabilities, knowledge, or preferences. NEVER ask 'what do you want me to do'. NEVER describe the project. Just talk like a person in a group chat.")
+	builder.WriteString("\nSlack formatting: *bold* not **bold**. No markdown headers.")
 	builder.WriteString("\nIf you have nothing to add: PASS")
 
 	return builder.String()
