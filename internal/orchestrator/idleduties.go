@@ -14,7 +14,10 @@ import (
 // posting substantive code observations, and contributing to reviews.
 // Uses DirectSession so agents have gh CLI access to read actual code.
 // Each PR is reviewed at most once per agent per orchestrator lifetime.
+// Also investigates any unresolved concerns agents have noted.
 func (orch *Orchestrator) RunIdleDuties(ctx context.Context, idleRoles []agent.Role) {
+	orch.InvestigateConcerns(ctx, idleRoles)
+
 	if orch.pipelineStore == nil {
 		return
 	}

@@ -39,7 +39,9 @@ type Orchestrator struct {
 	pipelineStore       *pipeline.WorkItemStore
 	handoffStore        *pipeline.HandoffStore
 	projectEpisodeStore *memory.EpisodeStore
+	projectFactStore    *memory.FactStore
 	followedUp          map[int64]bool
+	concerns            *ConcernTracker
 }
 
 // Config holds orchestrator-level settings.
@@ -220,6 +222,12 @@ func (orch *Orchestrator) SetProjectEpisodeStore(store *memory.EpisodeStore) {
 	orch.projectEpisodeStore = store
 }
 
+// SetProjectFactStore connects the shared fact store for
+// cross-pollination and seance.
+func (orch *Orchestrator) SetProjectFactStore(store *memory.FactStore) {
+	orch.projectFactStore = store
+}
+
 // SetRoster stores the role→name mapping so lifecycle messages use
 // chosen names instead of role IDs.
 func (orch *Orchestrator) SetRoster(roster map[agent.Role]string) {
@@ -315,9 +323,8 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 	time.Sleep(orch.acknowledgePause())
 	orch.acknowledgeThread(ctx, agentInstance, role, "engineering")
 
-	seanceCtx := BuildSeanceContext(ctx, orch.projectEpisodeStore, assignment.Ticket, role)
-	handoffCtx := BuildHandoffContext(ctx, orch.handoffStore, assignment.Ticket)
-	prompt := handoffCtx + seanceCtx + discussion + BuildImplementationPrompt(assignment.Ticket, assignment.Description)
+	seanceCtx := BuildSeanceContextFull(ctx, orch.projectEpisodeStore, orch.agentFactStores(), orch.handoffStore, assignment.Ticket, role)
+	prompt := seanceCtx + discussion + BuildImplementationPrompt(assignment.Ticket, assignment.Description)
 	branch := fmt.Sprintf("feat/%s", assignment.Ticket)
 	result, err := agentInstance.ExecuteTask(ctx, prompt, nil, workSession.Dir())
 	if err != nil {
@@ -454,6 +461,15 @@ func (orch *Orchestrator) clearSessionCancel(role agent.Role) {
 	orch.cancelsMu.Lock()
 	defer orch.cancelsMu.Unlock()
 	delete(orch.sessionCancels, role)
+}
+
+// agentFactStores returns per-agent fact stores from the conversation
+// engine. Used by the seance to pull cross-agent beliefs.
+func (orch *Orchestrator) agentFactStores() map[agent.Role]*memory.FactStore {
+	if orch.conversation == nil {
+		return nil
+	}
+	return orch.conversation.FactStores()
 }
 
 // filterHealthyEngineers returns engineers that are not in a failing

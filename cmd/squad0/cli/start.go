@@ -8,8 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/JR-G/squad0/internal/agent"
@@ -175,6 +173,12 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	projectEpisodeStore := memory.NewEpisodeStore(projectDB)
 	orch.SetProjectEpisodeStore(projectEpisodeStore)
 
+	projectFactStore := memory.NewFactStore(projectDB)
+	orch.SetProjectFactStore(projectFactStore)
+
+	concerns := orchestrator.NewConcernTracker()
+	orch.SetConcernTracker(concerns)
+
 	if !workEnabled {
 		_, _ = fmt.Fprint(out, tui.StepWarn("Linear not configured — agents will chat but not work"))
 	}
@@ -195,8 +199,13 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	scheduler.SetRoster(roster)
 
 	conversation := orchestrator.NewConversationEngine(agents, agentFactStores, bot, roster)
+	conversation.SetProjectFactStore(projectFactStore)
+	conversation.SetConcernTracker(concerns)
 	orch.SetConversationEngine(conversation)
 	orch.SetRoster(roster)
+
+	seedConversationHistory(ctx, bot, conversation, cfg)
+
 	commandHandler := newCommandDispatcher(orch, bot, conversation, personas, buildLinkConfig(cfg))
 	bot.OnMessage(commandHandler.handleMessage)
 
@@ -447,32 +456,4 @@ func resolveMemoryBinaryPath() string {
 	}
 
 	return ""
-}
-
-// parseCronToInterval parses a cron expression of the form "M H * * *"
-// and returns the duration until the next occurrence. Only the hour
-// field is used; unsupported expressions fall back to 24h.
-func parseCronToInterval(cron string) time.Duration {
-	parts := strings.Fields(cron)
-	if len(parts) < 2 {
-		return 24 * time.Hour
-	}
-
-	hour, err := strconv.Atoi(parts[1])
-	if err != nil || hour < 0 || hour > 23 {
-		return 24 * time.Hour
-	}
-
-	return durationUntilHour(hour, time.Now())
-}
-
-// durationUntilHour returns the duration from now until the next
-// occurrence of the given hour (in local time). If the hour has already
-// passed today, it returns the duration until that hour tomorrow.
-func durationUntilHour(hour int, now time.Time) time.Duration {
-	target := time.Date(now.Year(), now.Month(), now.Day(), hour, 0, 0, 0, now.Location())
-	if !target.After(now) {
-		target = target.Add(24 * time.Hour)
-	}
-	return target.Sub(now)
 }

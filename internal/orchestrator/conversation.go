@@ -22,14 +22,16 @@ type PauseChecker func(ctx context.Context, role agent.Role) bool
 // Uses time-based decay: conversations stay alive while messages
 // are recent, and die naturally when the thread goes quiet.
 type ConversationEngine struct {
-	agents       map[agent.Role]*agent.Agent
-	factStores   map[agent.Role]*memory.FactStore
-	bot          *slack.Bot
-	mu           sync.Mutex
-	channels     map[string]*channelState
-	roster       map[agent.Role]string
-	voices       map[agent.Role]string
-	pauseChecker PauseChecker
+	agents           map[agent.Role]*agent.Agent
+	factStores       map[agent.Role]*memory.FactStore
+	projectFactStore *memory.FactStore
+	bot              *slack.Bot
+	mu               sync.Mutex
+	channels         map[string]*channelState
+	roster           map[agent.Role]string
+	voices           map[agent.Role]string
+	pauseChecker     PauseChecker
+	concerns         *ConcernTracker
 }
 
 type channelState struct {
@@ -317,6 +319,9 @@ func (engine *ConversationEngine) tryRespondInThread(ctx context.Context, channe
 
 	// Store strong opinions as beliefs — conversations build memory.
 	engine.maybeStoreConversationBelief(ctx, role, text)
+
+	// Track concerns for later investigation during idle time.
+	engine.maybeStoreConcerns(role, text)
 }
 
 func (engine *ConversationEngine) postResponse(ctx context.Context, channel, text string, role agent.Role, threadTS string) error {
@@ -409,11 +414,46 @@ func DecideBaseRespondersForTest(timeSinceNanos int64, isHuman bool) int {
 	return decideBaseResponders(time.Duration(timeSinceNanos), isHuman)
 }
 
+// FactStores returns the per-agent fact stores for cross-agent queries
+// such as the seance.
+func (engine *ConversationEngine) FactStores() map[agent.Role]*memory.FactStore {
+	return engine.factStores
+}
+
+// SetConcernTracker connects the concern tracker so conversation
+// responses that contain concern signals are stored for investigation.
+func (engine *ConversationEngine) SetConcernTracker(tracker *ConcernTracker) {
+	engine.mu.Lock()
+	defer engine.mu.Unlock()
+	engine.concerns = tracker
+}
+
+func (engine *ConversationEngine) maybeStoreConcerns(role agent.Role, text string) {
+	if engine.concerns == nil {
+		return
+	}
+	engine.concerns.AddConcernsFromText(role, text, "")
+}
+
 // SetVoicesMap sets the voice text for each role directly. Used in testing.
 func (engine *ConversationEngine) SetVoicesMap(voices map[agent.Role]string) {
 	engine.mu.Lock()
 	defer engine.mu.Unlock()
 	engine.voices = voices
+}
+
+// SeedHistory populates a channel's recent messages without triggering
+// agent responses. Used at startup to restore conversation context
+// from Slack history so agents know what was discussed before a restart.
+func (engine *ConversationEngine) SeedHistory(channel string, messages []string) {
+	engine.mu.Lock()
+	defer engine.mu.Unlock()
+
+	state := engine.getOrCreateChannel(channel)
+	for _, msg := range messages {
+		state.recentLines = appendRecent(state.recentLines, msg)
+	}
+	state.lastMessage = time.Now()
 }
 
 // decideBaseResponders uses time-based decay. Recent messages get full

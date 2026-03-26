@@ -207,6 +207,45 @@ func (bot *Bot) resolveChannel(name string) (string, error) {
 	return channelID, nil
 }
 
+// HistoryMessage represents a message retrieved from Slack channel history.
+type HistoryMessage struct {
+	User      string
+	Text      string
+	Timestamp string
+}
+
+// LoadRecentMessages calls conversations.history to load recent messages
+// from a channel. Returns up to limit messages, most recent first.
+func (bot *Bot) LoadRecentMessages(ctx context.Context, channel string, limit int) ([]HistoryMessage, error) {
+	channelID, err := bot.resolveChannel(channel)
+	if err != nil {
+		return nil, err
+	}
+
+	params := &slackapi.GetConversationHistoryParameters{
+		ChannelID: channelID,
+		Limit:     limit,
+	}
+
+	history, err := bot.client.GetConversationHistoryContext(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("loading history for %s: %w", channel, err)
+	}
+
+	messages := make([]HistoryMessage, 0, len(history.Messages))
+	// Slack returns newest first — reverse to chronological order.
+	for idx := len(history.Messages) - 1; idx >= 0; idx-- {
+		msg := history.Messages[idx]
+		messages = append(messages, HistoryMessage{
+			User:      msg.User,
+			Text:      msg.Text,
+			Timestamp: msg.Timestamp,
+		})
+	}
+
+	return messages, nil
+}
+
 func buildMessageOpts(text string, persona Persona) []slackapi.MsgOption {
 	opts := []slackapi.MsgOption{
 		slackapi.MsgOptionText(text, false),

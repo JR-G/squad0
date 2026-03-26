@@ -88,6 +88,43 @@ func (store *HandoffStore) LatestForTicket(ctx context.Context, ticket string) (
 	return scanHandoff(row)
 }
 
+// AllForTicket returns all handoffs for a ticket, most recent first.
+func (store *HandoffStore) AllForTicket(ctx context.Context, ticket string) ([]Handoff, error) {
+	rows, err := store.db.QueryContext(ctx, `
+		SELECT id, ticket, agent, status, summary, remaining,
+		       git_branch, git_state, blockers, created_at
+		FROM handoffs
+		WHERE ticket = ?
+		ORDER BY id DESC`, ticket)
+	if err != nil {
+		return nil, fmt.Errorf("querying handoffs for ticket %s: %w", ticket, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var handoffs []Handoff
+	for rows.Next() {
+		var handoff Handoff
+		var remaining, gitBranch, gitState, blockers sql.NullString
+
+		scanErr := rows.Scan(
+			&handoff.ID, &handoff.Ticket, &handoff.Agent, &handoff.Status,
+			&handoff.Summary, &remaining, &gitBranch, &gitState, &blockers,
+			&handoff.CreatedAt,
+		)
+		if scanErr != nil {
+			return nil, fmt.Errorf("scanning handoff row: %w", scanErr)
+		}
+
+		handoff.Remaining = remaining.String
+		handoff.GitBranch = gitBranch.String
+		handoff.GitState = gitState.String
+		handoff.Blockers = blockers.String
+		handoffs = append(handoffs, handoff)
+	}
+
+	return handoffs, rows.Err()
+}
+
 func scanHandoff(row interface{ Scan(...any) error }) (Handoff, error) {
 	var handoff Handoff
 	var remaining, gitBranch, gitState, blockers sql.NullString
