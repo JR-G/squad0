@@ -61,10 +61,13 @@ func (orch *Orchestrator) tryIdleDuty(ctx context.Context, role agent.Role, open
 
 	log.Printf("idle duty: %s reviewed %s's PR for %s", role, item.Engineer, item.Ticket)
 
-	// Post to #reviews as an announcement — the detailed feedback
+	// Strip narration and post to #reviews — the detailed feedback
 	// is on the PR itself via gh pr comment.
-	summary := agent.TruncateSummary(response, 500)
-	orch.announceAsRole(ctx, "reviews", summary, role)
+	clean := cleanIdleResponse(response)
+	if clean == "" {
+		return
+	}
+	orch.announceAsRole(ctx, "reviews", clean, role)
 }
 
 func buildIdleReviewPrompt(role agent.Role, item *pipeline.WorkItem, engineerName string) string {
@@ -129,6 +132,40 @@ func idleCommentKey(role agent.Role, itemID int64) int64 {
 		roleHash = roleHash*31 + int64(ch)
 	}
 	return roleHash*1_000_000 + itemID
+}
+
+// cleanIdleResponse strips narration, meta-commentary, markdown headers,
+// and separators from an idle review response. Returns just the Slack message.
+func cleanIdleResponse(text string) string {
+	lines := strings.Split(text, "\n")
+	cleaned := make([]string, 0, len(lines))
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Skip empty lines, separators, and narration.
+		if trimmed == "" || trimmed == "---" || trimmed == "***" {
+			continue
+		}
+		lower := strings.ToLower(trimmed)
+		if strings.HasPrefix(lower, "comment posted") ||
+			strings.HasPrefix(lower, "here's the slack") ||
+			strings.HasPrefix(lower, "slack summary") ||
+			strings.HasPrefix(lower, "**slack summary") ||
+			strings.HasPrefix(lower, "#") {
+			continue
+		}
+
+		// Convert **bold** to *bold* for Slack.
+		trimmed = strings.ReplaceAll(trimmed, "**", "*")
+		cleaned = append(cleaned, trimmed)
+	}
+
+	result := strings.Join(cleaned, " ")
+	if len(result) > 500 {
+		result = result[:500]
+	}
+	return result
 }
 
 func isEngineerRole(role agent.Role) bool {
