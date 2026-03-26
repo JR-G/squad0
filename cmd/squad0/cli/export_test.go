@@ -31,6 +31,11 @@ func ParseCronToInterval(cron string) time.Duration {
 	return parseCronToInterval(cron)
 }
 
+// DurationUntilHour exports durationUntilHour for testing.
+func DurationUntilHour(hour int, now time.Time) time.Duration {
+	return durationUntilHour(hour, now)
+}
+
 // SetupLogger exports setupLogger for testing with a configurable data dir.
 func SetupLogger(dataDir string, out io.Writer) (*logging.Logger, error) {
 	return setupLogger(dataDir, out)

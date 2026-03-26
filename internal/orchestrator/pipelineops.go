@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/JR-G/squad0/internal/agent"
 	"github.com/JR-G/squad0/internal/memory"
@@ -159,11 +160,35 @@ func (orch *Orchestrator) resumeWorkItem(ctx context.Context, item pipeline.Work
 			}()
 			return
 		}
-		log.Printf("work item %s was mid-implementation — engineer will re-pick it up", item.Ticket)
+
+		orch.resumeStaleWorkingItem(ctx, item)
 
 	case pipeline.StageAssigned:
 		log.Printf("work item %s was assigned but not started — will be re-assigned", item.Ticket)
 	}
+}
+
+// resumeStaleWorkingItem handles a StageWorking item with no PR.
+// If it has been working for more than 30 minutes, the work is stale
+// and needs reassignment. Otherwise it is left for the engineer to
+// pick up naturally.
+func (orch *Orchestrator) resumeStaleWorkingItem(ctx context.Context, item pipeline.WorkItem) {
+	age := time.Since(item.UpdatedAt)
+	if age <= staleWorkThreshold {
+		log.Printf("work item %s is only %s old — engineer will re-pick it up", item.Ticket, age.Round(time.Minute))
+		return
+	}
+
+	log.Printf("work item %s is stale (%s) — marking failed for reassignment", item.Ticket, age.Round(time.Minute))
+
+	orch.advancePipeline(ctx, item.ID, pipeline.StageFailed)
+
+	name := orch.NameForRole(item.Engineer)
+	ticketLink := orch.cfg.Links.TicketLink(item.Ticket)
+	orch.announceAsRole(ctx, "engineering",
+		fmt.Sprintf("%s's work on %s stalled after %s with no PR — returning it to the backlog.",
+			name, ticketLink, formatDuration(age)),
+		agent.RolePM)
 }
 
 func (orch *Orchestrator) filterByWIP(ctx context.Context, roles []agent.Role) []agent.Role {

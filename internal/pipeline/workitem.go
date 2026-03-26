@@ -198,6 +198,22 @@ func (store *WorkItemStore) CompletedByEngineer(ctx context.Context, role agent.
 	return scanWorkItems(rows)
 }
 
+// OpenWithPR returns all non-terminal work items that have a PR URL.
+func (store *WorkItemStore) OpenWithPR(ctx context.Context) ([]WorkItem, error) {
+	rows, err := store.db.QueryContext(ctx, `
+		SELECT id, ticket, engineer, reviewer, stage, pr_url, branch,
+		       review_cycles, started_at, updated_at, finished_at
+		FROM work_items
+		WHERE stage NOT IN ('merged', 'failed') AND pr_url != ''
+		ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("querying open items with PR: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	return scanWorkItems(rows)
+}
+
 func scanWorkItem(row interface{ Scan(...any) error }) (WorkItem, error) {
 	var item WorkItem
 	var engineer, reviewer, stage string

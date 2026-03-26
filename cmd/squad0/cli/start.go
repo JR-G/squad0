@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/JR-G/squad0/internal/agent"
@@ -187,6 +189,10 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	for role, persona := range personas {
 		roster[role] = persona.Name
 	}
+
+	scheduler.SetPipeline(pipelineStore)
+	scheduler.SetAgents(agents)
+	scheduler.SetRoster(roster)
 
 	conversation := orchestrator.NewConversationEngine(agents, agentFactStores, bot, roster)
 	orch.SetConversationEngine(conversation)
@@ -443,6 +449,30 @@ func resolveMemoryBinaryPath() string {
 	return ""
 }
 
-func parseCronToInterval(_ string) time.Duration {
-	return 24 * time.Hour
+// parseCronToInterval parses a cron expression of the form "M H * * *"
+// and returns the duration until the next occurrence. Only the hour
+// field is used; unsupported expressions fall back to 24h.
+func parseCronToInterval(cron string) time.Duration {
+	parts := strings.Fields(cron)
+	if len(parts) < 2 {
+		return 24 * time.Hour
+	}
+
+	hour, err := strconv.Atoi(parts[1])
+	if err != nil || hour < 0 || hour > 23 {
+		return 24 * time.Hour
+	}
+
+	return durationUntilHour(hour, time.Now())
+}
+
+// durationUntilHour returns the duration from now until the next
+// occurrence of the given hour (in local time). If the hour has already
+// passed today, it returns the duration until that hour tomorrow.
+func durationUntilHour(hour int, now time.Time) time.Duration {
+	target := time.Date(now.Year(), now.Month(), now.Day(), hour, 0, 0, 0, now.Location())
+	if !target.After(now) {
+		target = target.Add(24 * time.Hour)
+	}
+	return target.Sub(now)
 }

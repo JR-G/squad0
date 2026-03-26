@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -143,6 +142,9 @@ func (orch *Orchestrator) tick(ctx context.Context) {
 
 	log.Printf("tick: %d idle agents, roles: %v", len(idleRoles), idleRoles)
 
+	// Engage idle non-engineers (Designer, Tech Lead) with duties.
+	orch.RunIdleDuties(ctx, filterIdleDutyRoles(idleRoles))
+
 	idleEngineers := orch.filterByWIP(ctx, orch.filterHealthyEngineers(idleRoles))
 	if len(idleEngineers) == 0 {
 		log.Println("tick: no idle engineers")
@@ -176,13 +178,26 @@ func (orch *Orchestrator) tick(ctx context.Context) {
 		log.Printf("tick: got %d assignments", len(assignments))
 
 		if len(assignments) == 0 {
+			// No tickets available — engage idle engineers with PR reviews.
+			orch.RunIdleDuties(ctx, idleEngineers)
 			return
 		}
 
+		assignedSet := make(map[agent.Role]bool, len(assignments))
 		for _, assignment := range assignments {
 			log.Printf("tick: assigning %s to %s", assignment.Ticket, assignment.Role)
 			orch.startWork(ctx, assignment)
+			assignedSet[assignment.Role] = true
 		}
+
+		// Engage engineers that didn't get assigned.
+		unassigned := make([]agent.Role, 0, len(idleEngineers))
+		for _, role := range idleEngineers {
+			if !assignedSet[role] {
+				unassigned = append(unassigned, role)
+			}
+		}
+		orch.RunIdleDuties(ctx, unassigned)
 	}()
 }
 
@@ -464,35 +479,4 @@ func (orch *Orchestrator) filterHealthyEngineers(roles []agent.Role) []agent.Rol
 	}
 
 	return healthy
-}
-
-func (orch *Orchestrator) recordSessionStart(role agent.Role) {
-	if orch.monitor == nil {
-		return
-	}
-	orch.monitor.RecordSessionStart(role)
-}
-
-func (orch *Orchestrator) recordSessionEnd(role agent.Role, ticket string, success bool) {
-	if orch.monitor == nil {
-		return
-	}
-	orch.monitor.RecordSessionEnd(role, ticket, success)
-}
-
-// writeMCPConfig writes the .mcp.json to the session working directory
-// and sets the agent's MCPConfigPath so the Claude Code process can
-// find it.
-func (orch *Orchestrator) writeMCPConfig(agentInstance *agent.Agent, workDir string) {
-	mcpCfg := agent.BuildMCPConfig(agent.MCPOptions{
-		MemoryBinaryPath: orch.cfg.MemoryBinaryPath,
-		AgentDBPath:      agentInstance.DBPath(),
-	})
-
-	if err := agent.WriteMCPConfig(workDir, mcpCfg); err != nil {
-		log.Printf("failed to write MCP config for %s: %v", agentInstance.Role(), err)
-		return
-	}
-
-	agentInstance.MCPConfigPath = filepath.Join(workDir, ".mcp.json")
 }

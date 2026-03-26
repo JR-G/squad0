@@ -372,6 +372,48 @@ func TestWorkItemStore_ActiveByTicket_AllTerminal_ReturnsError(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestWorkItemStore_OpenWithPR_ReturnsItemsWithPROnly(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	// Item with PR.
+	withPR, _ := store.Create(ctx, pipeline.WorkItem{
+		Ticket: "JAM-PR1", Engineer: agent.RoleEngineer1, Stage: pipeline.StagePROpened, Branch: "feat/jam-pr1",
+	})
+	_ = store.SetPRURL(ctx, withPR, "https://github.com/test/repo/pull/1")
+
+	// Item without PR.
+	_, _ = store.Create(ctx, pipeline.WorkItem{
+		Ticket: "JAM-NOPR", Engineer: agent.RoleEngineer2, Stage: pipeline.StageWorking, Branch: "feat/jam-nopr",
+	})
+
+	// Terminal item with PR — should be excluded.
+	merged, _ := store.Create(ctx, pipeline.WorkItem{
+		Ticket: "JAM-DONE", Engineer: agent.RoleEngineer1, Stage: pipeline.StageApproved, Branch: "feat/jam-done",
+	})
+	_ = store.SetPRURL(ctx, merged, "https://github.com/test/repo/pull/2")
+	_ = store.Advance(ctx, merged, pipeline.StageMerged)
+
+	items, err := store.OpenWithPR(ctx)
+
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, "JAM-PR1", items[0].Ticket)
+	assert.Equal(t, "https://github.com/test/repo/pull/1", items[0].PRURL)
+}
+
+func TestWorkItemStore_OpenWithPR_Empty(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	items, err := store.OpenWithPR(context.Background())
+
+	require.NoError(t, err)
+	assert.Empty(t, items)
+}
+
 func TestWorkItemStore_InitSchema_ClosedDB_ReturnsError(t *testing.T) {
 	t.Parallel()
 

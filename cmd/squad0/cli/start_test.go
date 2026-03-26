@@ -54,18 +54,65 @@ func TestBuildModelMap_CustomModels(t *testing.T) {
 	assert.Equal(t, "custom-eng", result[agent.RoleEngineer3])
 }
 
-func TestParseCronToInterval_ReturnsDay(t *testing.T) {
+func TestParseCronToInterval_ValidCron_ReturnsDurationLessThan24h(t *testing.T) {
 	t.Parallel()
 
 	result := cli.ParseCronToInterval("0 9 * * *")
 
-	assert.Equal(t, 24*time.Hour, result)
+	assert.Greater(t, result, time.Duration(0))
+	assert.LessOrEqual(t, result, 24*time.Hour)
 }
 
-func TestParseCronToInterval_IgnoresInput(t *testing.T) {
+func TestParseCronToInterval_InvalidCron_FallsBackTo24h(t *testing.T) {
 	t.Parallel()
 
 	result := cli.ParseCronToInterval("anything")
+
+	assert.Equal(t, 24*time.Hour, result)
+}
+
+func TestParseCronToInterval_EmptyString_FallsBackTo24h(t *testing.T) {
+	t.Parallel()
+
+	result := cli.ParseCronToInterval("")
+
+	assert.Equal(t, 24*time.Hour, result)
+}
+
+func TestParseCronToInterval_InvalidHour_FallsBackTo24h(t *testing.T) {
+	t.Parallel()
+
+	result := cli.ParseCronToInterval("0 25 * * *")
+
+	assert.Equal(t, 24*time.Hour, result)
+}
+
+func TestDurationUntilHour_FutureToday_ReturnsSameDay(t *testing.T) {
+	t.Parallel()
+
+	// 08:00 — next occurrence of hour 14 is today at 14:00 = 6 hours.
+	now := time.Date(2026, 3, 26, 8, 0, 0, 0, time.UTC)
+	result := cli.DurationUntilHour(14, now)
+
+	assert.Equal(t, 6*time.Hour, result)
+}
+
+func TestDurationUntilHour_PastToday_ReturnsTomorrow(t *testing.T) {
+	t.Parallel()
+
+	// 15:00 — next occurrence of hour 9 is tomorrow at 09:00 = 18 hours.
+	now := time.Date(2026, 3, 26, 15, 0, 0, 0, time.UTC)
+	result := cli.DurationUntilHour(9, now)
+
+	assert.Equal(t, 18*time.Hour, result)
+}
+
+func TestDurationUntilHour_ExactlyNow_ReturnsTomorrow(t *testing.T) {
+	t.Parallel()
+
+	// 09:00 exactly — hour 9 has already passed (not strictly after), so tomorrow.
+	now := time.Date(2026, 3, 26, 9, 0, 0, 0, time.UTC)
+	result := cli.DurationUntilHour(9, now)
 
 	assert.Equal(t, 24*time.Hour, result)
 }
