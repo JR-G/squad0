@@ -314,6 +314,9 @@ func (engine *ConversationEngine) tryRespondInThread(ctx context.Context, channe
 	state := engine.getOrCreateChannel(channel)
 	state.recentLines = appendRecent(state.recentLines, fmt.Sprintf("%s: %s", role, text))
 	engine.mu.Unlock()
+
+	// Store strong opinions as beliefs — conversations build memory.
+	engine.maybeStoreConversationBelief(ctx, role, text)
 }
 
 func (engine *ConversationEngine) postResponse(ctx context.Context, channel, text string, role agent.Role, threadTS string) error {
@@ -337,6 +340,8 @@ func (engine *ConversationEngine) topBeliefs(ctx context.Context, role agent.Rol
 	result := make([]string, 0, len(beliefs))
 	for _, belief := range beliefs {
 		result = append(result, belief.Content)
+		// Retrieval strengthening — each recall makes the memory stronger.
+		_ = factStore.RecordBeliefAccess(ctx, belief.ID)
 	}
 
 	return result

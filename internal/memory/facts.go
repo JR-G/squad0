@@ -292,7 +292,12 @@ func decayedConfidence(belief Belief, now time.Time) float64 {
 	lambda := 0.693 / BeliefDecayHalfLifeDays // ln(2) / half_life
 	decay := math.Exp(-lambda * ageDays)
 
-	return belief.Confidence * decay
+	// Retrieval strengthening: each access adds a small boost that
+	// resists decay. Frequently recalled beliefs stay relevant longer.
+	// Capped at 2x to prevent runaway scores.
+	accessBoost := 1.0 + math.Min(float64(belief.AccessCount)*0.05, 1.0)
+
+	return belief.Confidence * decay * accessBoost
 }
 
 // RecordFactAccess bumps the access count and last_accessed_at for a fact.
