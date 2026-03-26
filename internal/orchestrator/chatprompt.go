@@ -135,3 +135,18 @@ func containsPass(text string) bool {
 	upper := strings.ToUpper(text)
 	return strings.Contains(upper, "PASS")
 }
+
+// ChannelInstructionForTest exports channelInstruction for testing.
+func ChannelInstructionForTest(channel string) string {
+	return channelInstruction(channel)
+}
+
+// RoleDescriptionForTest exports roleDescription for testing.
+func RoleDescriptionForTest(role agent.Role) string {
+	return roleDescription(role)
+}
+
+// RoleTitleForTest exports roleTitle for testing.
+func RoleTitleForTest(role agent.Role) string {
+	return roleTitle(role)
+}

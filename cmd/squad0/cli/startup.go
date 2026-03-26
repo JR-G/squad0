@@ -50,6 +50,10 @@ func seedConversationHistory(
 	conversation *orchestrator.ConversationEngine,
 	_ config.Config,
 ) {
+	if bot == nil || conversation == nil {
+		return
+	}
+
 	channels := []string{"engineering", "reviews", "feed"}
 
 	for _, channel := range channels {

@@ -245,3 +245,13 @@ func ConfigureGitHubAppToken(ctx context.Context, agents map[agent.Role]*agent.A
 func ApplyGitHubAppTokenWithURL(ctx context.Context, agents map[agent.Role]*agent.Agent, appID, installID, privateKey, apiURL string, out io.Writer) {
 	applyGitHubAppTokenWithURL(ctx, agents, appID, installID, privateKey, apiURL, out)
 }
+
+// SeedConversationHistory exports seedConversationHistory for testing.
+func SeedConversationHistory(
+	ctx context.Context,
+	bot *slack.Bot,
+	conversation *orchestrator.ConversationEngine,
+	cfg config.Config,
+) {
+	seedConversationHistory(ctx, bot, conversation, cfg)
+}

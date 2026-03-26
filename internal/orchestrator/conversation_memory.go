@@ -133,3 +133,8 @@ func containsProjectSignal(text string) bool {
 func ContainsProjectSignalForTest(text string) bool {
 	return containsProjectSignal(text)
 }
+
+// PropagateIfSignificantForTest exports propagateIfSignificant for testing.
+func (engine *ConversationEngine) PropagateIfSignificantForTest(ctx context.Context, role agent.Role, belief memory.Belief) {
+	engine.propagateIfSignificant(ctx, role, belief)
+}
