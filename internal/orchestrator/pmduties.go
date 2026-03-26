@@ -147,7 +147,8 @@ func (orch *Orchestrator) BreakDiscussionTie(ctx context.Context, channel string
 	}
 
 	prompt := "The team has been discussing an approach but hasn't reached consensus. " +
-		"Make the call. Start with 'Decision:' and be specific about what to build and what to skip.\n\n"
+		"Make the call. Start with 'Decision:' and be specific about what to build and what to skip. " +
+		"Use Slack formatting (*bold* not **bold**). No markdown headers. Use people's names.\n\n"
 
 	for _, line := range lines {
 		prompt += "> " + line + "\n"

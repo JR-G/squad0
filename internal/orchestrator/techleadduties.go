@@ -37,9 +37,9 @@ func (orch *Orchestrator) TechLeadDiscussionReview(ctx context.Context, channel,
 		}
 	}
 
-	prompt += "\nRespond with your architectural take in 2-4 sentences. " +
-		"Be specific about what you agree with and what concerns you. " +
-		"If you'd suggest changes, say what and why. " +
+	prompt += "\nRespond with your architectural take. Use people's names, not role IDs. "
+	prompt += rosterContext(orch.roster)
+	prompt += "Use Slack formatting (*bold* not **bold**). No markdown headers. " +
 		"End with a clear DECISION: statement summarising what the engineer should do."
 
 	response, err := techLead.QuickChat(ctx, prompt)
@@ -60,6 +60,22 @@ func (orch *Orchestrator) TechLeadDiscussionReview(ctx context.Context, channel,
 	if decision != "" {
 		orch.StoreArchitectureDecision(ctx, decision, ticket)
 	}
+}
+
+func rosterContext(roster map[agent.Role]string) string {
+	if len(roster) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(roster))
+	for role, name := range roster {
+		if name != "" && name != string(role) {
+			parts = append(parts, fmt.Sprintf("%s=%s", role, name))
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("Team names: %s. ", strings.Join(parts, ", "))
 }
 
 // ExtractDecisionLine finds a line starting with "DECISION:" (case-insensitive)

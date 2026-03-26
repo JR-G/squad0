@@ -50,11 +50,12 @@ func buildChatPrompt(role agent.Role, channel string, recentLines, beliefs []str
 	// Voice is the LAST instruction before the format rules — this is what
 	// the model pays most attention to. It shapes the actual response.
 	if voiceText != "" {
-		builder.WriteString("\n\n## HOW YOU TALK (this is critical — match this voice exactly)\n")
+		builder.WriteString("\n\nYou talk like this — match this voice exactly:\n")
 		builder.WriteString(voiceText)
 	}
 
 	builder.WriteString("\n\nRules: 1-3 sentences. ONLY what you'd type in Slack. No meta-commentary. No stage directions. No project descriptions.")
+	builder.WriteString("\nSlack formatting: use *bold* not **bold**, _italic_ not *italic*, ~strike~ not ~~strike~~. No markdown headers.")
 	builder.WriteString("\nIf you have nothing to add: PASS")
 
 	return builder.String()

@@ -37,12 +37,14 @@ func filterPassResponse(text string) string {
 
 const planPromptTemplate = `You're about to work on ticket %s: %s
 
-Before you start coding, post your planned approach to #engineering. Be specific:
+Post your planned approach to #engineering. Be specific:
 - What files will you create or modify?
 - What's your high-level approach?
 - Any concerns or questions for the team?
 
-Keep it to 3-5 sentences. Be concrete, not vague. Respond with ONLY your plan — no code, no markdown headers.
+Keep it to 3-5 sentences. Be concrete, not vague.
+Use Slack formatting: *bold* not **bold**. No markdown headers (no # or ##). No numbered lists with bold items.
+Respond with ONLY your plan.
 `
 
 // runDiscussionPhase posts the engineer's plan and waits for team
