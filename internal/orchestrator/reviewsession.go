@@ -315,16 +315,24 @@ func (orch *Orchestrator) startFixUp(ctx context.Context, prURL, ticket string, 
 	time.Sleep(orch.acknowledgePause())
 	orch.acknowledgeThread(ctx, engineerAgent, engineerRole, "engineering")
 
-	prompt := BuildFixUpPrompt(prURL, ticket)
+	handoffCtx := BuildHandoffContext(ctx, orch.handoffStore, ticket)
+	prompt := handoffCtx + BuildFixUpPrompt(prURL, ticket)
+	branch := fmt.Sprintf("feat/%s", strings.ToLower(ticket))
 
 	result, err := engineerAgent.ExecuteTask(ctx, prompt, nil, orch.cfg.TargetRepoDir)
 	if err != nil {
 		log.Printf("fix-up session failed for %s on %s: %v", engineerRole, ticket, err)
+		orch.writeHandoff(ctx, ticket, engineerRole, "failed", result.Transcript, branch)
 		orch.postAsRole(ctx, "engineering",
 			fmt.Sprintf("Hit a snag fixing up %s — will need another pass.", ticketLink),
 			engineerRole)
 		return
 	}
+
+	orch.writeHandoff(ctx, ticket, engineerRole, "completed", result.Transcript, branch)
+
+	// Pre-submission checklist — verify work is clean before re-review.
+	RunPreSubmitCheck(ctx, engineerAgent, orch.cfg.TargetRepoDir)
 
 	log.Printf("fix-up: %s completed fix-up for %s", engineerName, ticket)
 

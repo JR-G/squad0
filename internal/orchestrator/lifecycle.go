@@ -79,3 +79,20 @@ func (orch *Orchestrator) IsPaused(ctx context.Context, role agent.Role) bool {
 func (orch *Orchestrator) Status(ctx context.Context) ([]coordination.CheckIn, error) {
 	return orch.checkIns.GetAll(ctx)
 }
+
+func filterEngineers(roles []agent.Role) []agent.Role {
+	engineerRoles := map[agent.Role]bool{
+		agent.RoleEngineer1: true,
+		agent.RoleEngineer2: true,
+		agent.RoleEngineer3: true,
+	}
+
+	engineers := make([]agent.Role, 0, len(roles))
+	for _, role := range roles {
+		if engineerRoles[role] {
+			engineers = append(engineers, role)
+		}
+	}
+
+	return engineers
+}

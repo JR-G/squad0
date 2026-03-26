@@ -164,6 +164,12 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	}
 	orch.SetPipeline(pipelineStore)
 
+	handoffStore := pipeline.NewHandoffStore(coordDB)
+	if handoffErr := handoffStore.InitSchema(ctx); handoffErr != nil {
+		return fmt.Errorf("initialising handoffs: %w", handoffErr)
+	}
+	orch.SetHandoffStore(handoffStore)
+
 	projectEpisodeStore := memory.NewEpisodeStore(projectDB)
 	orch.SetProjectEpisodeStore(projectEpisodeStore)
 

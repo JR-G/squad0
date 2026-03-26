@@ -38,6 +38,7 @@ type Orchestrator struct {
 	cancelsMu           sync.Mutex
 	roster              map[agent.Role]string
 	pipelineStore       *pipeline.WorkItemStore
+	handoffStore        *pipeline.HandoffStore
 	projectEpisodeStore *memory.EpisodeStore
 	followedUp          map[int64]bool
 }
@@ -299,11 +300,14 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 	orch.acknowledgeThread(ctx, agentInstance, role, "engineering")
 
 	seanceCtx := BuildSeanceContext(ctx, orch.projectEpisodeStore, assignment.Ticket, role)
-	prompt := seanceCtx + discussion + BuildImplementationPrompt(assignment.Ticket, assignment.Description)
+	handoffCtx := BuildHandoffContext(ctx, orch.handoffStore, assignment.Ticket)
+	prompt := handoffCtx + seanceCtx + discussion + BuildImplementationPrompt(assignment.Ticket, assignment.Description)
+	branch := fmt.Sprintf("feat/%s", assignment.Ticket)
 	result, err := agentInstance.ExecuteTask(ctx, prompt, nil, workSession.Dir())
 	if err != nil {
 		log.Printf("session error for %s on %s: %v", role, assignment.Ticket, err)
 		orch.recordSessionEnd(role, assignment.Ticket, false)
+		orch.writeHandoff(ctx, assignment.Ticket, role, "failed", result.Transcript, branch)
 		orch.postAsRole(ctx, "engineering",
 			fmt.Sprintf("Hit an issue with %s — will need to pick this up again", assignment.Ticket),
 			role)
@@ -314,6 +318,15 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 	orch.recordSessionEnd(role, assignment.Ticket, true)
 
 	prURL := ExtractPRURL(result.Transcript)
+
+	handoffStatus := "completed"
+	if prURL == "" {
+		handoffStatus = "partial"
+	}
+	orch.writeHandoff(ctx, assignment.Ticket, role, handoffStatus, result.Transcript, branch)
+
+	// Pre-submission checklist — verify work is clean before review.
+	RunPreSubmitCheck(ctx, agentInstance, workSession.Dir())
 
 	if prURL != "" {
 		orch.setPipelinePR(ctx, assignment.WorkItemID, prURL)
@@ -335,6 +348,9 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 	orch.announceAsRole(ctx, "reviews", reviewMsg, role)
 
 	orch.storeProjectEpisode(ctx, role, assignment.Ticket, result.Transcript)
+
+	// Persist findings to Linear ticket (Gas Town #9).
+	go orch.PersistFindings(ctx, assignment.Ticket, result.Transcript)
 
 	pmAgent := orch.agents[agent.RolePM]
 	if pmAgent != nil {
@@ -479,21 +495,4 @@ func (orch *Orchestrator) writeMCPConfig(agentInstance *agent.Agent, workDir str
 	}
 
 	agentInstance.MCPConfigPath = filepath.Join(workDir, ".mcp.json")
-}
-
-func filterEngineers(roles []agent.Role) []agent.Role {
-	engineerRoles := map[agent.Role]bool{
-		agent.RoleEngineer1: true,
-		agent.RoleEngineer2: true,
-		agent.RoleEngineer3: true,
-	}
-
-	engineers := make([]agent.Role, 0, len(roles))
-	for _, role := range roles {
-		if engineerRoles[role] {
-			engineers = append(engineers, role)
-		}
-	}
-
-	return engineers
 }
