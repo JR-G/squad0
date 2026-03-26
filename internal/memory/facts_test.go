@@ -232,3 +232,53 @@ func TestFactStore_TopBeliefs_ReturnsOrderedByConfidence(t *testing.T) {
 	assert.Equal(t, "high", beliefs[0].Content)
 	assert.Equal(t, "mid", beliefs[1].Content)
 }
+
+func TestFactStore_TopBeliefs_TemporalDecay_OldBeliefRanksLower(t *testing.T) {
+	t.Parallel()
+
+	db := openTestDB(t)
+	factStore := memory.NewFactStore(db)
+	ctx := context.Background()
+
+	// Create a high-confidence belief and age it 90 days.
+	oldID, _ := factStore.CreateBelief(ctx, memory.Belief{Content: "old wisdom", Confidence: 0.9})
+	_, _ = db.RawDB().ExecContext(ctx,
+		"UPDATE beliefs SET created_at = datetime('now', '-90 days') WHERE id = ?", oldID)
+
+	// Create a lower-confidence recent belief.
+	_, _ = factStore.CreateBelief(ctx, memory.Belief{Content: "fresh insight", Confidence: 0.5})
+
+	beliefs, err := factStore.TopBeliefs(ctx, 2)
+
+	require.NoError(t, err)
+	require.Len(t, beliefs, 2)
+	// The fresh insight should rank higher because 90-day decay reduces
+	// 0.9 to ~0.9 * 0.125 = 0.11, which is below 0.5.
+	assert.Equal(t, "fresh insight", beliefs[0].Content)
+	assert.Equal(t, "old wisdom", beliefs[1].Content)
+}
+
+func TestFactStore_TopBeliefs_RecentlyConfirmed_ResistsDecay(t *testing.T) {
+	t.Parallel()
+
+	db := openTestDB(t)
+	factStore := memory.NewFactStore(db)
+	ctx := context.Background()
+
+	// Create a belief that was created 90 days ago but confirmed yesterday.
+	oldButConfirmedID, _ := factStore.CreateBelief(ctx, memory.Belief{Content: "confirmed old", Confidence: 0.9})
+	_, _ = db.RawDB().ExecContext(ctx,
+		"UPDATE beliefs SET created_at = datetime('now', '-90 days'), last_confirmed_at = datetime('now', '-1 day') WHERE id = ?",
+		oldButConfirmedID)
+
+	// Create a new belief with lower confidence.
+	_, _ = factStore.CreateBelief(ctx, memory.Belief{Content: "new but weak", Confidence: 0.4})
+
+	beliefs, err := factStore.TopBeliefs(ctx, 2)
+
+	require.NoError(t, err)
+	require.Len(t, beliefs, 2)
+	// The confirmed old belief decays from last_confirmed_at (1 day ago),
+	// not created_at (90 days ago). So it stays near 0.9 and beats 0.4.
+	assert.Equal(t, "confirmed old", beliefs[0].Content)
+}

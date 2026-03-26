@@ -3,6 +3,8 @@ package memory
 import (
 	"context"
 	"fmt"
+	"math"
+	"sort"
 	"time"
 )
 
@@ -240,19 +242,57 @@ func (store *FactStore) ContradictBelief(ctx context.Context, id int64) error {
 	return nil
 }
 
-// TopBeliefs returns the N highest-confidence beliefs.
+// BeliefDecayHalfLifeDays controls how fast beliefs lose relevance.
+// After 30 days without confirmation, effective confidence drops to 50%.
+const BeliefDecayHalfLifeDays = 30.0
+
+// TopBeliefs returns the N highest-confidence beliefs with temporal
+// decay applied. Recently confirmed beliefs resist decay.
 func (store *FactStore) TopBeliefs(ctx context.Context, limit int) ([]Belief, error) {
 	rows, err := store.db.RawDB().QueryContext(ctx,
 		`SELECT id, content, confidence, confirmations, contradictions, last_confirmed_at, created_at,
 		 last_accessed_at, access_count, source_outcome
-		 FROM beliefs ORDER BY confidence DESC LIMIT ?`, limit,
+		 FROM beliefs ORDER BY confidence DESC LIMIT ?`, limit*3,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("querying top beliefs: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
-	return scanBeliefs(rows)
+	all, err := scanBeliefs(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	return rankByDecayedConfidence(all, limit), nil
+}
+
+// rankByDecayedConfidence sorts beliefs by confidence with temporal
+// decay applied, then returns the top N.
+func rankByDecayedConfidence(beliefs []Belief, limit int) []Belief {
+	now := time.Now()
+
+	sort.Slice(beliefs, func(i, j int) bool {
+		return decayedConfidence(beliefs[i], now) > decayedConfidence(beliefs[j], now)
+	})
+
+	if len(beliefs) > limit {
+		return beliefs[:limit]
+	}
+	return beliefs
+}
+
+func decayedConfidence(belief Belief, now time.Time) float64 {
+	anchor := belief.CreatedAt
+	if belief.LastConfirmedAt != nil {
+		anchor = *belief.LastConfirmedAt
+	}
+
+	ageDays := now.Sub(anchor).Hours() / 24.0
+	lambda := 0.693 / BeliefDecayHalfLifeDays // ln(2) / half_life
+	decay := math.Exp(-lambda * ageDays)
+
+	return belief.Confidence * decay
 }
 
 // RecordFactAccess bumps the access count and last_accessed_at for a fact.
