@@ -12,6 +12,10 @@ import (
 
 const staleWorkThreshold = 30 * time.Minute
 
+// staleApprovedThreshold is how long an approved PR can sit before
+// the PM nudges the engineer to merge.
+const staleApprovedThreshold = 15 * time.Minute
+
 // RunPMDuties performs the PM's active pipeline management tasks:
 // checks for stale work items and follows up, verifies board state.
 // Called once per tick after assignment.
@@ -103,29 +107,40 @@ func (orch *Orchestrator) checkStaleForEngineer(ctx context.Context, role agent.
 	}
 
 	for _, item := range openItems {
-		if item.Stage != pipeline.StageWorking {
-			continue
-		}
+		orch.nudgeStaleItem(ctx, role, item)
+	}
+}
 
-		if orch.followedUp[item.ID] {
-			continue
-		}
+func (orch *Orchestrator) nudgeStaleItem(ctx context.Context, role agent.Role, item pipeline.WorkItem) {
+	if orch.followedUp[item.ID] {
+		return
+	}
 
-		age := time.Since(item.UpdatedAt)
+	age := time.Since(item.UpdatedAt)
+	name := orch.NameForRole(role)
+	ticketLink := orch.cfg.Links.TicketLink(item.Ticket)
+
+	switch item.Stage { //nolint:exhaustive // only nudging for specific stages
+	case pipeline.StageWorking:
 		if age <= staleWorkThreshold {
-			continue
+			return
 		}
-
 		orch.followedUp[item.ID] = true
-
-		name := orch.NameForRole(role)
-		ticketLink := orch.cfg.Links.TicketLink(item.Ticket)
 		orch.postAsRole(ctx, "engineering",
 			fmt.Sprintf("Hey %s, how's %s going? It's been %s with no PR. Any blockers?",
 				name, ticketLink, formatDuration(age)),
 			agent.RolePM)
-
 		log.Printf("pm: followed up on stale work item %s (%s, age: %s)", item.Ticket, role, age)
+
+	case pipeline.StageApproved:
+		if age <= staleApprovedThreshold {
+			return
+		}
+		orch.followedUp[item.ID] = true
+		orch.postAsRole(ctx, "reviews",
+			fmt.Sprintf("Hey %s, %s is approved — ready to merge?", name, ticketLink),
+			agent.RolePM)
+		log.Printf("pm: nudged stale approved item %s (%s, age: %s)", item.Ticket, role, age)
 	}
 }
 

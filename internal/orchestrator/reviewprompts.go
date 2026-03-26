@@ -111,3 +111,28 @@ func BuildFixUpPrompt(prURL, ticket string) string {
 		ticket, prURL,
 		prURL, prURL, prURL, prURL, prURL)
 }
+
+const engineerMergePromptTemplate = `Your PR for ticket %s has been approved. Finish it up and merge.
+
+## PR
+%s
+
+## Instructions
+1. Read any remaining review comments: gh pr view %s --comments
+2. Address any minor comments if needed (small fixes only — the PR is approved)
+3. Rebase if behind main: git fetch origin main && git rebase origin/main
+4. Check CI: gh pr checks %s
+5. Merge: gh pr merge %s --squash --delete-branch
+6. Verify merged: gh pr view %s --json state --jq .state
+
+If the merge fails due to conflicts, rebase and try again.
+If CI is failing, fix and push before merging.
+`
+
+// BuildEngineerMergePrompt creates the prompt for an engineer to merge
+// their own approved PR.
+func BuildEngineerMergePrompt(prURL, ticket string) string {
+	return fmt.Sprintf(engineerMergePromptTemplate,
+		ticket, prURL,
+		prURL, prURL, prURL, prURL)
+}

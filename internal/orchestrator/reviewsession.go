@@ -156,45 +156,112 @@ func (orch *Orchestrator) runReview(ctx context.Context, reviewer *agent.Agent, 
 	switch outcome {
 	case ReviewApproved:
 		orch.forceApproval(ctx, reviewer, prURL, ticket)
-
-		archOutcome := orch.archReviewWithTimeout(ctx, prURL, ticket, engineerRole)
-		if archOutcome == ReviewChangesRequested {
-			orch.handleChangesRequested(ctx, prURL, ticket, workItemID, engineerRole, "")
-			return
-		}
-
 		orch.advancePipeline(ctx, workItemID, pipeline.StageApproved)
-		orch.announceAsRole(ctx, "reviews",
-			fmt.Sprintf("Approved %s — %s", ticket, orch.cfg.Links.PRLink(prURL)),
-			agent.RoleReviewer)
 
-		orch.mergeAndComplete(ctx, prURL, ticket, workItemID, engineerRole)
+		engineerName := orch.NameForRole(engineerRole)
+		prLink := orch.cfg.Links.PRLink(prURL)
+		orch.announceAsRole(ctx, "reviews",
+			fmt.Sprintf("Approved %s — %s", ticket, prLink),
+			agent.RoleReviewer)
+		orch.postAsRole(ctx, "reviews",
+			fmt.Sprintf("%s, your PR is approved. Address any remaining comments and merge when ready. %s", engineerName, prLink),
+			agent.RolePM)
+
+		// Architecture review runs in the background — it does not block the merge.
+		go orch.archReviewWithTimeout(ctx, prURL, ticket, engineerRole)
+
+		orch.startEngineerMerge(ctx, prURL, ticket, workItemID, engineerRole)
 
 	case ReviewChangesRequested:
 		orch.handleChangesRequested(ctx, prURL, ticket, workItemID, engineerRole, "")
 	}
 }
 
-// MergeForTest exports mergeAndComplete for testing.
+// StartEngineerMergeForTest exports startEngineerMerge for testing.
+func (orch *Orchestrator) StartEngineerMergeForTest(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role) {
+	orch.startEngineerMerge(ctx, prURL, ticket, workItemID, engineerRole)
+}
+
+// MergeForTest exports startEngineerMerge for backwards-compatible testing.
 func (orch *Orchestrator) MergeForTest(ctx context.Context, prURL, ticket string, workItemID int64) {
-	orch.mergeAndComplete(ctx, prURL, ticket, workItemID, "")
+	orch.startEngineerMerge(ctx, prURL, ticket, workItemID, "")
 }
 
-// MergeWithEngineerForTest exports mergeAndComplete with engineer role for testing.
+// MergeWithEngineerForTest exports startEngineerMerge with engineer role for testing.
 func (orch *Orchestrator) MergeWithEngineerForTest(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role) {
-	orch.mergeAndComplete(ctx, prURL, ticket, workItemID, engineerRole)
+	orch.startEngineerMerge(ctx, prURL, ticket, workItemID, engineerRole)
 }
 
-func (orch *Orchestrator) mergeAndComplete(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role) {
-	mergeAgent := orch.agents[agent.RolePM]
-	if mergeAgent == nil {
+// startEngineerMerge gives the engineer ownership of merging their own
+// approved PR. The engineer reads remaining comments, rebases if needed,
+// checks CI, and merges via a DirectSession.
+func (orch *Orchestrator) startEngineerMerge(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role) {
+	engineerAgent, ok := orch.agents[engineerRole]
+	if !ok {
+		log.Printf("no agent for %s to merge PR — falling back to PM", engineerRole)
+		orch.pmFallbackMerge(ctx, prURL, ticket, workItemID, engineerRole)
 		return
 	}
 
-	// Step 1: Verify review approval — single-purpose prompt.
-	approvalStatus := orch.checkApprovalStatus(ctx, mergeAgent, prURL)
+	_ = orch.checkIns.Upsert(ctx, coordination.CheckIn{
+		Agent:         engineerRole,
+		Ticket:        ticket,
+		Status:        coordination.StatusWorking,
+		FilesTouching: []string{},
+		Message:       fmt.Sprintf("merging %s", ticket),
+	})
+	defer func() { _ = orch.checkIns.SetIdle(ctx, engineerRole) }()
+
+	prompt := BuildEngineerMergePrompt(prURL, ticket)
+	result, err := engineerAgent.DirectSession(ctx, prompt)
+	if err != nil {
+		log.Printf("engineer merge session failed for %s: %v", ticket, err)
+		orch.announceAsRole(ctx, "reviews",
+			fmt.Sprintf("Merge session failed for %s — needs manual merge", ticket),
+			agent.RolePM)
+		return
+	}
+
+	pmAgent := orch.agents[agent.RolePM]
+	verifyAgent := engineerAgent
+	if pmAgent != nil {
+		verifyAgent = pmAgent
+	}
+
+	if !orch.verifyMerged(ctx, verifyAgent, prURL) {
+		log.Printf("engineer merge failed for %s: PR not merged after session", ticket)
+		engineerName := orch.NameForRole(engineerRole)
+		orch.postAsRole(ctx, "reviews",
+			fmt.Sprintf("%s merge failed — %s, can you check and retry?", ticket, engineerName),
+			agent.RolePM)
+		return
+	}
+
+	_ = result
+
+	orch.advancePipeline(ctx, workItemID, pipeline.StageMerged)
+	if pmAgent != nil {
+		go MoveTicketState(ctx, pmAgent, ticket, "Done")
+	}
+
+	ticketLink := orch.cfg.Links.TicketLink(ticket)
+	prLink := orch.cfg.Links.PRLink(prURL)
+	orch.announceAsRole(ctx, "feed",
+		fmt.Sprintf("Merged %s — %s", ticketLink, prLink),
+		engineerRole)
+}
+
+// pmFallbackMerge is used when the engineer agent is not available.
+// The PM runs the merge steps directly as a last resort.
+func (orch *Orchestrator) pmFallbackMerge(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role) {
+	pmAgent := orch.agents[agent.RolePM]
+	if pmAgent == nil {
+		return
+	}
+
+	// Verify approval is registered on GitHub before attempting merge.
+	approvalStatus := orch.checkApprovalStatus(ctx, pmAgent, prURL)
 	if approvalStatus == approvalStatusNotApproved {
-		log.Printf("merge blocked for %s: PR not approved on GitHub, triggering re-approval", ticket)
 		orch.retryApproval(ctx, prURL, ticket, workItemID, engineerRole)
 		return
 	}
@@ -206,26 +273,22 @@ func (orch *Orchestrator) mergeAndComplete(ctx context.Context, prURL, ticket st
 		return
 	}
 
-	// Step 2: Merge — single-purpose prompt.
-	if !orch.executeMerge(ctx, mergeAgent, prURL, ticket, engineerRole) {
-		// Merge failed — send engineer back to fix (rebase, CI, etc.)
-		orch.startFixUp(ctx, prURL, ticket, workItemID, engineerRole)
+	if !orch.executeMerge(ctx, pmAgent, prURL, ticket, engineerRole) {
+		orch.announceAsRole(ctx, "reviews",
+			fmt.Sprintf("%s approved but merge failed — needs manual merge", ticket),
+			agent.RolePM)
 		return
 	}
 
-	// Step 3: Verify the PR is actually merged.
-	if !orch.verifyMerged(ctx, mergeAgent, prURL) {
-		log.Printf("merge failed for %s: PR not merged — likely conflicts. Sending %s back to rebase.", ticket, engineerRole)
-		engineerName := orch.NameForRole(engineerRole)
-		orch.postAsRole(ctx, "reviews",
-			fmt.Sprintf("%s merge failed — probably conflicts with main. %s, can you rebase and push?", ticket, engineerName),
+	if !orch.verifyMerged(ctx, pmAgent, prURL) {
+		orch.announceAsRole(ctx, "reviews",
+			fmt.Sprintf("%s merge attempted but PR is still open — needs manual merge", ticket),
 			agent.RolePM)
-		orch.startFixUp(ctx, prURL, ticket, workItemID, engineerRole)
 		return
 	}
 
 	orch.advancePipeline(ctx, workItemID, pipeline.StageMerged)
-	go MoveTicketState(ctx, mergeAgent, ticket, "Done")
+	go MoveTicketState(ctx, pmAgent, ticket, "Done")
 
 	ticketLink := orch.cfg.Links.TicketLink(ticket)
 	prLink := orch.cfg.Links.PRLink(prURL)

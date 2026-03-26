@@ -133,14 +133,18 @@ func (orch *Orchestrator) MergeAfterRetryForTest(ctx context.Context, prURL, tic
 	orch.mergeAfterRetry(ctx, prURL, ticket, workItemID, engineerRole)
 }
 
-// mergeAfterRetry is mergeAndComplete without the retryApproval fallback.
+// mergeAfterRetry verifies re-approval landed and then hands the
+// merge to the engineer. Since approval was just re-submitted, we
+// skip the approval check inside pmFallbackMerge by attempting the
+// engineer path first. If the engineer is unavailable, the PM
+// executes the merge directly (approval already verified).
 func (orch *Orchestrator) mergeAfterRetry(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role) {
-	mergeAgent := orch.agents[agent.RolePM]
-	if mergeAgent == nil {
+	pmAgent := orch.agents[agent.RolePM]
+	if pmAgent == nil {
 		return
 	}
 
-	approvalStatus := orch.checkApprovalStatus(ctx, mergeAgent, prURL)
+	approvalStatus := orch.checkApprovalStatus(ctx, pmAgent, prURL)
 	if approvalStatus != approvalStatusApproved {
 		log.Printf("merge blocked for %s after retry: still not approved (%s)", ticket, approvalStatus)
 		orch.announceAsRole(ctx, "reviews",
@@ -149,11 +153,18 @@ func (orch *Orchestrator) mergeAfterRetry(ctx context.Context, prURL, ticket str
 		return
 	}
 
-	if !orch.executeMerge(ctx, mergeAgent, prURL, ticket, engineerRole) {
+	// Engineer available — let them merge.
+	if _, ok := orch.agents[engineerRole]; ok {
+		orch.startEngineerMerge(ctx, prURL, ticket, workItemID, engineerRole)
 		return
 	}
 
-	if !orch.verifyMerged(ctx, mergeAgent, prURL) {
+	// No engineer — PM executes directly (approval already verified above).
+	if !orch.executeMerge(ctx, pmAgent, prURL, ticket, engineerRole) {
+		return
+	}
+
+	if !orch.verifyMerged(ctx, pmAgent, prURL) {
 		log.Printf("merge verification failed for %s after retry", ticket)
 		orch.announceAsRole(ctx, "reviews",
 			fmt.Sprintf("%s merge attempted after retry but PR is still open — needs manual merge", ticket),
@@ -162,7 +173,7 @@ func (orch *Orchestrator) mergeAfterRetry(ctx context.Context, prURL, ticket str
 	}
 
 	orch.advancePipeline(ctx, workItemID, pipeline.StageMerged)
-	go MoveTicketState(ctx, mergeAgent, ticket, "Done")
+	go MoveTicketState(ctx, pmAgent, ticket, "Done")
 
 	ticketLink := orch.cfg.Links.TicketLink(ticket)
 	prLink := orch.cfg.Links.PRLink(prURL)

@@ -144,7 +144,7 @@ func (orch *Orchestrator) resumeWorkItem(ctx context.Context, item pipeline.Work
 			orch.wg.Add(1)
 			go func() {
 				defer orch.wg.Done()
-				orch.mergeAndComplete(ctx, item.PRURL, item.Ticket, item.ID, item.Engineer)
+				orch.startEngineerMerge(ctx, item.PRURL, item.Ticket, item.ID, item.Engineer)
 			}()
 		}
 
