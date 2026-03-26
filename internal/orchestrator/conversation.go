@@ -195,14 +195,19 @@ func (engine *ConversationEngine) IsQuiet(channel string, threshold time.Duratio
 // BreakSilence is called periodically to have an agent start a
 // conversation when channels have been quiet.
 func (engine *ConversationEngine) BreakSilence(ctx context.Context) {
+	engine.breakSilenceIn(ctx, "engineering", 10*time.Minute)
+	engine.breakSilenceIn(ctx, "chitchat", 15*time.Minute)
+}
+
+func (engine *ConversationEngine) breakSilenceIn(ctx context.Context, channel string, threshold time.Duration) {
 	engine.mu.Lock()
-	state := engine.getOrCreateChannel("engineering")
+	state := engine.getOrCreateChannel(channel)
 	timeSinceLast := time.Since(state.lastMessage)
 	recentCopy := make([]string, len(state.recentLines))
 	copy(recentCopy, state.recentLines)
 	engine.mu.Unlock()
 
-	if timeSinceLast < 10*time.Minute {
+	if timeSinceLast < threshold {
 		return
 	}
 
@@ -212,7 +217,7 @@ func (engine *ConversationEngine) BreakSilence(ctx context.Context) {
 		return
 	}
 
-	engine.tryRespondInThread(ctx, "engineering", role, recentCopy, "")
+	engine.tryRespondInThread(ctx, channel, role, recentCopy, "")
 }
 
 // RecentMessages returns the conversation context for a channel.

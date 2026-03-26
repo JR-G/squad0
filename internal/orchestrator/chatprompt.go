@@ -41,7 +41,8 @@ func buildChatPrompt(role agent.Role, channel string, recentLines, beliefs []str
 		lastMessage = recentLines[len(recentLines)-1]
 	}
 
-	builder.WriteString("\nRespond to this conversation.")
+	builder.WriteString("\n")
+	builder.WriteString(channelInstruction(channel))
 
 	if lastMessage != "" {
 		fmt.Fprintf(&builder, " The most recent message is: \"%s\" — engage with it directly.", lastMessage)
@@ -111,6 +112,13 @@ func roleTitle(role agent.Role) string {
 		return "Designer"
 	}
 	return string(role)
+}
+
+func channelInstruction(channel string) string {
+	if channel == "chitchat" {
+		return "This is the casual channel — talk about anything except work. Music, food, hot takes, weekend plans, something funny, a random thought. Be yourself."
+	}
+	return "Respond to this conversation."
 }
 
 // ContainsQuestionForTest exports containsQuestion for testing.
