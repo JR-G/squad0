@@ -127,8 +127,9 @@ func (orch *Orchestrator) initialiseCheckIns(ctx context.Context) error {
 func (orch *Orchestrator) tick(ctx context.Context) {
 	log.Printf("tick: work_enabled=%v", orch.cfg.WorkEnabled)
 
+	orch.breakSilence(ctx)
+
 	if !orch.cfg.WorkEnabled {
-		orch.breakSilence(ctx)
 		return
 	}
 	orch.RunWitnessScan(ctx)
