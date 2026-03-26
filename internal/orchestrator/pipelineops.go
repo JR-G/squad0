@@ -178,12 +178,32 @@ func (orch *Orchestrator) filterByWIP(ctx context.Context, roles []agent.Role) [
 			available = append(available, role)
 			continue
 		}
-		if len(openItems) > 0 {
-			log.Printf("tick: skipping %s — has %d open work items", role, len(openItems))
+
+		if len(openItems) == 0 {
+			available = append(available, role)
 			continue
 		}
-		available = append(available, role)
+
+		// Engineer has open items but is idle — the item is stuck.
+		// Resume it instead of blocking new work forever.
+		if orch.isRoleIdle(ctx, role) {
+			log.Printf("tick: %s is idle but has stale work — resuming", role)
+			for _, item := range openItems {
+				orch.resumeWorkItem(ctx, item)
+			}
+			continue
+		}
+
+		log.Printf("tick: skipping %s — has %d open work items", role, len(openItems))
 	}
 
 	return available
+}
+
+func (orch *Orchestrator) isRoleIdle(ctx context.Context, role agent.Role) bool {
+	checkIn, err := orch.checkIns.GetByAgent(ctx, role)
+	if err != nil {
+		return true // No check-in row means idle.
+	}
+	return checkIn.Status == "idle"
 }
