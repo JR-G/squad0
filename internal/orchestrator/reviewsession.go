@@ -157,7 +157,7 @@ func (orch *Orchestrator) runReview(ctx context.Context, reviewer *agent.Agent, 
 	case ReviewApproved:
 		orch.forceApproval(ctx, reviewer, prURL, ticket)
 
-		archOutcome := orch.RunConversationalArchReview(ctx, prURL, ticket, engineerRole)
+		archOutcome := orch.archReviewWithTimeout(ctx, prURL, ticket, engineerRole)
 		if archOutcome == ReviewChangesRequested {
 			orch.handleChangesRequested(ctx, prURL, ticket, workItemID, engineerRole, "")
 			return
@@ -228,6 +228,34 @@ func (orch *Orchestrator) mergeAndComplete(ctx context.Context, prURL, ticket st
 	orch.announceAsRole(ctx, "feed",
 		fmt.Sprintf("Merged %s — %s", ticketLink, prLink),
 		agent.RolePM)
+}
+
+const archReviewTimeout = 2 * time.Minute
+
+// archReviewWithTimeout runs the architecture review with a deadline.
+// If the Tech Lead doesn't respond within 2 minutes, the review is
+// skipped and the merge proceeds. A stuck Opus session should never
+// block the pipeline indefinitely.
+func (orch *Orchestrator) archReviewWithTimeout(ctx context.Context, prURL, ticket string, engineerRole agent.Role) ReviewOutcome {
+	resultCh := make(chan ReviewOutcome, 1)
+
+	archCtx, cancel := context.WithTimeout(ctx, archReviewTimeout)
+	defer cancel()
+
+	go func() {
+		resultCh <- orch.RunConversationalArchReview(archCtx, prURL, ticket, engineerRole)
+	}()
+
+	select {
+	case outcome := <-resultCh:
+		return outcome
+	case <-archCtx.Done():
+		log.Printf("arch review timed out for %s after %s — proceeding with merge", ticket, archReviewTimeout)
+		orch.announceAsRole(ctx, "reviews",
+			fmt.Sprintf("Architecture review for %s timed out — proceeding with merge. Sable, please review post-merge.", ticket),
+			agent.RolePM)
+		return ReviewApproved
+	}
 }
 
 // RunArchitectureReviewForTest exports runArchitectureReview for testing.
