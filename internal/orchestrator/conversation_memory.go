@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/JR-G/squad0/internal/agent"
 	"github.com/JR-G/squad0/internal/memory"
@@ -137,4 +138,25 @@ func ContainsProjectSignalForTest(text string) bool {
 // PropagateIfSignificantForTest exports propagateIfSignificant for testing.
 func (engine *ConversationEngine) PropagateIfSignificantForTest(ctx context.Context, role agent.Role, belief memory.Belief) {
 	engine.propagateIfSignificant(ctx, role, belief)
+}
+
+func (engine *ConversationEngine) maybeStoreConcerns(role agent.Role, text string) {
+	if engine.concerns == nil {
+		return
+	}
+	engine.concerns.AddConcernsFromText(role, text, "")
+}
+
+// SeedHistory populates a channel's recent messages without triggering
+// agent responses. Used at startup to restore conversation context
+// from Slack history so agents know what was discussed before a restart.
+func (engine *ConversationEngine) SeedHistory(channel string, messages []string) {
+	engine.mu.Lock()
+	defer engine.mu.Unlock()
+
+	state := engine.getOrCreateChannel(channel)
+	for _, msg := range messages {
+		state.recentLines = appendRecent(state.recentLines, msg)
+	}
+	state.lastMessage = time.Now()
 }

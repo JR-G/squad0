@@ -31,6 +31,7 @@ func newCommandDispatcher(
 func (dispatcher *commandDispatcher) handleMessage(ctx context.Context, msg slack.IncomingMessage) {
 	log.Printf("message received: channel=%s text=%q isDM=%v", msg.Channel, msg.Text, msg.IsDM)
 
+	// Commands and DMs have priority — process immediately, never queued.
 	if msg.IsDM {
 		dispatcher.handleDM(ctx, msg)
 		return
@@ -41,6 +42,7 @@ func (dispatcher *commandDispatcher) handleMessage(ctx context.Context, msg slac
 		return
 	}
 
+	// Conversation messages run async so they don't block commands.
 	if dispatcher.conversation == nil {
 		return
 	}

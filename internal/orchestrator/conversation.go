@@ -120,6 +120,12 @@ func (engine *ConversationEngine) OnThreadMessage(ctx context.Context, channel, 
 	// Time-based decay: respond if conversation is alive.
 	baseCount := decideBaseResponders(timeSinceLast, isHumanMessage(sender))
 
+	// Chitchat is low-priority — max 1 responder so it doesn't
+	// dominate agent time or compete with work channels.
+	if channel == "chitchat" && baseCount > 1 {
+		baseCount = 1
+	}
+
 	// Questions always get at least one response.
 	if baseCount == 0 && containsQuestion(text) {
 		baseCount = 1
@@ -198,7 +204,11 @@ func (engine *ConversationEngine) IsQuiet(channel string, threshold time.Duratio
 // conversation when channels have been quiet.
 func (engine *ConversationEngine) BreakSilence(ctx context.Context) {
 	engine.breakSilenceIn(ctx, "engineering", 10*time.Minute)
-	engine.breakSilenceIn(ctx, "chitchat", 15*time.Minute)
+	// Chitchat only breaks silence when work channels are quiet too —
+	// prevents agents chatting when they should be working.
+	if engine.IsQuiet("engineering", 5*time.Minute) && engine.IsQuiet("reviews", 5*time.Minute) {
+		engine.breakSilenceIn(ctx, "chitchat", 15*time.Minute)
+	}
 }
 
 func (engine *ConversationEngine) breakSilenceIn(ctx context.Context, channel string, threshold time.Duration) {
@@ -428,32 +438,11 @@ func (engine *ConversationEngine) SetConcernTracker(tracker *ConcernTracker) {
 	engine.concerns = tracker
 }
 
-func (engine *ConversationEngine) maybeStoreConcerns(role agent.Role, text string) {
-	if engine.concerns == nil {
-		return
-	}
-	engine.concerns.AddConcernsFromText(role, text, "")
-}
-
 // SetVoicesMap sets the voice text for each role directly. Used in testing.
 func (engine *ConversationEngine) SetVoicesMap(voices map[agent.Role]string) {
 	engine.mu.Lock()
 	defer engine.mu.Unlock()
 	engine.voices = voices
-}
-
-// SeedHistory populates a channel's recent messages without triggering
-// agent responses. Used at startup to restore conversation context
-// from Slack history so agents know what was discussed before a restart.
-func (engine *ConversationEngine) SeedHistory(channel string, messages []string) {
-	engine.mu.Lock()
-	defer engine.mu.Unlock()
-
-	state := engine.getOrCreateChannel(channel)
-	for _, msg := range messages {
-		state.recentLines = appendRecent(state.recentLines, msg)
-	}
-	state.lastMessage = time.Now()
 }
 
 // decideBaseResponders uses time-based decay. Recent messages get full
