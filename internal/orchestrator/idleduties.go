@@ -10,10 +10,10 @@ import (
 	"github.com/JR-G/squad0/internal/pipeline"
 )
 
-// RunIdleDuties engages idle agents with productive activities that
-// are not ticket implementation: informal PR reviews, UX observations,
-// and architectural commentary. Each item is commented on at most once
-// per orchestrator lifetime to avoid noise.
+// RunIdleDuties engages idle agents with real work: reading PR diffs,
+// posting substantive code observations, and contributing to reviews.
+// Uses DirectSession so agents have gh CLI access to read actual code.
+// Each PR is reviewed at most once per agent per orchestrator lifetime.
 func (orch *Orchestrator) RunIdleDuties(ctx context.Context, idleRoles []agent.Role) {
 	if orch.pipelineStore == nil {
 		return
@@ -37,107 +37,100 @@ func (orch *Orchestrator) tryIdleDuty(ctx context.Context, role agent.Role, open
 
 	orch.markCommented(role, item.ID)
 
-	prompt := orch.buildIdlePrompt(role, item)
-	if prompt == "" {
-		return
-	}
-
 	agentInstance, ok := orch.agents[role]
 	if !ok {
 		return
 	}
 
-	response, err := agentInstance.QuickChat(ctx, prompt)
-	if err != nil {
-		log.Printf("idle duty: %s QuickChat failed: %v", role, err)
+	prompt := buildIdleReviewPrompt(role, item, orch.NameForRole(item.Engineer))
+	if prompt == "" {
 		return
 	}
 
-	response = filterPassResponse(response)
+	// DirectSession — the agent can run gh commands to read the actual diff.
+	result, err := agentInstance.DirectSession(ctx, prompt)
+	if err != nil {
+		log.Printf("idle duty: %s session failed: %v", role, err)
+		return
+	}
+
+	response := filterPassResponse(result.Transcript)
 	if response == "" {
 		return
 	}
 
-	log.Printf("idle duty: %s commenting on %s's PR for %s", role, item.Engineer, item.Ticket)
-	orch.postAsRole(ctx, "engineering", response, role)
+	log.Printf("idle duty: %s reviewed %s's PR for %s", role, item.Engineer, item.Ticket)
+
+	// Post the summary to Slack so the team sees it.
+	summary := agent.TruncateSummary(response, 500)
+	orch.postAsRole(ctx, "engineering", summary, role)
 }
 
-func (orch *Orchestrator) pickUncommentedPR(role agent.Role, openPRs []pipeline.WorkItem) *pipeline.WorkItem {
-	for idx := range openPRs {
-		item := &openPRs[idx]
-
-		// Don't comment on your own PR.
-		if item.Engineer == role {
-			continue
-		}
-
-		if orch.hasCommented(role, item.ID) {
-			continue
-		}
-
-		return item
-	}
-	return nil
-}
-
-func (orch *Orchestrator) buildIdlePrompt(role agent.Role, item *pipeline.WorkItem) string {
-	engineerName := orch.NameForRole(item.Engineer)
-
-	// Build context so agents know what the PR is about.
-	context := fmt.Sprintf("%s is working on %s (stage: %s, branch: %s).",
-		engineerName, item.Ticket, item.Stage, item.Branch)
-	if item.PRURL != "" {
-		context += fmt.Sprintf(" PR: %s", item.PRURL)
-	}
-
-	rules := "You are posting this directly to Slack as yourself. " +
-		"Do NOT say you can't access anything. Do NOT draft for someone else. " +
-		"Respond with ONLY what you'd type. 1-2 sentences. " +
-		"Use " + engineerName + "'s name. No markdown headers."
+func buildIdleReviewPrompt(role agent.Role, item *pipeline.WorkItem, engineerName string) string {
+	base := fmt.Sprintf(
+		"%s has an open PR for %s.\n\n"+
+			"1. Read the diff: gh pr diff %s\n"+
+			"2. Read the description: gh pr view %s\n\n",
+		engineerName, item.Ticket, item.PRURL, item.PRURL)
 
 	switch {
 	case isEngineerRole(role):
-		return fmt.Sprintf(
-			"%s\n\nWrite a casual comment — something encouraging, a question, or an observation. %s",
-			context, rules,
-		)
+		return base +
+			"You're an engineer casually reviewing a teammate's PR. " +
+			"Post ONE specific observation as a PR comment:\n" +
+			"gh pr comment " + item.PRURL + " --body 'your observation'\n\n" +
+			"Be specific — reference a file, function, or pattern you noticed. " +
+			"Then write a short Slack summary of what you observed. " +
+			"Use " + engineerName + "'s name. 1-3 sentences."
 
 	case role == agent.RoleDesigner:
-		return fmt.Sprintf(
-			"%s\n\nIf this might touch the UI, write a brief UX observation. If purely backend, say PASS. %s",
-			context, rules,
-		)
+		return base +
+			"You're the designer. Look for UI/UX changes in the diff. " +
+			"If there are frontend changes, post a UX observation as a PR comment:\n" +
+			"gh pr comment " + item.PRURL + " --body 'your UX observation'\n\n" +
+			"If it's purely backend with no UI impact, respond with PASS.\n" +
+			"Then write a short Slack summary. Use " + engineerName + "'s name."
 
 	case role == agent.RoleTechLead:
-		return fmt.Sprintf(
-			"%s\n\nWrite a brief architectural observation about the approach or structure. %s",
-			context, rules,
-		)
+		return base +
+			"You're the Tech Lead. Look at the architecture — module boundaries, " +
+			"dependency direction, patterns used. Post your observation as a PR comment:\n" +
+			"gh pr comment " + item.PRURL + " --body 'your architectural observation'\n\n" +
+			"Be specific about what you see in the code. " +
+			"Then write a short Slack summary. Use " + engineerName + "'s name."
 
 	default:
 		return ""
 	}
 }
 
+func (orch *Orchestrator) pickUncommentedPR(role agent.Role, openPRs []pipeline.WorkItem) *pipeline.WorkItem {
+	for idx := range openPRs {
+		item := &openPRs[idx]
+		if item.Engineer == role {
+			continue
+		}
+		if orch.hasCommented(role, item.ID) {
+			continue
+		}
+		return item
+	}
+	return nil
+}
+
 func (orch *Orchestrator) hasCommented(role agent.Role, itemID int64) bool {
-	key := idleCommentKey(role, itemID)
-	return orch.followedUp[key]
+	return orch.followedUp[idleCommentKey(role, itemID)]
 }
 
 func (orch *Orchestrator) markCommented(role agent.Role, itemID int64) {
-	key := idleCommentKey(role, itemID)
-	orch.followedUp[key] = true
+	orch.followedUp[idleCommentKey(role, itemID)] = true
 }
 
-// idleCommentKey produces a unique int64 key by combining the role
-// hash and item ID. Uses a simple offset to avoid collisions with
-// the existing followedUp entries keyed by plain item ID.
 func idleCommentKey(role agent.Role, itemID int64) int64 {
 	roleHash := int64(0)
 	for _, ch := range string(role) {
 		roleHash = roleHash*31 + int64(ch)
 	}
-	// Shift into a range that won't collide with raw item IDs.
 	return roleHash*1_000_000 + itemID
 }
 
@@ -150,8 +143,6 @@ func FilterIdleDutyRolesForTest(roles []agent.Role) []agent.Role {
 	return filterIdleDutyRoles(roles)
 }
 
-// filterIdleDutyRoles returns roles eligible for idle duties: Tech Lead,
-// Designer, and engineers. PM and Reviewer are excluded.
 func filterIdleDutyRoles(roles []agent.Role) []agent.Role {
 	eligible := make([]agent.Role, 0, len(roles))
 	for _, role := range roles {
