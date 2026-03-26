@@ -208,15 +208,19 @@ func (orch *Orchestrator) mergeAndComplete(ctx context.Context, prURL, ticket st
 
 	// Step 2: Merge — single-purpose prompt.
 	if !orch.executeMerge(ctx, mergeAgent, prURL, ticket, engineerRole) {
+		// Merge failed — send engineer back to fix (rebase, CI, etc.)
+		orch.startFixUp(ctx, prURL, ticket, workItemID, engineerRole)
 		return
 	}
 
-	// Step 3: Verify the PR is actually merged (already existed).
+	// Step 3: Verify the PR is actually merged.
 	if !orch.verifyMerged(ctx, mergeAgent, prURL) {
-		log.Printf("merge verification failed for %s: PR not merged despite agent claiming success", ticket)
-		orch.announceAsRole(ctx, "reviews",
-			fmt.Sprintf("%s merge was attempted but PR is still open — needs manual merge", ticket),
+		log.Printf("merge failed for %s: PR not merged — likely conflicts. Sending %s back to rebase.", ticket, engineerRole)
+		engineerName := orch.NameForRole(engineerRole)
+		orch.postAsRole(ctx, "reviews",
+			fmt.Sprintf("%s merge failed — probably conflicts with main. %s, can you rebase and push?", ticket, engineerName),
 			agent.RolePM)
+		orch.startFixUp(ctx, prURL, ticket, workItemID, engineerRole)
 		return
 	}
 
