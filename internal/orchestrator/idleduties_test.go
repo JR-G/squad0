@@ -82,14 +82,14 @@ func TestRunIdleDuties_IdleEngineer_CommentsOnOthersPR(t *testing.T) {
 	orch, pipeStore, runners := setupIdleDutiesOrch(t)
 
 	// Engineer-1 has an open PR.
-	_, err := pipeStore.Create(ctx, pipeline.WorkItem{
+	itemID, err := pipeStore.Create(ctx, pipeline.WorkItem{
 		Ticket:   "JAM-IDLE1",
 		Engineer: agent.RoleEngineer1,
 		Stage:    pipeline.StagePROpened,
 		Branch:   "feat/jam-idle1",
-		PRURL:    "https://github.com/test/repo/pull/1",
 	})
 	require.NoError(t, err)
+	require.NoError(t, pipeStore.SetPRURL(ctx, itemID, "https://github.com/test-org/test-repo/pull/1"))
 
 	// Engineer-2 is idle and should comment.
 	orch.RunIdleDuties(ctx, []agent.Role{agent.RoleEngineer2})
@@ -107,14 +107,14 @@ func TestRunIdleDuties_DoesNotCommentOnOwnPR(t *testing.T) {
 	orch, pipeStore, runners := setupIdleDutiesOrch(t)
 
 	// Engineer-1 has an open PR.
-	_, err := pipeStore.Create(ctx, pipeline.WorkItem{
+	itemID2, err := pipeStore.Create(ctx, pipeline.WorkItem{
 		Ticket:   "JAM-IDLE2",
 		Engineer: agent.RoleEngineer1,
 		Stage:    pipeline.StagePROpened,
 		Branch:   "feat/jam-idle2",
-		PRURL:    "https://github.com/test/repo/pull/2",
 	})
 	require.NoError(t, err)
+	require.NoError(t, pipeStore.SetPRURL(ctx, itemID2, "https://github.com/test-org/test-repo/pull/2"))
 
 	// Engineer-1 is idle but should NOT comment on own PR.
 	runners[agent.RoleEngineer1].mu.Lock()
@@ -135,14 +135,14 @@ func TestRunIdleDuties_OnlyCommentsOnce(t *testing.T) {
 	ctx := context.Background()
 	orch, pipeStore, runners := setupIdleDutiesOrch(t)
 
-	_, err := pipeStore.Create(ctx, pipeline.WorkItem{
+	itemID3, err := pipeStore.Create(ctx, pipeline.WorkItem{
 		Ticket:   "JAM-IDLE3",
 		Engineer: agent.RoleEngineer1,
 		Stage:    pipeline.StagePROpened,
 		Branch:   "feat/jam-idle3",
-		PRURL:    "https://github.com/test/repo/pull/3",
 	})
 	require.NoError(t, err)
+	require.NoError(t, pipeStore.SetPRURL(ctx, itemID3, "https://github.com/test-org/test-repo/pull/3"))
 
 	// First call — should comment.
 	orch.RunIdleDuties(ctx, []agent.Role{agent.RoleEngineer2})
@@ -167,14 +167,14 @@ func TestRunIdleDuties_TechLead_CommentsOnArchitecture(t *testing.T) {
 	ctx := context.Background()
 	orch, pipeStore, runners := setupIdleDutiesOrch(t)
 
-	_, err := pipeStore.Create(ctx, pipeline.WorkItem{
+	itemID4, err := pipeStore.Create(ctx, pipeline.WorkItem{
 		Ticket:   "JAM-IDLE4",
 		Engineer: agent.RoleEngineer1,
 		Stage:    pipeline.StagePROpened,
 		Branch:   "feat/jam-idle4",
-		PRURL:    "https://github.com/test/repo/pull/4",
 	})
 	require.NoError(t, err)
+	require.NoError(t, pipeStore.SetPRURL(ctx, itemID4, "https://github.com/test-org/test-repo/pull/4"))
 
 	orch.RunIdleDuties(ctx, []agent.Role{agent.RoleTechLead})
 
@@ -190,14 +190,14 @@ func TestRunIdleDuties_Designer_PassesOnBackendPR(t *testing.T) {
 	ctx := context.Background()
 	orch, pipeStore, runners := setupIdleDutiesOrch(t)
 
-	_, err := pipeStore.Create(ctx, pipeline.WorkItem{
+	itemID5, err := pipeStore.Create(ctx, pipeline.WorkItem{
 		Ticket:   "JAM-IDLE5",
 		Engineer: agent.RoleEngineer1,
 		Stage:    pipeline.StagePROpened,
 		Branch:   "feat/jam-idle5",
-		PRURL:    "https://github.com/test/repo/pull/5",
 	})
 	require.NoError(t, err)
+	require.NoError(t, pipeStore.SetPRURL(ctx, itemID5, "https://github.com/test-org/test-repo/pull/5"))
 
 	// Designer returns PASS — should not post.
 	orch.RunIdleDuties(ctx, []agent.Role{agent.RoleDesigner})
