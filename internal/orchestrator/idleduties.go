@@ -59,7 +59,7 @@ func (orch *Orchestrator) tryIdleDuty(ctx context.Context, role agent.Role, open
 	}
 
 	log.Printf("idle duty: %s commenting on %s's PR for %s", role, item.Engineer, item.Ticket)
-	orch.postAsRole(ctx, "engineering", response, role)
+	orch.announceAsRole(ctx, "engineering", response, role)
 }
 
 func (orch *Orchestrator) pickUncommentedPR(role agent.Role, openPRs []pipeline.WorkItem) *pipeline.WorkItem {
@@ -87,32 +87,31 @@ func (orch *Orchestrator) buildIdlePrompt(role agent.Role, item *pipeline.WorkIt
 	switch {
 	case isEngineerRole(role):
 		return fmt.Sprintf(
-			"You're idle and noticed %s has an open PR for %s. "+
-				"Post a brief, informal observation about it in #engineering — "+
-				"maybe something you noticed, a suggestion, or encouragement. "+
-				"Don't be formal — just a casual comment like you'd make in a team chat. "+
-				"Use Slack formatting: *bold* not **bold**. No markdown headers. "+
-				"Use %s's name. 1-2 sentences max.",
+			"%s has an open PR for %s. Write a casual comment about it — "+
+				"something you noticed, a suggestion, or encouragement. "+
+				"You are posting this directly to Slack. Do NOT draft it for someone else. "+
+				"Respond with ONLY what you'd type. 1-2 sentences. "+
+				"Use %s's name. No markdown headers.",
 			engineerName, ticketLink, engineerName,
 		)
 
 	case role == agent.RoleDesigner:
 		return fmt.Sprintf(
-			"You're idle and noticed %s has an open PR for %s. "+
-				"If this might touch the UI, post a brief UX observation "+
-				"in #engineering. If it's purely backend, say PASS. "+
-				"Use Slack formatting: *bold* not **bold**. No markdown headers. "+
-				"Use %s's name. 1-2 sentences max.",
+			"%s has an open PR for %s. If it might touch the UI, "+
+				"write a brief UX observation. If it's purely backend, say PASS. "+
+				"You are posting this directly to Slack. Do NOT draft it for someone else. "+
+				"Respond with ONLY what you'd type. 1-2 sentences. "+
+				"Use %s's name. No markdown headers.",
 			engineerName, ticketLink, engineerName,
 		)
 
 	case role == agent.RoleTechLead:
 		return fmt.Sprintf(
-			"You're idle and noticed %s has an open PR for %s. "+
-				"Post a brief architectural observation in #engineering — "+
+			"%s has an open PR for %s. Write a brief architectural observation — "+
 				"something about the approach, structure, or patterns. "+
-				"Use Slack formatting: *bold* not **bold**. No markdown headers. "+
-				"Use %s's name. 1-2 sentences max.",
+				"You are posting this directly to Slack. Do NOT draft it for someone else. "+
+				"Respond with ONLY what you'd type. 1-2 sentences. "+
+				"Use %s's name. No markdown headers.",
 			engineerName, ticketLink, engineerName,
 		)
 
