@@ -61,9 +61,10 @@ func (orch *Orchestrator) tryIdleDuty(ctx context.Context, role agent.Role, open
 
 	log.Printf("idle duty: %s reviewed %s's PR for %s", role, item.Engineer, item.Ticket)
 
-	// Post the summary to Slack so the team sees it.
+	// Post to #reviews as an announcement — the detailed feedback
+	// is on the PR itself via gh pr comment.
 	summary := agent.TruncateSummary(response, 500)
-	orch.postAsRole(ctx, "engineering", summary, role)
+	orch.announceAsRole(ctx, "reviews", summary, role)
 }
 
 func buildIdleReviewPrompt(role agent.Role, item *pipeline.WorkItem, engineerName string) string {
