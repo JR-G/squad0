@@ -59,7 +59,7 @@ func (orch *Orchestrator) tryIdleDuty(ctx context.Context, role agent.Role, open
 	}
 
 	log.Printf("idle duty: %s commenting on %s's PR for %s", role, item.Engineer, item.Ticket)
-	orch.announceAsRole(ctx, "engineering", response, role)
+	orch.postAsRole(ctx, "engineering", response, role)
 }
 
 func (orch *Orchestrator) pickUncommentedPR(role agent.Role, openPRs []pipeline.WorkItem) *pipeline.WorkItem {
@@ -82,37 +82,36 @@ func (orch *Orchestrator) pickUncommentedPR(role agent.Role, openPRs []pipeline.
 
 func (orch *Orchestrator) buildIdlePrompt(role agent.Role, item *pipeline.WorkItem) string {
 	engineerName := orch.NameForRole(item.Engineer)
-	ticketLink := orch.cfg.Links.TicketLink(item.Ticket)
+
+	// Build context so agents know what the PR is about.
+	context := fmt.Sprintf("%s is working on %s (stage: %s, branch: %s).",
+		engineerName, item.Ticket, item.Stage, item.Branch)
+	if item.PRURL != "" {
+		context += fmt.Sprintf(" PR: %s", item.PRURL)
+	}
+
+	rules := "You are posting this directly to Slack as yourself. " +
+		"Do NOT say you can't access anything. Do NOT draft for someone else. " +
+		"Respond with ONLY what you'd type. 1-2 sentences. " +
+		"Use " + engineerName + "'s name. No markdown headers."
 
 	switch {
 	case isEngineerRole(role):
 		return fmt.Sprintf(
-			"%s has an open PR for %s. Write a casual comment about it — "+
-				"something you noticed, a suggestion, or encouragement. "+
-				"You are posting this directly to Slack. Do NOT draft it for someone else. "+
-				"Respond with ONLY what you'd type. 1-2 sentences. "+
-				"Use %s's name. No markdown headers.",
-			engineerName, ticketLink, engineerName,
+			"%s\n\nWrite a casual comment — something encouraging, a question, or an observation. %s",
+			context, rules,
 		)
 
 	case role == agent.RoleDesigner:
 		return fmt.Sprintf(
-			"%s has an open PR for %s. If it might touch the UI, "+
-				"write a brief UX observation. If it's purely backend, say PASS. "+
-				"You are posting this directly to Slack. Do NOT draft it for someone else. "+
-				"Respond with ONLY what you'd type. 1-2 sentences. "+
-				"Use %s's name. No markdown headers.",
-			engineerName, ticketLink, engineerName,
+			"%s\n\nIf this might touch the UI, write a brief UX observation. If purely backend, say PASS. %s",
+			context, rules,
 		)
 
 	case role == agent.RoleTechLead:
 		return fmt.Sprintf(
-			"%s has an open PR for %s. Write a brief architectural observation — "+
-				"something about the approach, structure, or patterns. "+
-				"You are posting this directly to Slack. Do NOT draft it for someone else. "+
-				"Respond with ONLY what you'd type. 1-2 sentences. "+
-				"Use %s's name. No markdown headers.",
-			engineerName, ticketLink, engineerName,
+			"%s\n\nWrite a brief architectural observation about the approach or structure. %s",
+			context, rules,
 		)
 
 	default:
