@@ -131,8 +131,7 @@ func (orch *Orchestrator) tick(ctx context.Context) {
 		orch.breakSilence(ctx)
 		return
 	}
-
-	// PM checks for stale work and follows up.
+	orch.RunWitnessScan(ctx)
 	orch.RunPMDuties(ctx)
 
 	idleRoles, err := orch.checkIns.IdleAgents(ctx)
