@@ -74,31 +74,27 @@ func buildIdleReviewPrompt(role agent.Role, item *pipeline.WorkItem, engineerNam
 			"2. Read the description: gh pr view %s\n\n",
 		engineerName, item.Ticket, item.PRURL, item.PRURL)
 
+	action := "gh pr comment " + item.PRURL + " --body 'your observation'"
+	rules := "After posting the comment, respond with ONLY what you'd say in Slack about it. " +
+		"1-2 sentences. Use " + engineerName + "'s name. " +
+		"Use Slack formatting (*bold* not **bold**). No headers. No separators. " +
+		"Do NOT say 'Comment posted' or describe what you did — just write the Slack message."
+
 	switch {
 	case isEngineerRole(role):
 		return base +
-			"You're an engineer casually reviewing a teammate's PR. " +
-			"Post ONE specific observation as a PR comment:\n" +
-			"gh pr comment " + item.PRURL + " --body 'your observation'\n\n" +
-			"Be specific — reference a file, function, or pattern you noticed. " +
-			"Then write a short Slack summary of what you observed. " +
-			"Use " + engineerName + "'s name. 1-3 sentences."
+			"Post ONE specific code observation as a PR comment:\n" + action + "\n\n" +
+			"Reference a file, function, or pattern you noticed. " + rules
 
 	case role == agent.RoleDesigner:
 		return base +
-			"You're the designer. Look for UI/UX changes in the diff. " +
-			"If there are frontend changes, post a UX observation as a PR comment:\n" +
-			"gh pr comment " + item.PRURL + " --body 'your UX observation'\n\n" +
-			"If it's purely backend with no UI impact, respond with PASS.\n" +
-			"Then write a short Slack summary. Use " + engineerName + "'s name."
+			"If there are frontend/UI changes, post a UX observation:\n" + action + "\n" +
+			"If purely backend, respond with PASS.\n" + rules
 
 	case role == agent.RoleTechLead:
 		return base +
-			"You're the Tech Lead. Look at the architecture — module boundaries, " +
-			"dependency direction, patterns used. Post your observation as a PR comment:\n" +
-			"gh pr comment " + item.PRURL + " --body 'your architectural observation'\n\n" +
-			"Be specific about what you see in the code. " +
-			"Then write a short Slack summary. Use " + engineerName + "'s name."
+			"Post an architectural observation about module boundaries, " +
+			"dependency direction, or patterns:\n" + action + "\n\n" + rules
 
 	default:
 		return ""
