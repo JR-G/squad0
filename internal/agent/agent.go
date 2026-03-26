@@ -131,12 +131,11 @@ func (agent *Agent) ExecuteTask(ctx context.Context, taskDescription string, fil
 // Top beliefs are injected by the caller's prompt. Uses the agent's
 // own model so personality comes through.
 func (agent *Agent) QuickChat(ctx context.Context, prompt string) (string, error) {
-	personality, err := agent.loader.LoadBase(agent.role)
-	if err != nil {
-		personality = ""
-	}
-
-	fullPrompt := personality + "\n\n" + prompt
+	// Load only the voice section — not the full personality file.
+	// The full file includes Memory/How You Work sections that add
+	// noise for quick chat responses. The voice is what matters.
+	voice := agent.loader.LoadVoice(agent.role)
+	fullPrompt := voice + "\n\n" + prompt
 
 	cfg := SessionConfig{
 		Role:   agent.role,

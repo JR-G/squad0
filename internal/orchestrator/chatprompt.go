@@ -16,12 +16,7 @@ func buildChatPrompt(role agent.Role, channel string, recentLines, beliefs []str
 	}
 
 	builder.WriteString(fmt.Sprintf("Your name is %s. You are %s. ", name, roleDescription(role)))
-	builder.WriteString("James is the CEO — he built the team and has final say. When he speaks, pay attention and respond helpfully.")
-
-	if voiceText != "" {
-		builder.WriteString("\n\n## Your Voice\n")
-		builder.WriteString(voiceText)
-	}
+	builder.WriteString("James is the CEO — he built the team and has final say.")
 
 	if len(beliefs) > 0 {
 		builder.WriteString("\n\nThings you believe from experience: ")
@@ -46,18 +41,21 @@ func buildChatPrompt(role agent.Role, channel string, recentLines, beliefs []str
 		lastMessage = recentLines[len(recentLines)-1]
 	}
 
-	builder.WriteString("\nRespond to this conversation. You're talking to real teammates.")
+	builder.WriteString("\nRespond to this conversation.")
 
 	if lastMessage != "" {
 		fmt.Fprintf(&builder, " The most recent message is: \"%s\" — engage with it directly.", lastMessage)
 	}
 
-	builder.WriteString(" Use people's names. Ask follow-up questions. Disagree if you disagree. Build on their ideas. Be yourself — your tone, your perspective, your opinions.")
-	builder.WriteString("\n\nKeep it to 1-3 sentences. Respond with ONLY what you'd type in Slack.")
-	builder.WriteString("\nNEVER include meta-commentary, parenthetical notes, stage directions, or alternatives.")
-	builder.WriteString("\nNEVER break character or mention being an AI.")
-	builder.WriteString("\nNEVER describe the project, your tech stack, or your role — just talk like a person.")
-	builder.WriteString("\nIf you genuinely have nothing to add, respond with exactly: PASS")
+	// Voice is the LAST instruction before the format rules — this is what
+	// the model pays most attention to. It shapes the actual response.
+	if voiceText != "" {
+		builder.WriteString("\n\n## HOW YOU TALK (this is critical — match this voice exactly)\n")
+		builder.WriteString(voiceText)
+	}
+
+	builder.WriteString("\n\nRules: 1-3 sentences. ONLY what you'd type in Slack. No meta-commentary. No stage directions. No project descriptions.")
+	builder.WriteString("\nIf you have nothing to add: PASS")
 
 	return builder.String()
 }
@@ -119,8 +117,7 @@ func ContainsQuestionForTest(text string) bool {
 	return containsQuestion(text)
 }
 
-// containsQuestion returns true if the text ends with a question mark
-// or contains common question patterns.
+// containsQuestion returns true if the text contains a question mark.
 func containsQuestion(text string) bool {
 	return strings.Contains(text, "?")
 }
