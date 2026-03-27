@@ -227,19 +227,39 @@ func (orch *Orchestrator) filterByWIP(ctx context.Context, roles []agent.Role) [
 		}
 
 		// Engineer has open items but is idle — the item is stuck.
-		// Resume it instead of blocking new work forever.
-		if orch.isRoleIdle(ctx, role) {
-			log.Printf("tick: %s is idle but has stale work — resuming", role)
-			for _, item := range openItems {
-				orch.resumeWorkItem(ctx, item)
-			}
+		// Items with a PR get resumed (review/merge). Items without
+		// a PR are failed immediately — the engineer is idle so
+		// they're clearly not working on it. No age check needed.
+		if !orch.isRoleIdle(ctx, role) {
+			log.Printf("tick: skipping %s — has %d open work items", role, len(openItems))
 			continue
 		}
 
-		log.Printf("tick: skipping %s — has %d open work items", role, len(openItems))
+		if orch.clearStaleWork(ctx, role, openItems) {
+			available = append(available, role)
+		}
 	}
 
 	return available
+}
+
+// clearStaleWork handles open items for an idle engineer. Returns true
+// if all items were cleared and the engineer is free for new work.
+func (orch *Orchestrator) clearStaleWork(ctx context.Context, role agent.Role, items []pipeline.WorkItem) bool {
+	log.Printf("tick: %s is idle but has open work — clearing", role)
+	allCleared := true
+
+	for _, item := range items {
+		if item.Stage == pipeline.StageWorking && item.PRURL == "" {
+			log.Printf("tick: %s has no PR for %s — marking failed", role, item.Ticket)
+			orch.advancePipeline(ctx, item.ID, pipeline.StageFailed)
+			continue
+		}
+		orch.resumeWorkItem(ctx, item)
+		allCleared = false
+	}
+
+	return allCleared
 }
 
 // AnnounceSessionResultForTest exports announceSessionResult for testing.
