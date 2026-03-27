@@ -104,8 +104,10 @@ func (engine *ConversationEngine) OnThreadMessage(ctx context.Context, channel, 
 	timeSinceLast := time.Since(state.lastMessage)
 	state.lastMessage = time.Now()
 
-	// Update the active thread when a new threadTS is provided.
-	if threadTS != "" {
+	// Only update the active thread for human messages. Agent
+	// messages (narration, idle comments) reply in their own thread
+	// but must not hijack the channel's active thread.
+	if threadTS != "" && isHumanMessage(sender) {
 		state.threadTS = threadTS
 	}
 

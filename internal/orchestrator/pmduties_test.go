@@ -372,6 +372,73 @@ func TestVerifyTicketState_NoPM_DoesNotPanic(t *testing.T) {
 	})
 }
 
+func TestBreakDiscussionTie_PromptExcludesTechnicalDecisions(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	memDB, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = memDB.Close() })
+
+	pmRunner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"Decision: skip the cache for now."}` + "\n"),
+	}
+	pmAgent := setupPMAgent(t, pmRunner)
+
+	sqlDB, sqlErr := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, sqlErr)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	allRoles := agent.AllRoles()
+	agents := make(map[agent.Role]*agent.Agent, len(allRoles))
+	factStores := make(map[agent.Role]*memory.FactStore, len(allRoles))
+	chatRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"PASS"}` + "\n")}
+	agents[agent.RolePM] = pmAgent
+	factStores[agent.RolePM] = memory.NewFactStore(memDB)
+
+	for _, role := range allRoles {
+		if role == agent.RolePM {
+			continue
+		}
+		agents[role] = buildAgent(t, chatRunner, role, memDB)
+		factStores[role] = memory.NewFactStore(memDB)
+	}
+
+	server := newTestSlackServer()
+	t.Cleanup(server.Close)
+	bot := newTestSlackBot(server.URL)
+
+	conversation := orchestrator.NewConversationEngine(agents, factStores, bot, nil)
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
+		agents, checkIns, bot, orchestrator.NewAssigner(pmAgent, "TEST"),
+	)
+	orch.SetConversationEngine(conversation)
+
+	conversation.OnMessage(ctx, "engineering", "human-ceo", "which approach?")
+	time.Sleep(50 * time.Millisecond)
+
+	_ = orch.BreakDiscussionTie(ctx, "engineering")
+
+	pmRunner.mu.Lock()
+	calls := make([]fakeCall, len(pmRunner.calls))
+	copy(calls, pmRunner.calls)
+	pmRunner.mu.Unlock()
+
+	found := false
+	for _, call := range calls {
+		if strings.Contains(call.stdin, "NOT technical decisions") {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "PM tie-break prompt must contain 'NOT technical decisions'")
+}
+
 func TestFormatDuration_HoursAndMinutes(t *testing.T) {
 	t.Parallel()
 

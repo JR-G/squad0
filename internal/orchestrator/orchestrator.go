@@ -41,6 +41,8 @@ type Orchestrator struct {
 	projectEpisodeStore *memory.EpisodeStore
 	projectFactStore    *memory.FactStore
 	followedUp          map[int64]bool
+	mergeAnnounced      map[string]bool
+	mergeAnnounceMu     sync.Mutex
 	concerns            *ConcernTracker
 	eventBus            *EventBus
 }
@@ -76,6 +78,7 @@ func NewOrchestrator(
 		assigner:       assigner,
 		sessionCancels: make(map[agent.Role]context.CancelFunc),
 		followedUp:     make(map[int64]bool),
+		mergeAnnounced: make(map[string]bool),
 	}
 }
 

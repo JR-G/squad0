@@ -249,11 +249,14 @@ func (orch *Orchestrator) startEngineerMerge(ctx context.Context, prURL, ticket 
 		go MoveTicketState(ctx, pmAgent, ticket, "Done")
 	}
 
-	ticketLink := orch.cfg.Links.TicketLink(ticket)
-	prLink := orch.cfg.Links.PRLink(prURL)
-	orch.announceAsRole(ctx, "feed",
-		fmt.Sprintf("Merged %s — %s", ticketLink, prLink),
-		engineerRole)
+	if !orch.hasMergeAnnounced(ticket) {
+		orch.markMergeAnnounced(ticket)
+		ticketLink := orch.cfg.Links.TicketLink(ticket)
+		prLink := orch.cfg.Links.PRLink(prURL)
+		orch.announceAsRole(ctx, "feed",
+			fmt.Sprintf("Merged %s — %s", ticketLink, prLink),
+			engineerRole)
+	}
 	orch.emitEvent(ctx, EventMergeComplete, prURL, ticket, workItemID, engineerRole)
 }
 
@@ -296,11 +299,14 @@ func (orch *Orchestrator) pmFallbackMerge(ctx context.Context, prURL, ticket str
 	orch.advancePipeline(ctx, workItemID, pipeline.StageMerged)
 	go MoveTicketState(ctx, pmAgent, ticket, "Done")
 
-	ticketLink := orch.cfg.Links.TicketLink(ticket)
-	prLink := orch.cfg.Links.PRLink(prURL)
-	orch.announceAsRole(ctx, "feed",
-		fmt.Sprintf("Merged %s — %s", ticketLink, prLink),
-		agent.RolePM)
+	if !orch.hasMergeAnnounced(ticket) {
+		orch.markMergeAnnounced(ticket)
+		ticketLink := orch.cfg.Links.TicketLink(ticket)
+		prLink := orch.cfg.Links.PRLink(prURL)
+		orch.announceAsRole(ctx, "feed",
+			fmt.Sprintf("Merged %s — %s", ticketLink, prLink),
+			agent.RolePM)
+	}
 }
 
 const archReviewTimeout = 2 * time.Minute

@@ -175,11 +175,14 @@ func (orch *Orchestrator) mergeAfterRetry(ctx context.Context, prURL, ticket str
 	orch.advancePipeline(ctx, workItemID, pipeline.StageMerged)
 	go MoveTicketState(ctx, pmAgent, ticket, "Done")
 
-	ticketLink := orch.cfg.Links.TicketLink(ticket)
-	prLink := orch.cfg.Links.PRLink(prURL)
-	orch.announceAsRole(ctx, "feed",
-		fmt.Sprintf("Merged %s — %s", ticketLink, prLink),
-		agent.RolePM)
+	if !orch.hasMergeAnnounced(ticket) {
+		orch.markMergeAnnounced(ticket)
+		ticketLink := orch.cfg.Links.TicketLink(ticket)
+		prLink := orch.cfg.Links.PRLink(prURL)
+		orch.announceAsRole(ctx, "feed",
+			fmt.Sprintf("Merged %s — %s", ticketLink, prLink),
+			agent.RolePM)
+	}
 }
 
 // forceApproval ensures the GitHub review is actually submitted.
@@ -197,4 +200,25 @@ func (orch *Orchestrator) forceApproval(ctx context.Context, reviewer *agent.Age
 // ForceApprovalForTest exports forceApproval for testing.
 func (orch *Orchestrator) ForceApprovalForTest(ctx context.Context, reviewer *agent.Agent, prURL, ticket string) {
 	orch.forceApproval(ctx, reviewer, prURL, ticket)
+}
+
+// hasMergeAnnounced returns true if a merge announcement has already
+// been posted for the given ticket.
+func (orch *Orchestrator) hasMergeAnnounced(ticket string) bool {
+	orch.mergeAnnounceMu.Lock()
+	defer orch.mergeAnnounceMu.Unlock()
+	return orch.mergeAnnounced[ticket]
+}
+
+// markMergeAnnounced records that the merge announcement for this
+// ticket has been sent, preventing duplicate posts.
+func (orch *Orchestrator) markMergeAnnounced(ticket string) {
+	orch.mergeAnnounceMu.Lock()
+	defer orch.mergeAnnounceMu.Unlock()
+	orch.mergeAnnounced[ticket] = true
+}
+
+// HasMergeAnnouncedForTest exports hasMergeAnnounced for testing.
+func (orch *Orchestrator) HasMergeAnnouncedForTest(ticket string) bool {
+	return orch.hasMergeAnnounced(ticket)
 }

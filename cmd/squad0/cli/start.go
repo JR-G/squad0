@@ -198,6 +198,7 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 		roster[role] = persona.Name
 	}
 
+	alerter.SetRoster(roster)
 	scheduler.SetPipeline(pipelineStore)
 	scheduler.SetAgents(agents)
 	scheduler.SetRoster(roster)
