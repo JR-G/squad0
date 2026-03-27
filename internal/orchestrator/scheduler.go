@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/JR-G/squad0/internal/agent"
@@ -15,6 +16,7 @@ import (
 
 // Scheduler runs periodic rituals — standups, retros, and health checks.
 type Scheduler struct {
+	mu              sync.Mutex
 	bot             *slack.Bot
 	monitor         *health.Monitor
 	alerter         *health.Alerter
@@ -54,18 +56,24 @@ func NewScheduler(
 // SetPipeline connects the pipeline store so standups can report on
 // active work items.
 func (sched *Scheduler) SetPipeline(store *pipeline.WorkItemStore) {
+	sched.mu.Lock()
+	defer sched.mu.Unlock()
 	sched.pipelineStore = store
 }
 
 // SetAgents connects the agent map so the PM can compose standups
 // via QuickChat.
 func (sched *Scheduler) SetAgents(agents map[agent.Role]*agent.Agent) {
+	sched.mu.Lock()
+	defer sched.mu.Unlock()
 	sched.agents = agents
 }
 
 // SetRoster stores the role-to-name mapping so standup summaries use
 // chosen agent names.
 func (sched *Scheduler) SetRoster(roster map[agent.Role]string) {
+	sched.mu.Lock()
+	defer sched.mu.Unlock()
 	sched.roster = roster
 }
 
@@ -201,11 +209,14 @@ func (sched *Scheduler) pmComposedStandup(ctx context.Context, pmAgent *agent.Ag
 }
 
 func (sched *Scheduler) openItemsForRole(ctx context.Context, role agent.Role) []pipeline.WorkItem {
-	if sched.pipelineStore == nil {
+	sched.mu.Lock()
+	store := sched.pipelineStore
+	sched.mu.Unlock()
+	if store == nil {
 		return nil
 	}
 
-	items, err := sched.pipelineStore.OpenByEngineer(ctx, role)
+	items, err := store.OpenByEngineer(ctx, role)
 	if err != nil {
 		return nil
 	}
@@ -213,6 +224,8 @@ func (sched *Scheduler) openItemsForRole(ctx context.Context, role agent.Role) [
 }
 
 func (sched *Scheduler) agentForRole(role agent.Role) *agent.Agent {
+	sched.mu.Lock()
+	defer sched.mu.Unlock()
 	if sched.agents == nil {
 		return nil
 	}
@@ -220,6 +233,8 @@ func (sched *Scheduler) agentForRole(role agent.Role) *agent.Agent {
 }
 
 func (sched *Scheduler) nameForRole(role agent.Role) string {
+	sched.mu.Lock()
+	defer sched.mu.Unlock()
 	if sched.roster == nil {
 		return string(role)
 	}
