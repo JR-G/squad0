@@ -180,9 +180,23 @@ func (orch *Orchestrator) pickUncommentedPR(role agent.Role, openPRs []pipeline.
 		if orch.hasCommented(role, item.ID) {
 			continue
 		}
+		// Cap at 3 idle comments per PR across all agents to prevent spam.
+		if orch.idleCommentCount(item.ID) >= 3 {
+			continue
+		}
 		return item
 	}
 	return nil
+}
+
+func (orch *Orchestrator) idleCommentCount(itemID int64) int {
+	count := 0
+	for key, commented := range orch.followedUp {
+		if commented && key%1_000_000 == itemID {
+			count++
+		}
+	}
+	return count
 }
 
 func (orch *Orchestrator) hasCommented(role agent.Role, itemID int64) bool {

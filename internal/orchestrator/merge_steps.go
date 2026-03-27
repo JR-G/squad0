@@ -222,3 +222,70 @@ func (orch *Orchestrator) markMergeAnnounced(ticket string) {
 func (orch *Orchestrator) HasMergeAnnouncedForTest(ticket string) bool {
 	return orch.hasMergeAnnounced(ticket)
 }
+
+// PRHasConflictsForTest exports prHasConflicts for testing.
+func (orch *Orchestrator) PRHasConflictsForTest(ctx context.Context, prURL string) bool {
+	return orch.prHasConflicts(ctx, prURL)
+}
+
+// prHasConflicts checks if a PR has merge conflicts via gh CLI.
+func (orch *Orchestrator) prHasConflicts(ctx context.Context, prURL string) bool {
+	pmAgent := orch.agents[agent.RolePM]
+	if pmAgent == nil {
+		return false
+	}
+
+	prompt := fmt.Sprintf("Run: gh pr view %s --json mergeable --jq .mergeable — respond with ONLY the output", prURL)
+	result, err := pmAgent.DirectSession(ctx, prompt)
+	if err != nil {
+		return false
+	}
+
+	return strings.Contains(strings.ToUpper(result.Transcript), "CONFLICTING")
+}
+
+// RebaseAndMergeForTest exports rebaseAndMerge for testing.
+func (orch *Orchestrator) RebaseAndMergeForTest(ctx context.Context, engineerAgent *agent.Agent, prURL, ticket string, workItemID int64, engineerRole agent.Role) {
+	orch.rebaseAndMerge(ctx, engineerAgent, prURL, ticket, workItemID, engineerRole)
+}
+
+// rebaseAndMerge handles a conflicting PR by giving the engineer a full
+// worktree session to rebase onto main, resolve conflicts, push, and merge.
+func (orch *Orchestrator) rebaseAndMerge(ctx context.Context, engineerAgent *agent.Agent, prURL, ticket string, workItemID int64, engineerRole agent.Role) {
+	branch := fmt.Sprintf("feat/%s", strings.ToLower(ticket))
+	engineerName := orch.NameForRole(engineerRole)
+
+	orch.postAsRole(ctx, "engineering",
+		fmt.Sprintf("PR for %s has conflicts — rebasing now.", orch.cfg.Links.TicketLink(ticket)),
+		engineerRole)
+
+	workSession, err := NewWorkSession(ctx, orch.cfg.TargetRepoDir, engineerRole, ticket)
+	if err != nil {
+		log.Printf("worktree creation failed for rebase of %s: %v", ticket, err)
+		return
+	}
+	defer workSession.Cleanup(ctx)
+
+	prompt := fmt.Sprintf(
+		"The PR for %s has merge conflicts and cannot be merged.\n\n"+
+			"PR: %s\nBranch: %s\n\n"+
+			"Fix the conflicts:\n"+
+			"1. git fetch origin main\n"+
+			"2. git rebase origin/main\n"+
+			"3. Resolve any conflicts\n"+
+			"4. git push --force-with-lease origin %s\n"+
+			"5. gh pr merge %s --squash --delete-branch\n\n"+
+			"If the rebase is too complex, respond with FAILED.",
+		ticket, prURL, branch, branch, prURL)
+
+	_, taskErr := engineerAgent.ExecuteTask(ctx, prompt, nil, workSession.Dir())
+	if taskErr != nil {
+		log.Printf("rebase session failed for %s: %v", ticket, taskErr)
+		orch.announceAsRole(ctx, "reviews",
+			fmt.Sprintf("%s has conflicts — %s, please resolve manually", ticket, engineerName),
+			agent.RolePM)
+		return
+	}
+
+	orch.verifyAndAnnounce(ctx, prURL, ticket, workItemID, engineerRole)
+}

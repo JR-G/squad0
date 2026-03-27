@@ -361,3 +361,124 @@ func TestMergeAfterRetry_FullSuccess(t *testing.T) {
 	require.NoError(t, getErr)
 	assert.Equal(t, pipeline.StageMerged, item.Stage)
 }
+
+func TestRebaseAndMerge_BadRepo_DoesNotPanic(t *testing.T) {
+	t.Parallel()
+
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	ctx := context.Background()
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	engRunner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"done"}` + "\n"),
+	}
+	engAgent := setupAgentWithRole(t, engRunner, agent.RoleEngineer1)
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{TargetRepoDir: "/nonexistent/repo"},
+		map[agent.Role]*agent.Agent{agent.RoleEngineer1: engAgent},
+		checkIns, nil, nil,
+	)
+
+	// Should not panic — worktree creation fails, function returns early.
+	orch.RebaseAndMergeForTest(ctx, engAgent, "https://github.com/test/repo/pull/1", "JAM-RB", 0, agent.RoleEngineer1)
+}
+
+func TestRebaseAndMerge_WithRepo_RunsSession(t *testing.T) {
+	t.Parallel()
+
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	ctx := context.Background()
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+	pipeStore := newPipelineStore(t, sqlDB)
+
+	// Produce MERGED on verify.
+	pmRunner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"MERGED"}` + "\n"),
+	}
+	pmAgent := setupPMAgent(t, pmRunner)
+
+	engRunner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"done"}` + "\n"),
+	}
+	engAgent := setupAgentWithRole(t, engRunner, agent.RoleEngineer1)
+
+	tmpDir := t.TempDir()
+	initTestRepo(t, tmpDir)
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{TargetRepoDir: tmpDir},
+		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent, agent.RoleEngineer1: engAgent},
+		checkIns, nil, nil,
+	)
+	orch.SetPipeline(pipeStore)
+
+	itemID, _ := pipeStore.Create(ctx, pipeline.WorkItem{
+		Ticket: "JAM-RB2", Engineer: agent.RoleEngineer1, Stage: pipeline.StageApproved,
+	})
+
+	orch.RebaseAndMergeForTest(ctx, engAgent, "https://github.com/test/repo/pull/1", "JAM-RB2", itemID, agent.RoleEngineer1)
+
+	engRunner.mu.Lock()
+	callCount := len(engRunner.calls)
+	engRunner.mu.Unlock()
+	assert.GreaterOrEqual(t, callCount, 1, "engineer should have run a rebase session")
+}
+
+func TestPRHasConflicts_Conflicting_ReturnsTrue(t *testing.T) {
+	t.Parallel()
+
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	ctx := context.Background()
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	pmRunner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"CONFLICTING"}` + "\n"),
+	}
+	pmAgent := setupPMAgent(t, pmRunner)
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{},
+		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent},
+		checkIns, nil, nil,
+	)
+
+	assert.True(t, orch.PRHasConflictsForTest(ctx, "https://github.com/test/repo/pull/1"))
+}
+
+func TestPRHasConflicts_Clean_ReturnsFalse(t *testing.T) {
+	t.Parallel()
+
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	ctx := context.Background()
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	pmRunner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"MERGEABLE"}` + "\n"),
+	}
+	pmAgent := setupPMAgent(t, pmRunner)
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{},
+		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent},
+		checkIns, nil, nil,
+	)
+
+	assert.False(t, orch.PRHasConflictsForTest(ctx, "https://github.com/test/repo/pull/1"))
+}

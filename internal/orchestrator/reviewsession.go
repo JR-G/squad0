@@ -199,8 +199,8 @@ func (orch *Orchestrator) MergeWithEngineerForTest(ctx context.Context, prURL, t
 }
 
 // startEngineerMerge gives the engineer ownership of merging their own
-// approved PR. The engineer reads remaining comments, rebases if needed,
-// checks CI, and merges via a DirectSession.
+// approved PR. Checks mergeability first — if conflicting, runs a full
+// worktree session to rebase. Otherwise uses DirectSession for the merge.
 func (orch *Orchestrator) startEngineerMerge(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role) {
 	engineerAgent, ok := orch.agents[engineerRole]
 	if !ok {
@@ -218,6 +218,13 @@ func (orch *Orchestrator) startEngineerMerge(ctx context.Context, prURL, ticket 
 	})
 	defer func() { _ = orch.checkIns.SetIdle(ctx, engineerRole) }()
 
+	// Check mergeability — if conflicting, rebase in a worktree first.
+	if orch.prHasConflicts(ctx, prURL) {
+		log.Printf("merge: %s has conflicts — rebasing in worktree", ticket)
+		orch.rebaseAndMerge(ctx, engineerAgent, prURL, ticket, workItemID, engineerRole)
+		return
+	}
+
 	prompt := BuildEngineerMergePrompt(prURL, ticket)
 	result, err := engineerAgent.DirectSession(ctx, prompt)
 	if err != nil {
@@ -228,10 +235,19 @@ func (orch *Orchestrator) startEngineerMerge(ctx context.Context, prURL, ticket 
 		return
 	}
 
+	_ = result
+	orch.verifyAndAnnounce(ctx, prURL, ticket, workItemID, engineerRole)
+}
+
+func (orch *Orchestrator) verifyAndAnnounce(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role) {
 	pmAgent := orch.agents[agent.RolePM]
-	verifyAgent := engineerAgent
+	verifyAgent := orch.agents[engineerRole]
 	if pmAgent != nil {
 		verifyAgent = pmAgent
+	}
+
+	if verifyAgent == nil {
+		return
 	}
 
 	if !orch.verifyMerged(ctx, verifyAgent, prURL) {
@@ -243,8 +259,6 @@ func (orch *Orchestrator) startEngineerMerge(ctx context.Context, prURL, ticket 
 		orch.emitEvent(ctx, EventMergeFailed, prURL, ticket, workItemID, engineerRole)
 		return
 	}
-
-	_ = result
 
 	orch.advancePipeline(ctx, workItemID, pipeline.StageMerged)
 	if pmAgent != nil {
