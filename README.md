@@ -26,12 +26,12 @@ The install script handles Go tools, git hooks, Ollama, builds, and data directo
 
 Full documentation lives in the [`docs/`](docs/) directory:
 
-- **[Architecture](docs/architecture.md)** — System design, agent roles, and how everything fits together
-- **[Agents](docs/agents.md)** — Agent roles, personalities, identity system, and how they evolve
-- **[Memory System](docs/memory.md)** — Knowledge graph, hybrid search, MCP tools, and cognitive psychology principles
-- **[Communication](docs/communication.md)** — Slack channels, personas, CEO commands, and agent discussions
-- **[Configuration](docs/configuration.md)** — Config file, secrets, and deployment setup
-- **[Development](docs/development.md)** — Code standards, testing, git hooks, and contributing
+- **[Architecture](docs/architecture.md)** — Event bus, pipeline stages, session lifecycle, orchestrator coordination
+- **[Agents](docs/agents.md)** — Seven roles with models, personality voice system, identity, memory per agent
+- **[Communication](docs/communication.md)** — Slack channels, conversation engine, witness pattern, idle duties, narration
+- **[Configuration](docs/configuration.md)** — TOML config, Keychain secrets, GitHub App setup
+- **[Development](docs/development.md)** — Code standards, testing, git hooks, contributing
+- **[Memory](docs/memory.md)** — Beliefs with decay, retrieval strengthening, cross-pollination, concerns, seance, handoffs, findings
 
 ## Licence
 
