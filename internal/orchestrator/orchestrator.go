@@ -42,6 +42,7 @@ type Orchestrator struct {
 	projectFactStore    *memory.FactStore
 	followedUp          map[int64]bool
 	concerns            *ConcernTracker
+	eventBus            *EventBus
 }
 
 // Config holds orchestrator-level settings.
@@ -182,6 +183,9 @@ func (orch *Orchestrator) tick(ctx context.Context) {
 
 		if len(assignments) == 0 {
 			// No tickets available — engage idle engineers with PR reviews.
+			for _, role := range idleEngineers {
+				orch.emitEvent(ctx, EventAgentIdle, "", "", 0, role)
+			}
 			orch.RunIdleDuties(ctx, idleEngineers)
 			return
 		}
@@ -198,6 +202,7 @@ func (orch *Orchestrator) tick(ctx context.Context) {
 		for _, role := range idleEngineers {
 			if !assignedSet[role] {
 				unassigned = append(unassigned, role)
+				orch.emitEvent(ctx, EventAgentIdle, "", "", 0, role)
 			}
 		}
 		orch.RunIdleDuties(ctx, unassigned)
@@ -247,13 +252,6 @@ func (orch *Orchestrator) NameForRole(role agent.Role) string {
 	}
 
 	return name
-}
-
-func (orch *Orchestrator) breakSilence(ctx context.Context) {
-	if orch.conversation == nil {
-		return
-	}
-	orch.conversation.BreakSilence(ctx)
 }
 
 func (orch *Orchestrator) startWork(ctx context.Context, assignment Assignment) {
@@ -335,6 +333,7 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 			fmt.Sprintf("Hit an issue with %s — will need to pick this up again", assignment.Ticket),
 			role)
 		_ = orch.checkIns.SetIdle(ctx, role)
+		orch.emitEvent(ctx, EventSessionFailed, "", assignment.Ticket, assignment.WorkItemID, role)
 		return
 	}
 
@@ -386,6 +385,7 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 	}
 
 	_ = orch.checkIns.SetIdle(ctx, role)
+	orch.emitEvent(ctx, EventSessionComplete, prURL, assignment.Ticket, assignment.WorkItemID, role)
 }
 
 func (orch *Orchestrator) postAsRole(ctx context.Context, channel, text string, role agent.Role) {
@@ -461,15 +461,6 @@ func (orch *Orchestrator) clearSessionCancel(role agent.Role) {
 	orch.cancelsMu.Lock()
 	defer orch.cancelsMu.Unlock()
 	delete(orch.sessionCancels, role)
-}
-
-// agentFactStores returns per-agent fact stores from the conversation
-// engine. Used by the seance to pull cross-agent beliefs.
-func (orch *Orchestrator) agentFactStores() map[agent.Role]*memory.FactStore {
-	if orch.conversation == nil {
-		return nil
-	}
-	return orch.conversation.FactStores()
 }
 
 // filterHealthyEngineers returns engineers that are not in a failing

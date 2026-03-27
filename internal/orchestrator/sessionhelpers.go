@@ -1,10 +1,12 @@
 package orchestrator
 
 import (
+	"context"
 	"log"
 	"path/filepath"
 
 	"github.com/JR-G/squad0/internal/agent"
+	"github.com/JR-G/squad0/internal/memory"
 )
 
 func (orch *Orchestrator) recordSessionStart(role agent.Role) {
@@ -36,4 +38,20 @@ func (orch *Orchestrator) writeMCPConfig(agentInstance *agent.Agent, workDir str
 	}
 
 	agentInstance.MCPConfigPath = filepath.Join(workDir, ".mcp.json")
+}
+
+func (orch *Orchestrator) breakSilence(ctx context.Context) {
+	if orch.conversation == nil {
+		return
+	}
+	orch.conversation.BreakSilence(ctx)
+}
+
+// agentFactStores returns per-agent fact stores from the conversation
+// engine. Used by the seance to pull cross-agent beliefs.
+func (orch *Orchestrator) agentFactStores() map[agent.Role]*memory.FactStore {
+	if orch.conversation == nil {
+		return nil
+	}
+	return orch.conversation.FactStores()
 }

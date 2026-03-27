@@ -179,6 +179,10 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	concerns := orchestrator.NewConcernTracker()
 	orch.SetConcernTracker(concerns)
 
+	eventBus := orchestrator.NewEventBus()
+	orch.RegisterDefaultHandlers(eventBus)
+	orch.SetEventBus(eventBus)
+
 	if !workEnabled {
 		_, _ = fmt.Fprint(out, tui.StepWarn("Linear not configured — agents will chat but not work"))
 	}

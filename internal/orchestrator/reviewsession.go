@@ -170,10 +170,14 @@ func (orch *Orchestrator) runReview(ctx context.Context, reviewer *agent.Agent, 
 		// Architecture review runs in the background — it does not block the merge.
 		go orch.archReviewWithTimeout(ctx, prURL, ticket, engineerRole)
 
-		orch.startEngineerMerge(ctx, prURL, ticket, workItemID, engineerRole)
+		orch.emitOrFallback(ctx, EventPRApproved, prURL, ticket, workItemID, engineerRole, func() {
+			orch.startEngineerMerge(ctx, prURL, ticket, workItemID, engineerRole)
+		})
 
 	case ReviewChangesRequested:
-		orch.handleChangesRequested(ctx, prURL, ticket, workItemID, engineerRole, "")
+		orch.emitOrFallback(ctx, EventChangesRequested, prURL, ticket, workItemID, engineerRole, func() {
+			orch.handleChangesRequested(ctx, prURL, ticket, workItemID, engineerRole, "")
+		})
 	}
 }
 
@@ -234,6 +238,7 @@ func (orch *Orchestrator) startEngineerMerge(ctx context.Context, prURL, ticket 
 		orch.postAsRole(ctx, "reviews",
 			fmt.Sprintf("%s merge failed — %s, can you check and retry?", ticket, engineerName),
 			agent.RolePM)
+		orch.emitEvent(ctx, EventMergeFailed, prURL, ticket, workItemID, engineerRole)
 		return
 	}
 
@@ -249,6 +254,7 @@ func (orch *Orchestrator) startEngineerMerge(ctx context.Context, prURL, ticket 
 	orch.announceAsRole(ctx, "feed",
 		fmt.Sprintf("Merged %s — %s", ticketLink, prLink),
 		engineerRole)
+	orch.emitEvent(ctx, EventMergeComplete, prURL, ticket, workItemID, engineerRole)
 }
 
 // pmFallbackMerge is used when the engineer agent is not available.
@@ -408,7 +414,9 @@ func (orch *Orchestrator) startFixUp(ctx context.Context, prURL, ticket string, 
 	_ = result
 
 	// Re-review: reviewer specifically checks their previous comments.
-	orch.startReReview(ctx, prURL, ticket, workItemID, engineerRole)
+	orch.emitOrFallback(ctx, EventFixUpComplete, prURL, ticket, workItemID, engineerRole, func() {
+		orch.startReReview(ctx, prURL, ticket, workItemID, engineerRole)
+	})
 }
 
 // forceApproval ensures the reviewer's GitHub approval is actually submitted.
