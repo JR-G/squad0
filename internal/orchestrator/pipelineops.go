@@ -124,47 +124,59 @@ func (orch *Orchestrator) resumePendingWork(ctx context.Context) {
 func (orch *Orchestrator) resumeWorkItem(ctx context.Context, item pipeline.WorkItem) {
 	log.Printf("resuming %s (stage: %s, PR: %s)", item.Ticket, item.Stage, item.PRURL)
 
+	// If the item has a PR, check the actual GitHub state and fast-forward
+	// the pipeline. The local stage may be stale from a previous restart.
+	if item.PRURL != "" {
+		orch.resumeWithGitHubState(ctx, item)
+		return
+	}
+
 	switch item.Stage { //nolint:exhaustive // only actionable stages handled
-	case pipeline.StagePROpened, pipeline.StageReviewing:
-		if item.PRURL != "" {
-			orch.startReview(ctx, item.PRURL, item.Ticket, item.ID, item.Engineer)
-		}
-
-	case pipeline.StageChangesRequested:
-		if item.PRURL != "" {
-			orch.wg.Add(1)
-			go func() {
-				defer orch.wg.Done()
-				orch.startFixUp(ctx, item.PRURL, item.Ticket, item.ID, item.Engineer)
-			}()
-		}
-
-	case pipeline.StageApproved:
-		if item.PRURL != "" {
-			orch.wg.Add(1)
-			go func() {
-				defer orch.wg.Done()
-				orch.startEngineerMerge(ctx, item.PRURL, item.Ticket, item.ID, item.Engineer)
-			}()
-		}
-
 	case pipeline.StageWorking:
-		// If a PR already exists, the engineer needs to go back and
-		// address comments / rebase rather than starting from scratch.
-		if item.PRURL != "" {
-			log.Printf("work item %s has open PR — sending engineer back to fix up", item.Ticket)
-			orch.wg.Add(1)
-			go func() {
-				defer orch.wg.Done()
-				orch.startFixUp(ctx, item.PRURL, item.Ticket, item.ID, item.Engineer)
-			}()
-			return
-		}
-
 		orch.resumeStaleWorkingItem(ctx, item)
-
 	case pipeline.StageAssigned:
 		log.Printf("work item %s was assigned but not started — will be re-assigned", item.Ticket)
+	}
+}
+
+// resumeWithGitHubState checks the actual PR state on GitHub before
+// deciding what to do. Prevents re-review loops on restart when the
+// pipeline stage is stale.
+func (orch *Orchestrator) resumeWithGitHubState(ctx context.Context, item pipeline.WorkItem) {
+	pmAgent := orch.agents[agent.RolePM]
+	if pmAgent == nil {
+		return
+	}
+
+	// Check if the PR is already merged on GitHub.
+	if orch.verifyMerged(ctx, pmAgent, item.PRURL) {
+		log.Printf("resume: %s is already merged on GitHub — advancing pipeline", item.Ticket)
+		orch.advancePipeline(ctx, item.ID, pipeline.StageMerged)
+		go MoveTicketState(ctx, pmAgent, item.Ticket, "Done")
+		return
+	}
+
+	// Check the review decision on GitHub.
+	status := orch.checkApprovalStatus(ctx, pmAgent, item.PRURL)
+
+	switch status {
+	case approvalStatusApproved:
+		log.Printf("resume: %s is approved on GitHub — sending engineer to merge", item.Ticket)
+		orch.advancePipeline(ctx, item.ID, pipeline.StageApproved)
+		orch.wg.Add(1)
+		go func() {
+			defer orch.wg.Done()
+			orch.startEngineerMerge(ctx, item.PRURL, item.Ticket, item.ID, item.Engineer)
+		}()
+
+	case approvalStatusNotApproved:
+		log.Printf("resume: %s needs review or changes on GitHub — starting review", item.Ticket)
+		orch.startReview(ctx, item.PRURL, item.Ticket, item.ID, item.Engineer)
+
+	default:
+		// Error checking status — fall back to starting a review.
+		log.Printf("resume: couldn't check %s status — starting review", item.Ticket)
+		orch.startReview(ctx, item.PRURL, item.Ticket, item.ID, item.Engineer)
 	}
 }
 

@@ -363,3 +363,121 @@ func TestMergeAfterRetry_NoPM_ReturnsEarly(t *testing.T) {
 		orch.MergeAfterRetryForTest(ctx, "https://github.com/test-org/test-repo/pull/303", "JAM-RT4", 0, agent.RoleEngineer1)
 	})
 }
+
+func TestResumeWithGitHubState_Approved_SendsEngineerToMerge(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	memDB, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = memDB.Close() })
+
+	// PM returns APPROVED for checkApprovalStatus, then MERGED for verifyMerged (but
+	// verifyMerged runs first — order: verifyMerged returns NOT merged, then checkApproval returns APPROVED).
+	pmRunner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"OPEN"}` + "\n"),
+		outputs: [][]byte{
+			[]byte(`{"type":"result","result":"OPEN"}` + "\n"),     // verifyMerged
+			[]byte(`{"type":"result","result":"APPROVED"}` + "\n"), // checkApprovalStatus
+			[]byte(`{"type":"result","result":"MERGED"}` + "\n"),   // engineer merge verify
+		},
+	}
+	engRunner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"done"}` + "\n"),
+	}
+
+	sqlDB, sqlErr := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, sqlErr)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	pipeDB, pipeErr := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, pipeErr)
+	t.Cleanup(func() { _ = pipeDB.Close() })
+
+	pipeStore := pipeline.NewWorkItemStore(pipeDB)
+	require.NoError(t, pipeStore.InitSchema(ctx))
+
+	pmAgent := setupPMAgent(t, pmRunner)
+	engAgent := buildAgent(t, engRunner, agent.RoleEngineer1, memDB)
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
+		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent, agent.RoleEngineer1: engAgent},
+		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
+	)
+	orch.SetPipeline(pipeStore)
+
+	itemID, createErr := pipeStore.Create(ctx, pipeline.WorkItem{
+		Ticket: "JAM-GH1", Engineer: agent.RoleEngineer1, Stage: pipeline.StageWorking, Branch: "feat/jam-gh1",
+	})
+	require.NoError(t, createErr)
+	require.NoError(t, pipeStore.SetPRURL(ctx, itemID, "https://github.com/test-org/test-repo/pull/100"))
+
+	// Resume should check GitHub, find APPROVED, and send engineer to merge.
+	timedCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
+
+	_ = orch.Run(timedCtx)
+	orch.Wait()
+
+	// Engineer should have been called for the merge.
+	engRunner.mu.Lock()
+	engCalls := len(engRunner.calls)
+	engRunner.mu.Unlock()
+	assert.GreaterOrEqual(t, engCalls, 1)
+}
+
+func TestResumeWithGitHubState_AlreadyMerged_AdvancesPipeline(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	memDB, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = memDB.Close() })
+
+	pmRunner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"MERGED"}` + "\n"),
+	}
+
+	sqlDB, sqlErr := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, sqlErr)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	pipeDB, pipeErr := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, pipeErr)
+	t.Cleanup(func() { _ = pipeDB.Close() })
+
+	pipeStore := pipeline.NewWorkItemStore(pipeDB)
+	require.NoError(t, pipeStore.InitSchema(ctx))
+
+	pmAgent := setupPMAgent(t, pmRunner)
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{PollInterval: time.Second, MaxParallel: 1, CooldownAfter: time.Second, AcknowledgePause: time.Millisecond},
+		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent},
+		checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
+	)
+	orch.SetPipeline(pipeStore)
+
+	itemID, createErr := pipeStore.Create(ctx, pipeline.WorkItem{
+		Ticket: "JAM-GH2", Engineer: agent.RoleEngineer1, Stage: pipeline.StageWorking, Branch: "feat/jam-gh2",
+	})
+	require.NoError(t, createErr)
+	require.NoError(t, pipeStore.SetPRURL(ctx, itemID, "https://github.com/test-org/test-repo/pull/101"))
+
+	timedCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
+
+	_ = orch.Run(timedCtx)
+	orch.Wait()
+
+	item, getErr := pipeStore.GetByID(ctx, itemID)
+	require.NoError(t, getErr)
+	assert.Equal(t, pipeline.StageMerged, item.Stage)
+}
