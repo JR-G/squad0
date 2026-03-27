@@ -149,10 +149,15 @@ func (orch *Orchestrator) tick(ctx context.Context) {
 
 	log.Printf("tick: %d idle agents, roles: %v", len(idleRoles), idleRoles)
 
-	// Engage idle non-engineers (Designer, Tech Lead) with duties.
-	orch.RunIdleDuties(ctx, filterIdleDutyRoles(idleRoles))
-
+	// Assignment first — then idle duties run so they don't block work.
 	idleEngineers := orch.filterByWIP(ctx, orch.filterHealthyEngineers(idleRoles))
+	orch.tryAssignWork(ctx, idleEngineers)
+
+	// Idle duties for non-engineers (Designer, Tech Lead) + unassigned engineers.
+	orch.RunIdleDuties(ctx, filterIdleDutyRoles(idleRoles))
+}
+
+func (orch *Orchestrator) tryAssignWork(ctx context.Context, idleEngineers []agent.Role) {
 	if len(idleEngineers) == 0 {
 		log.Println("tick: no idle engineers")
 		return

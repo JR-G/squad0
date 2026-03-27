@@ -190,22 +190,12 @@ func (orch *Orchestrator) resumeWithGitHubState(ctx context.Context, item pipeli
 // and needs reassignment. Otherwise it is left for the engineer to
 // pick up naturally.
 func (orch *Orchestrator) resumeStaleWorkingItem(ctx context.Context, item pipeline.WorkItem) {
+	// No age check — if the process restarted and the item has no PR,
+	// the session is dead. Mark failed so the engineer is unblocked.
 	age := time.Since(item.UpdatedAt)
-	if age <= staleWorkThreshold {
-		log.Printf("work item %s is only %s old — engineer will re-pick it up", item.Ticket, age.Round(time.Minute))
-		return
-	}
-
-	log.Printf("work item %s is stale (%s) — marking failed for reassignment", item.Ticket, age.Round(time.Minute))
+	log.Printf("work item %s has no PR after %s — marking failed", item.Ticket, formatDuration(age))
 
 	orch.advancePipeline(ctx, item.ID, pipeline.StageFailed)
-
-	name := orch.NameForRole(item.Engineer)
-	ticketLink := orch.cfg.Links.TicketLink(item.Ticket)
-	orch.announceAsRole(ctx, "engineering",
-		fmt.Sprintf("%s's work on %s stalled after %s with no PR — returning it to the backlog.",
-			name, ticketLink, formatDuration(age)),
-		agent.RolePM)
 }
 
 func (orch *Orchestrator) filterByWIP(ctx context.Context, roles []agent.Role) []agent.Role {
