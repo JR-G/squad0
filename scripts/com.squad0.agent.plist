@@ -7,7 +7,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/local/bin/squad0</string>
+        <string>/opt/squad0/squad0</string>
         <string>start</string>
     </array>
 
@@ -29,9 +29,11 @@
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+        <string>/opt/squad0:/opt/homebrew/bin:/Users/james/.local/bin:/Users/james/go/bin:/usr/local/bin:/usr/bin:/bin</string>
         <key>HOME</key>
         <string>/Users/james</string>
+        <key>OLLAMA_HOST</key>
+        <string>http://localhost:11434</string>
     </dict>
 </dict>
 </plist>

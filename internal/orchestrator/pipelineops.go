@@ -242,6 +242,24 @@ func (orch *Orchestrator) filterByWIP(ctx context.Context, roles []agent.Role) [
 	return available
 }
 
+// announceSessionResult handles the post-session PR state: sets the
+// pipeline PR, posts announcements, or marks the item failed if no PR.
+func (orch *Orchestrator) announceSessionResult(ctx context.Context, prURL, ticketLink string, workItemID int64, role agent.Role) {
+	if prURL == "" {
+		orch.advancePipeline(ctx, workItemID, pipeline.StageFailed)
+		orch.announceAsRole(ctx, "engineering",
+			fmt.Sprintf("Finished work on %s but couldn't open a PR — will need another pass.", ticketLink), role)
+		return
+	}
+
+	orch.setPipelinePR(ctx, workItemID, prURL)
+	prLink := orch.cfg.Links.PRLink(prURL)
+	orch.announceAsRole(ctx, "engineering",
+		fmt.Sprintf("Finished %s — %s", ticketLink, prLink), role)
+	orch.announceAsRole(ctx, "reviews",
+		fmt.Sprintf("Finished %s — %s", ticketLink, prLink), role)
+}
+
 func (orch *Orchestrator) isRoleIdle(ctx context.Context, role agent.Role) bool {
 	checkIn, err := orch.checkIns.GetByAgent(ctx, role)
 	if err != nil {

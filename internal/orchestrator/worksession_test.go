@@ -2,12 +2,15 @@ package orchestrator_test
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 
 	"github.com/JR-G/squad0/internal/agent"
+	"github.com/JR-G/squad0/internal/coordination"
+	"github.com/JR-G/squad0/internal/memory"
 	"github.com/JR-G/squad0/internal/orchestrator"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,8 +24,10 @@ func TestBuildImplementationPrompt_IncludesTicketAndDescription(t *testing.T) {
 	assert.Contains(t, prompt, "JAM-42")
 	assert.Contains(t, prompt, "Add user authentication")
 	assert.Contains(t, prompt, "gh pr create")
+	assert.Contains(t, prompt, "git push -u origin HEAD")
+	assert.Contains(t, prompt, "CRITICAL")
+	assert.Contains(t, prompt, "MANDATORY")
 	assert.Contains(t, prompt, "recall")
-	assert.Contains(t, prompt, "remember_fact")
 	assert.Contains(t, prompt, "Linear MCP")
 }
 
@@ -61,6 +66,64 @@ func TestWorkSession_Cleanup_NonexistentWorktree_DoesNotPanic(t *testing.T) {
 
 	ws.Cleanup(context.Background())
 	ws.Cleanup(context.Background())
+}
+
+func TestRescuePR_ExtractsPRURL(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	memDB, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = memDB.Close() })
+
+	sqlDB, sqlErr := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, sqlErr)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	runner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"https://github.com/JR-G/project/pull/42"}` + "\n"),
+	}
+	agentInstance := buildAgent(t, runner, agent.RoleEngineer1, memDB)
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{},
+		map[agent.Role]*agent.Agent{agent.RoleEngineer1: agentInstance},
+		checkIns, nil, nil,
+	)
+
+	prURL := orch.RescuePRForTest(ctx, agentInstance, "/tmp/work", "JAM-1", "feat/JAM-1")
+	assert.Equal(t, "https://github.com/JR-G/project/pull/42", prURL)
+}
+
+func TestRescuePR_NoPR_ReturnsEmpty(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	memDB, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = memDB.Close() })
+
+	sqlDB, sqlErr := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, sqlErr)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	runner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"FAILED"}` + "\n"),
+	}
+	agentInstance := buildAgent(t, runner, agent.RoleEngineer1, memDB)
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{},
+		map[agent.Role]*agent.Agent{agent.RoleEngineer1: agentInstance},
+		checkIns, nil, nil,
+	)
+
+	prURL := orch.RescuePRForTest(ctx, agentInstance, "/tmp/work", "JAM-1", "feat/JAM-1")
+	assert.Empty(t, prURL)
 }
 
 func initTestRepo(t *testing.T, dir string) {

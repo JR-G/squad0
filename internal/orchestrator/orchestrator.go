@@ -353,28 +353,17 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 	// Pre-submission checklist — verify work is clean before review.
 	RunPreSubmitCheck(ctx, agentInstance, workSession.Dir())
 
-	if prURL != "" {
-		orch.setPipelinePR(ctx, assignment.WorkItemID, prURL)
+	// If the session produced no PR, try once more with a targeted
+	// DirectSession before giving up. Engineers sometimes complete
+	// the work but skip the push/PR step.
+	if prURL == "" {
+		prURL = orch.rescuePR(ctx, agentInstance, workSession.Dir(), assignment.Ticket, branch)
 	}
 
-	finishedMsg := fmt.Sprintf("Finished %s.", ticketLink)
-	if prURL != "" {
-		prLink := orch.cfg.Links.PRLink(prURL)
-		finishedMsg = fmt.Sprintf("Finished %s — %s", ticketLink, prLink)
-	}
-
-	orch.announceAsRole(ctx, "engineering", finishedMsg, role)
-
-	reviewMsg := fmt.Sprintf("Finished %s — ready for review", ticketLink)
-	if prURL != "" {
-		prLink := orch.cfg.Links.PRLink(prURL)
-		reviewMsg = fmt.Sprintf("Finished %s — %s", ticketLink, prLink)
-	}
-	orch.announceAsRole(ctx, "reviews", reviewMsg, role)
+	orch.announceSessionResult(ctx, prURL, ticketLink, assignment.WorkItemID, role)
 
 	orch.storeProjectEpisode(ctx, role, assignment.Ticket, result.Transcript)
 
-	// Persist findings to Linear ticket (Gas Town #9).
 	go orch.PersistFindings(ctx, assignment.Ticket, result.Transcript)
 
 	pmAgent := orch.agents[agent.RolePM]

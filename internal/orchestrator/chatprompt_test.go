@@ -22,6 +22,41 @@ func TestContainsQuestion_WithoutQuestionMark_ReturnsFalse(t *testing.T) {
 	assert.False(t, orchestrator.ContainsQuestionForTest("I think we should use goroutines"))
 }
 
+func TestBuildChatPrompt_ContainsChatOnlyWarning(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	runner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"sounds good"}` + "\n"),
+	}
+
+	allRoles := agent.AllRoles()
+	agents := make(map[agent.Role]*agent.Agent, len(allRoles))
+	factStores := make(map[agent.Role]*memory.FactStore, len(allRoles))
+	for _, role := range allRoles {
+		agents[role] = buildAgent(t, runner, role, db)
+		factStores[role] = memory.NewFactStore(db)
+	}
+
+	engine := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
+	engine.OnMessage(ctx, "engineering", "ceo", "can someone merge that PR?")
+
+	// At least one prompt should contain the chat-only warning.
+	foundWarning := false
+	for _, call := range runner.calls {
+		if containsStr(call.stdin, "CHAT ONLY") && containsStr(call.stdin, "cannot run commands") {
+			foundWarning = true
+			break
+		}
+	}
+
+	assert.True(t, foundWarning, "chat prompt should contain CHAT ONLY warning")
+}
+
 func TestBuildChatPrompt_WithVoice_IncludesVoiceSection(t *testing.T) {
 	t.Parallel()
 

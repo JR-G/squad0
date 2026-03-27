@@ -22,23 +22,22 @@ const implementationPromptTemplate = `You are working on ticket %s.
 3. Explore the codebase to understand the existing code
 4. Implement the changes with clean, well-tested code
 5. Make atomic commits with conventional commit messages (feat:, fix:, etc.)
-6. When finished, open a PR using: gh pr create --title "..." --body "..."
+6. Push your branch and open a PR — this is MANDATORY, do not skip:
+   git push -u origin HEAD
+   gh pr create --title "%s: <description>" --body "<what and why>"
 7. Move the ticket to "In Review" status using Linear MCP tools
 8. Use remember_fact to store any important learnings from this work
 
-Keep your implementation focused on the ticket scope. If you discover issues outside the scope, create new Linear tickets for them using the Linear MCP tools — don't expand the scope of your current work.
+CRITICAL: Your session is not complete until a PR exists on GitHub. After implementing, you MUST push and create a PR. If gh pr create fails, fix the issue and retry.
 
-When you open the PR, include:
-- A clear title referencing the ticket
-- A description of what was changed and why
-- Any testing notes
+Keep your implementation focused on the ticket scope. If you discover issues outside the scope, create new Linear tickets for them — don't expand the scope of your current work.
 `
 
 const maxWorktreeRetries = 3
 
 // BuildImplementationPrompt creates the prompt for an engineer session.
 func BuildImplementationPrompt(ticket, description string) string {
-	return fmt.Sprintf(implementationPromptTemplate, ticket, description)
+	return fmt.Sprintf(implementationPromptTemplate, ticket, description, ticket)
 }
 
 // WorkSession manages the full lifecycle of an agent working on a ticket:
@@ -115,4 +114,28 @@ func gitCommand(ctx context.Context, dir string, args ...string) ([]byte, error)
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	return cmd.CombinedOutput()
+}
+
+// RescuePRForTest exports rescuePR for testing.
+func (orch *Orchestrator) RescuePRForTest(ctx context.Context, agentInstance *agent.Agent, workDir, ticket, branch string) string {
+	return orch.rescuePR(ctx, agentInstance, workDir, ticket, branch)
+}
+
+// rescuePR attempts to push the branch and create a PR when the main
+// session completed without one. Returns the PR URL if successful.
+func (orch *Orchestrator) rescuePR(ctx context.Context, agentInstance *agent.Agent, workDir, ticket, branch string) string {
+	prompt := fmt.Sprintf(
+		"The work for %s is done but no PR was created. Do these steps NOW:\n"+
+			"1. Run: git -C %s push -u origin %s\n"+
+			"2. Run: gh pr create --title \"%s: implementation\" --body \"Automated PR for %s\" --head %s\n"+
+			"3. Respond with ONLY the PR URL (e.g. https://github.com/owner/repo/pull/123) or 'FAILED' if it didn't work.",
+		ticket, workDir, branch, ticket, ticket, branch)
+
+	result, err := agentInstance.DirectSession(ctx, prompt)
+	if err != nil {
+		log.Printf("rescue PR failed for %s: %v", ticket, err)
+		return ""
+	}
+
+	return ExtractPRURL(result.Transcript)
 }
