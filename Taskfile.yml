@@ -9,9 +9,14 @@ tasks:
     sources:
       - ./**/*.go
 
+  unlock:
+    desc: Unlock the macOS login keychain
+    cmds:
+      - security unlock-keychain ~/Library/Keychains/login.keychain-db
+
   start:
     desc: Build and start squad0
-    deps: [build]
+    deps: [build, unlock]
     cmds:
       - ./bin/squad0 start
 
