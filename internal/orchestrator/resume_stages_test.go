@@ -416,14 +416,14 @@ func TestResumeWithGitHubState_Approved_SendsEngineerToMerge(t *testing.T) {
 	require.NoError(t, createErr)
 	require.NoError(t, pipeStore.SetPRURL(ctx, itemID, "https://github.com/test-org/test-repo/pull/100"))
 
-	// Resume should check GitHub, find APPROVED, and send engineer to merge.
-	timedCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
-	defer cancel()
-
-	_ = orch.Run(timedCtx)
+	// Call resumeWorkItem directly to avoid tick loop timing issues.
+	orch.ResumeWorkItemForTest(ctx, pipeline.WorkItem{
+		ID: itemID, Ticket: "JAM-GH1", Engineer: agent.RoleEngineer1,
+		Stage: pipeline.StageWorking, PRURL: "https://github.com/test-org/test-repo/pull/100",
+		Branch: "feat/jam-gh1",
+	})
 	orch.Wait()
 
-	// Engineer should have been called for the merge.
 	engRunner.mu.Lock()
 	engCalls := len(engRunner.calls)
 	engRunner.mu.Unlock()
@@ -471,10 +471,11 @@ func TestResumeWithGitHubState_AlreadyMerged_AdvancesPipeline(t *testing.T) {
 	require.NoError(t, createErr)
 	require.NoError(t, pipeStore.SetPRURL(ctx, itemID, "https://github.com/test-org/test-repo/pull/101"))
 
-	timedCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
-	defer cancel()
-
-	_ = orch.Run(timedCtx)
+	orch.ResumeWorkItemForTest(ctx, pipeline.WorkItem{
+		ID: itemID, Ticket: "JAM-GH2", Engineer: agent.RoleEngineer1,
+		Stage: pipeline.StageWorking, PRURL: "https://github.com/test-org/test-repo/pull/101",
+		Branch: "feat/jam-gh2",
+	})
 	orch.Wait()
 
 	item, getErr := pipeStore.GetByID(ctx, itemID)

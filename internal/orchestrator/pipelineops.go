@@ -12,6 +12,11 @@ import (
 	"github.com/JR-G/squad0/internal/pipeline"
 )
 
+// ResumeWorkItemForTest exports resumeWorkItem for testing.
+func (orch *Orchestrator) ResumeWorkItemForTest(ctx context.Context, item pipeline.WorkItem) {
+	orch.resumeWorkItem(ctx, item)
+}
+
 // SetPipelinePRForTest exports setPipelinePR for testing.
 func (orch *Orchestrator) SetPipelinePRForTest(ctx context.Context, itemID int64, prURL string) {
 	orch.setPipelinePR(ctx, itemID, prURL)
