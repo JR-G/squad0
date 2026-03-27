@@ -65,9 +65,11 @@ func TestRegisterDefaultHandlers_RegistersAllExpectedEvents(t *testing.T) {
 
 	orch.RegisterDefaultHandlers(bus)
 
-	assert.Equal(t, 1, bus.HandlerCount(orchestrator.EventPRApproved))
-	assert.Equal(t, 1, bus.HandlerCount(orchestrator.EventChangesRequested))
-	assert.Equal(t, 1, bus.HandlerCount(orchestrator.EventFixUpComplete))
+	// PRApproved, ChangesRequested, FixUpComplete are synchronous — no handlers.
+	assert.Equal(t, 0, bus.HandlerCount(orchestrator.EventPRApproved))
+	assert.Equal(t, 0, bus.HandlerCount(orchestrator.EventChangesRequested))
+	assert.Equal(t, 0, bus.HandlerCount(orchestrator.EventFixUpComplete))
+	// MergeFailed and AgentIdle are async — have handlers.
 	assert.Equal(t, 1, bus.HandlerCount(orchestrator.EventMergeFailed))
 	assert.Equal(t, 1, bus.HandlerCount(orchestrator.EventAgentIdle))
 }
@@ -97,8 +99,8 @@ func TestRegisterDefaultHandlers_CalledTwice_DoubleRegisters(t *testing.T) {
 	orch.RegisterDefaultHandlers(bus)
 	orch.RegisterDefaultHandlers(bus)
 
-	assert.Equal(t, 2, bus.HandlerCount(orchestrator.EventPRApproved))
-	assert.Equal(t, 2, bus.HandlerCount(orchestrator.EventChangesRequested))
+	assert.Equal(t, 2, bus.HandlerCount(orchestrator.EventMergeFailed))
+	assert.Equal(t, 2, bus.HandlerCount(orchestrator.EventAgentIdle))
 }
 
 func TestEventBus_PRApproved_HandlerReceivesData(t *testing.T) {

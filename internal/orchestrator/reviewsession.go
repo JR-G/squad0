@@ -170,14 +170,16 @@ func (orch *Orchestrator) runReview(ctx context.Context, reviewer *agent.Agent, 
 		// Architecture review runs in the background — it does not block the merge.
 		go orch.archReviewWithTimeout(ctx, prURL, ticket, engineerRole)
 
-		orch.emitOrFallback(ctx, EventPRApproved, prURL, ticket, workItemID, engineerRole, func() {
-			orch.startEngineerMerge(ctx, prURL, ticket, workItemID, engineerRole)
-		})
+		// Merge is SYNCHRONOUS — the review goroutine owns the full
+		// lifecycle: review → approve → merge. No async event dispatch
+		// here because that caused races (merge starting while a
+		// parallel review was still running).
+		orch.emitEvent(ctx, EventPRApproved, prURL, ticket, workItemID, engineerRole)
+		orch.startEngineerMerge(ctx, prURL, ticket, workItemID, engineerRole)
 
 	case ReviewChangesRequested:
-		orch.emitOrFallback(ctx, EventChangesRequested, prURL, ticket, workItemID, engineerRole, func() {
-			orch.handleChangesRequested(ctx, prURL, ticket, workItemID, engineerRole, "")
-		})
+		orch.emitEvent(ctx, EventChangesRequested, prURL, ticket, workItemID, engineerRole)
+		orch.handleChangesRequested(ctx, prURL, ticket, workItemID, engineerRole, "")
 	}
 }
 
@@ -419,10 +421,10 @@ func (orch *Orchestrator) startFixUp(ctx context.Context, prURL, ticket string, 
 
 	_ = result
 
-	// Re-review: reviewer specifically checks their previous comments.
-	orch.emitOrFallback(ctx, EventFixUpComplete, prURL, ticket, workItemID, engineerRole, func() {
-		orch.startReReview(ctx, prURL, ticket, workItemID, engineerRole)
-	})
+	// Re-review is synchronous — the fix-up goroutine owns the full
+	// lifecycle: fix → re-review → approve/reject.
+	orch.emitEvent(ctx, EventFixUpComplete, prURL, ticket, workItemID, engineerRole)
+	orch.startReReview(ctx, prURL, ticket, workItemID, engineerRole)
 }
 
 // forceApproval ensures the reviewer's GitHub approval is actually submitted.

@@ -141,23 +141,6 @@ func (orch *Orchestrator) EventBus() *EventBus {
 	return orch.eventBus
 }
 
-// emitOrFallback emits an event if the bus is configured, otherwise
-// calls the fallback function directly. This preserves backward
-// compatibility — tests that don't set up an event bus still work.
-func (orch *Orchestrator) emitOrFallback(ctx context.Context, kind EventKind, prURL, ticket string, workItemID int64, engineerRole agent.Role, fallback func()) {
-	if orch.eventBus == nil {
-		fallback()
-		return
-	}
-	orch.eventBus.Emit(ctx, Event{
-		Kind:         kind,
-		Ticket:       ticket,
-		PRURL:        prURL,
-		WorkItemID:   workItemID,
-		EngineerRole: engineerRole,
-	})
-}
-
 // emitEvent fires an event if the bus is configured. Does nothing
 // when the bus is nil — used for informational events that don't
 // need a fallback.
@@ -176,19 +159,10 @@ func (orch *Orchestrator) emitEvent(ctx context.Context, kind EventKind, prURL, 
 
 // RegisterDefaultHandlers wires up the standard event handlers that
 // connect events to existing orchestrator methods.
+// RegisterDefaultHandlers wires up event handlers for async operations.
+// Note: review → approve → merge is SYNCHRONOUS (not event-driven)
+// to prevent races. These handlers are for genuinely async operations.
 func (orch *Orchestrator) RegisterDefaultHandlers(bus *EventBus) {
-	bus.On(EventPRApproved, func(ctx context.Context, event Event) {
-		orch.startEngineerMerge(ctx, event.PRURL, event.Ticket, event.WorkItemID, event.EngineerRole)
-	})
-
-	bus.On(EventChangesRequested, func(ctx context.Context, event Event) {
-		orch.handleChangesRequested(ctx, event.PRURL, event.Ticket, event.WorkItemID, event.EngineerRole, "")
-	})
-
-	bus.On(EventFixUpComplete, func(ctx context.Context, event Event) {
-		orch.startReReview(ctx, event.PRURL, event.Ticket, event.WorkItemID, event.EngineerRole)
-	})
-
 	bus.On(EventMergeFailed, func(ctx context.Context, event Event) {
 		orch.startFixUp(ctx, event.PRURL, event.Ticket, event.WorkItemID, event.EngineerRole)
 	})
