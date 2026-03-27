@@ -62,6 +62,11 @@ func (orch *Orchestrator) TechLeadDiscussionReview(ctx context.Context, channel,
 	}
 }
 
+// RosterContextForTest exports rosterContext for testing.
+func RosterContextForTest(roster map[agent.Role]string) string {
+	return rosterContext(roster)
+}
+
 func rosterContext(roster map[agent.Role]string) string {
 	if len(roster) == 0 {
 		return ""

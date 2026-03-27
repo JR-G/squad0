@@ -242,6 +242,11 @@ func (orch *Orchestrator) filterByWIP(ctx context.Context, roles []agent.Role) [
 	return available
 }
 
+// AnnounceSessionResultForTest exports announceSessionResult for testing.
+func (orch *Orchestrator) AnnounceSessionResultForTest(ctx context.Context, prURL, ticketLink string, workItemID int64, role agent.Role) {
+	orch.announceSessionResult(ctx, prURL, ticketLink, workItemID, role)
+}
+
 // announceSessionResult handles the post-session PR state: sets the
 // pipeline PR, posts announcements, or marks the item failed if no PR.
 func (orch *Orchestrator) announceSessionResult(ctx context.Context, prURL, ticketLink string, workItemID int64, role agent.Role) {

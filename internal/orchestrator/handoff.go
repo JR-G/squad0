@@ -17,6 +17,11 @@ func (orch *Orchestrator) SetHandoffStore(store *pipeline.HandoffStore) {
 	orch.handoffStore = store
 }
 
+// WriteHandoffForTest exports writeHandoff for testing.
+func (orch *Orchestrator) WriteHandoffForTest(ctx context.Context, ticket string, role agent.Role, status, summary, branch string) {
+	orch.writeHandoff(ctx, ticket, role, status, summary, branch)
+}
+
 // writeHandoff persists a session handoff so the next session for
 // this ticket can pick up where the predecessor left off.
 func (orch *Orchestrator) writeHandoff(ctx context.Context, ticket string, role agent.Role, status, summary, branch string) {
