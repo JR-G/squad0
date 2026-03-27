@@ -10,10 +10,8 @@ import (
 	"github.com/JR-G/squad0/internal/pipeline"
 )
 
-// RunIdleDuties engages idle agents with real work: reading PR diffs,
-// posting substantive code observations, and contributing to reviews.
-// Uses DirectSession so agents have gh CLI access to read actual code.
-// Each PR is reviewed at most once per agent per orchestrator lifetime.
+// RunIdleDuties engages idle agents with real work: engineers check
+// their own PRs first, then all idle agents review others' PRs.
 // Also investigates any unresolved concerns agents have noted.
 func (orch *Orchestrator) RunIdleDuties(ctx context.Context, idleRoles []agent.Role) {
 	orch.InvestigateConcerns(ctx, idleRoles)
@@ -27,9 +25,75 @@ func (orch *Orchestrator) RunIdleDuties(ctx context.Context, idleRoles []agent.R
 		return
 	}
 
+	// Engineers check their own PRs first — ownership over their work.
+	for _, role := range idleRoles {
+		orch.checkOwnPR(ctx, role, openPRs)
+	}
+
 	for _, role := range idleRoles {
 		orch.tryIdleDuty(ctx, role, openPRs)
 	}
+}
+
+// checkOwnPR looks for the engineer's own open PR and follows up:
+// reads comments, checks status, merges if approved.
+func (orch *Orchestrator) checkOwnPR(ctx context.Context, role agent.Role, openPRs []pipeline.WorkItem) {
+	if !isEngineerRole(role) {
+		return
+	}
+
+	item := orch.findOwnPR(role, openPRs)
+	if item == nil {
+		return
+	}
+
+	if orch.hasCommented(role, item.ID) {
+		return
+	}
+	orch.markCommented(role, item.ID)
+
+	agentInstance, ok := orch.agents[role]
+	if !ok {
+		return
+	}
+
+	name := orch.NameForRole(role)
+	prompt := fmt.Sprintf(
+		"You are %s. You have an open PR for %s: %s\n\n"+
+			"Check its status:\n"+
+			"1. Run: gh pr view %s --json state,reviewDecision,statusCheckRollup\n"+
+			"2. If APPROVED → merge it: gh pr merge %s --squash\n"+
+			"3. If CHANGES_REQUESTED → read comments: gh pr view %s --comments, then address them\n"+
+			"4. If no review yet → just respond PASS\n\n"+
+			"Respond with a 1-sentence Slack update about what you did, or PASS if nothing to do.",
+		name, item.Ticket, item.PRURL,
+		item.PRURL, item.PRURL, item.PRURL)
+
+	result, err := agentInstance.DirectSession(ctx, prompt)
+	if err != nil {
+		log.Printf("own PR check: %s session failed: %v", role, err)
+		return
+	}
+
+	response := filterPassResponse(result.Transcript)
+	if response == "" {
+		return
+	}
+
+	log.Printf("own PR check: %s followed up on %s", role, item.Ticket)
+	clean := cleanIdleResponse(response)
+	if clean != "" {
+		orch.postAsRole(ctx, "engineering", clean, role)
+	}
+}
+
+func (orch *Orchestrator) findOwnPR(role agent.Role, openPRs []pipeline.WorkItem) *pipeline.WorkItem {
+	for idx := range openPRs {
+		if openPRs[idx].Engineer == role {
+			return &openPRs[idx]
+		}
+	}
+	return nil
 }
 
 func (orch *Orchestrator) tryIdleDuty(ctx context.Context, role agent.Role, openPRs []pipeline.WorkItem) {

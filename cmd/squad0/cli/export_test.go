@@ -64,7 +64,7 @@ func CreateAgents(
 	if len(dataDir) > 0 {
 		dir = dataDir[0]
 	}
-	return createAgents(agentDBs, embedder, modelMap, personalityDir, dir)
+	return createAgents(agentDBs, embedder, modelMap, personalityDir, dir, "")
 }
 
 // BuildSingleAgent exports buildSingleAgent for testing.

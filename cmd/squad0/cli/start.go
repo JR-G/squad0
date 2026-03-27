@@ -102,7 +102,8 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 
 	embedder := memory.NewEmbedder(cfg.Embeddings.OllamaURL, cfg.Embeddings.Model)
 	modelMap := buildModelMap(cfg)
-	agents, err := createAgents(agentDBs, embedder, modelMap, deps.PersonalityDir, deps.DataDir)
+	targetRepoDir := resolveTargetRepo(cfg.Project.TargetRepo)
+	agents, err := createAgents(agentDBs, embedder, modelMap, deps.PersonalityDir, deps.DataDir, targetRepoDir)
 	if err != nil {
 		return fmt.Errorf("creating agents: %w", err)
 	}
@@ -140,7 +141,6 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	assigner := orchestrator.NewAssigner(pmAgent, cfg.Linear.TeamID)
 
 	workEnabled := cfg.Linear.TeamID != ""
-	targetRepoDir := resolveTargetRepo(cfg.Project.TargetRepo)
 
 	orch := orchestrator.NewOrchestrator(
 		orchestrator.Config{
@@ -316,6 +316,7 @@ func createAgents(
 	modelMap map[agent.Role]string,
 	personalityDir string,
 	dataDir string,
+	targetRepoDir string,
 ) (map[agent.Role]*agent.Agent, error) {
 	loader := agent.NewPersonalityLoader(personalityDir)
 	runner := agent.ExecProcessRunner{}
@@ -330,6 +331,7 @@ func createAgents(
 		newAgent := buildSingleAgent(role, agentDB, embedder, modelMap, loader, runner)
 		dbPath := filepath.Join(dataDir, "agents", string(role)+".db")
 		newAgent.SetDBPath(dbPath)
+		newAgent.SetDefaultWorkDir(targetRepoDir)
 		agents[role] = newAgent
 	}
 

@@ -13,19 +13,20 @@ const chatModel = "claude-haiku-4-5-20251001"
 
 // Agent represents a squad0 team member with a persistent identity.
 type Agent struct {
-	role          Role
-	model         string
-	session       *Session
-	loader        *PersonalityLoader
-	retriever     *memory.Retriever
-	agentDB       *memory.DB
-	graphStore    *memory.GraphStore
-	factStore     *memory.FactStore
-	episodeStore  *memory.EpisodeStore
-	embedder      *memory.Embedder
-	dbPath        string
-	MCPConfigPath string
-	ghToken       string // If set, passed as GH_TOKEN to sessions.
+	role           Role
+	model          string
+	session        *Session
+	loader         *PersonalityLoader
+	retriever      *memory.Retriever
+	agentDB        *memory.DB
+	graphStore     *memory.GraphStore
+	factStore      *memory.FactStore
+	episodeStore   *memory.EpisodeStore
+	embedder       *memory.Embedder
+	dbPath         string
+	MCPConfigPath  string
+	ghToken        string // If set, passed as GH_TOKEN env var only — never on disk.
+	defaultWorkDir string // CWD for QuickChat/DirectSession — prevents CLAUDE.md leakage.
 }
 
 // NewAgent creates an Agent with all dependencies injected.
@@ -138,9 +139,10 @@ func (agent *Agent) QuickChat(ctx context.Context, prompt string) (string, error
 	fullPrompt := voice + "\n\n" + prompt
 
 	cfg := SessionConfig{
-		Role:   agent.role,
-		Model:  chatModel,
-		Prompt: fullPrompt,
+		Role:       agent.role,
+		Model:      chatModel,
+		Prompt:     fullPrompt,
+		WorkingDir: agent.defaultWorkDir,
 	}
 
 	result, err := agent.session.Run(ctx, cfg)
@@ -153,9 +155,16 @@ func (agent *Agent) QuickChat(ctx context.Context, prompt string) (string, error
 }
 
 // SetGHToken sets a custom GitHub token for this agent's sessions.
-// Used for reviewer/PM agents that need a GitHub App token to approve PRs.
+// The token is passed as a process env var only — never written to disk.
 func (agent *Agent) SetGHToken(token string) {
 	agent.ghToken = token
+}
+
+// SetDefaultWorkDir sets the working directory for QuickChat and
+// DirectSession. Without this, sessions inherit the squad0 process
+// CWD and pick up squad0's own CLAUDE.md.
+func (agent *Agent) SetDefaultWorkDir(dir string) {
+	agent.defaultWorkDir = dir
 }
 
 // DirectSession runs a clean Claude Code session with the agent's own
@@ -164,10 +173,11 @@ func (agent *Agent) SetGHToken(token string) {
 // be buried in other context.
 func (agent *Agent) DirectSession(ctx context.Context, prompt string) (SessionResult, error) {
 	cfg := SessionConfig{
-		Role:   agent.role,
-		Model:  agent.model,
-		Prompt: prompt,
-		Env:    agent.envWithGHToken(),
+		Role:       agent.role,
+		Model:      agent.model,
+		Prompt:     prompt,
+		WorkingDir: agent.defaultWorkDir,
+		Env:        agent.envWithGHToken(),
 	}
 
 	return agent.session.Run(ctx, cfg)

@@ -100,7 +100,7 @@ func TestRunIdleDuties_IdleEngineer_CommentsOnOthersPR(t *testing.T) {
 	assert.GreaterOrEqual(t, eng2Calls, 1, "idle engineer should comment on colleague's PR")
 }
 
-func TestRunIdleDuties_DoesNotCommentOnOwnPR(t *testing.T) {
+func TestRunIdleDuties_EngineerChecksOwnPR(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -116,7 +116,6 @@ func TestRunIdleDuties_DoesNotCommentOnOwnPR(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, pipeStore.SetPRURL(ctx, itemID2, "https://github.com/test-org/test-repo/pull/2"))
 
-	// Engineer-1 is idle but should NOT comment on own PR.
 	runners[agent.RoleEngineer1].mu.Lock()
 	beforeCount := len(runners[agent.RoleEngineer1].calls)
 	runners[agent.RoleEngineer1].mu.Unlock()
@@ -126,7 +125,7 @@ func TestRunIdleDuties_DoesNotCommentOnOwnPR(t *testing.T) {
 	runners[agent.RoleEngineer1].mu.Lock()
 	afterCount := len(runners[agent.RoleEngineer1].calls)
 	runners[agent.RoleEngineer1].mu.Unlock()
-	assert.Equal(t, beforeCount, afterCount, "engineer should not comment on own PR")
+	assert.Equal(t, beforeCount+1, afterCount, "engineer should check own PR status")
 }
 
 func TestRunIdleDuties_OnlyCommentsOnce(t *testing.T) {
