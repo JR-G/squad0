@@ -104,10 +104,9 @@ func (engine *ConversationEngine) OnThreadMessage(ctx context.Context, channel, 
 	timeSinceLast := time.Since(state.lastMessage)
 	state.lastMessage = time.Now()
 
-	// Only update the active thread for human messages. Agent
-	// messages (narration, idle comments) reply in their own thread
-	// but must not hijack the channel's active thread.
-	if threadTS != "" && isHumanMessage(sender) {
+	// Set the active thread. Human messages always update it. Agent
+	// messages only set it when no thread exists (new conversation).
+	if threadTS != "" && (isHumanMessage(sender) || state.threadTS == "") {
 		state.threadTS = threadTS
 	}
 
@@ -120,7 +119,15 @@ func (engine *ConversationEngine) OnThreadMessage(ctx context.Context, channel, 
 	mentioned := engine.findMentionedRoles(recentCopy, sender)
 
 	// Time-based decay: respond if conversation is alive.
+	// When conversation is stale, clear the thread so the next burst
+	// starts a fresh thread instead of replying to an old one.
 	baseCount := decideBaseResponders(timeSinceLast, isHumanMessage(sender))
+	if baseCount == 0 && timeSinceLast > 5*time.Minute {
+		engine.mu.Lock()
+		state.threadTS = ""
+		engine.mu.Unlock()
+		activeThread = ""
+	}
 
 	// Chitchat is low-priority — max 1 responder so it doesn't
 	// dominate agent time or compete with work channels.

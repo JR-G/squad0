@@ -280,7 +280,7 @@ func TestTechLeadDiscussionReview_PromptContainsDecisionInstruction(t *testing.T
 	orch.TechLeadDiscussionReview(ctx, "engineering", "my plan", "JAM-99")
 
 	require.NotEmpty(t, tlRunner.calls)
-	assert.Contains(t, tlRunner.calls[0].stdin, "DECISION: statement")
+	assert.Contains(t, tlRunner.calls[0].stdin, "DECISION:")
 }
 
 func TestTechLeadDiscussionReview_WithDecision_StoresIt(t *testing.T) {

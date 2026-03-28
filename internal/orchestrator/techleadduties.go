@@ -37,10 +37,11 @@ func (orch *Orchestrator) TechLeadDiscussionReview(ctx context.Context, channel,
 		}
 	}
 
-	prompt += "\nRespond with your architectural take. Use people's names, not role IDs. "
+	prompt += "\nRespond with your architectural take in 2-4 sentences MAX. Be specific — name a file, pattern, or risk. "
+	prompt += "Do NOT write paragraphs. Do NOT explain your reasoning at length. Just the opinion and the action. "
 	prompt += rosterContext(orch.roster)
 	prompt += "Use Slack formatting (*bold* not **bold**). No markdown headers. " +
-		"End with a clear DECISION: statement summarising what the engineer should do."
+		"End with a clear DECISION: one line."
 
 	response, err := techLead.QuickChat(ctx, prompt)
 	if err != nil {

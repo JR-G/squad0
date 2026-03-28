@@ -121,7 +121,7 @@ func channelInstruction(channel string) string {
 	if channel == "chitchat" {
 		return "This is the casual channel — talk about anything except work. Music, food, hot takes, weekend plans, something funny, a random thought. Be yourself."
 	}
-	return "Respond to this conversation."
+	return "Respond from YOUR perspective. If you disagree, say so. If you see a risk others missed, call it out. Don't just agree — add value or challenge."
 }
 
 // ContainsQuestionForTest exports containsQuestion for testing.
