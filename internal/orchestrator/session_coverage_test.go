@@ -197,6 +197,50 @@ func TestAnnounceSessionResult_NoPR_MarksFailed(t *testing.T) {
 	assert.Equal(t, pipeline.StageFailed, item.Stage)
 }
 
+func TestFailAndRequeue_MarksFailedAndMovesTicket(t *testing.T) {
+	t.Parallel()
+
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	ctx := context.Background()
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	pipeStore := pipeline.NewWorkItemStore(sqlDB)
+	require.NoError(t, pipeStore.InitSchema(ctx))
+
+	memDB, memErr := memory.Open(ctx, ":memory:")
+	require.NoError(t, memErr)
+	t.Cleanup(func() { _ = memDB.Close() })
+
+	pmRunner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"done"}` + "\n"),
+	}
+	pmAgent := buildAgent(t, pmRunner, agent.RolePM, memDB)
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{},
+		map[agent.Role]*agent.Agent{agent.RolePM: pmAgent},
+		checkIns, nil, nil,
+	)
+	orch.SetPipeline(pipeStore)
+
+	itemID, _ := pipeStore.Create(ctx, pipeline.WorkItem{
+		Ticket: "JAM-FAIL", Engineer: agent.RoleEngineer1, Stage: pipeline.StageWorking,
+	})
+
+	orch.FailAndRequeueForTest(ctx, pipeline.WorkItem{ID: itemID, Ticket: "JAM-FAIL"})
+
+	item, getErr := pipeStore.GetByID(ctx, itemID)
+	require.NoError(t, getErr)
+	assert.Equal(t, pipeline.StageFailed, item.Stage)
+
+	// PM should have been called to move ticket to Todo.
+	pmRunner.mu.Lock()
+	defer pmRunner.mu.Unlock()
+	assert.GreaterOrEqual(t, len(pmRunner.calls), 1, "PM should move ticket to Todo")
+}
+
 func TestRecordSessionStart_WithMonitor_DoesNotPanic(t *testing.T) {
 	t.Parallel()
 

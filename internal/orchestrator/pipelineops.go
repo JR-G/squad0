@@ -195,7 +195,7 @@ func (orch *Orchestrator) resumeStaleWorkingItem(ctx context.Context, item pipel
 	age := time.Since(item.UpdatedAt)
 	log.Printf("work item %s has no PR after %s — marking failed", item.Ticket, formatDuration(age))
 
-	orch.advancePipeline(ctx, item.ID, pipeline.StageFailed)
+	orch.failAndRequeue(ctx, item)
 }
 
 func (orch *Orchestrator) filterByWIP(ctx context.Context, roles []agent.Role) []agent.Role {
@@ -242,7 +242,7 @@ func (orch *Orchestrator) clearStaleWork(ctx context.Context, role agent.Role, i
 	for _, item := range items {
 		if item.Stage == pipeline.StageWorking && item.PRURL == "" {
 			log.Printf("tick: %s has no PR for %s — marking failed", role, item.Ticket)
-			orch.advancePipeline(ctx, item.ID, pipeline.StageFailed)
+			orch.failAndRequeue(ctx, item)
 			continue
 		}
 		orch.resumeWorkItem(ctx, item)
@@ -250,6 +250,21 @@ func (orch *Orchestrator) clearStaleWork(ctx context.Context, role agent.Role, i
 	}
 
 	return allCleared
+}
+
+// FailAndRequeueForTest exports failAndRequeue for testing.
+func (orch *Orchestrator) FailAndRequeueForTest(ctx context.Context, item pipeline.WorkItem) {
+	orch.failAndRequeue(ctx, item)
+}
+
+// failAndRequeue marks a pipeline item as failed and moves the Linear
+// ticket back to Todo so it can be reassigned.
+func (orch *Orchestrator) failAndRequeue(ctx context.Context, item pipeline.WorkItem) {
+	orch.advancePipeline(ctx, item.ID, pipeline.StageFailed)
+	pmAgent := orch.agents[agent.RolePM]
+	if pmAgent != nil {
+		go MoveTicketState(ctx, pmAgent, item.Ticket, "Todo")
+	}
 }
 
 // AnnounceSessionResultForTest exports announceSessionResult for testing.
