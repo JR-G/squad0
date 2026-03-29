@@ -32,6 +32,7 @@ type ConversationEngine struct {
 	voices           map[agent.Role]string
 	pauseChecker     PauseChecker
 	concerns         *ConcernTracker
+	outputPipeline   *OutputPipeline
 }
 
 type channelState struct {
@@ -48,12 +49,13 @@ func NewConversationEngine(
 	roster map[agent.Role]string,
 ) *ConversationEngine {
 	return &ConversationEngine{
-		agents:     agents,
-		factStores: factStores,
-		bot:        bot,
-		channels:   make(map[string]*channelState),
-		roster:     roster,
-		voices:     make(map[agent.Role]string),
+		agents:         agents,
+		factStores:     factStores,
+		bot:            bot,
+		channels:       make(map[string]*channelState),
+		roster:         roster,
+		voices:         make(map[agent.Role]string),
+		outputPipeline: NewOutputPipeline(),
 	}
 }
 
@@ -304,43 +306,15 @@ func (engine *ConversationEngine) tryRespondInThread(ctx context.Context, channe
 	voiceText := engine.voices[role]
 	engine.mu.Unlock()
 
-	prompt := buildChatPrompt(role, channel, recentLines, engine.topBeliefs(ctx, role), engine.roster, voiceText)
+	summary := SummariseThread(recentLines, summariseThreshold)
+	prompt := BuildChatPromptWithSummary(role, channel, recentLines, engine.topBeliefs(ctx, role), engine.roster, voiceText, summary)
 
-	transcript, err := agentInstance.QuickChat(ctx, prompt)
-	if err != nil {
-		log.Printf("chat failed for %s: %v", role, err)
+	text := engine.generateValidResponse(ctx, agentInstance, role, prompt, recentLines)
+	if text == "" {
 		return
 	}
 
-	text := strings.TrimSpace(transcript)
-	log.Printf("chat: %s said: %q", role, text)
-
-	if text == "" || containsPass(text) {
-		log.Printf("chat: %s passed or empty", role)
-		return
-	}
-
-	if engine.bot == nil {
-		log.Printf("chat: bot is nil, can't post")
-		return
-	}
-
-	postErr := engine.postResponse(ctx, channel, text, role, threadTS)
-	if postErr != nil {
-		log.Printf("chat: failed to post for %s in %s: %v", role, channel, postErr)
-		return
-	}
-
-	engine.mu.Lock()
-	state := engine.getOrCreateChannel(channel)
-	state.recentLines = appendRecent(state.recentLines, fmt.Sprintf("%s: %s", role, text))
-	engine.mu.Unlock()
-
-	// Store strong opinions as beliefs — conversations build memory.
-	engine.maybeStoreConversationBelief(ctx, role, text)
-
-	// Track concerns for later investigation during idle time.
-	engine.maybeStoreConcerns(role, text)
+	engine.postAndRecord(ctx, channel, role, text, threadTS)
 }
 
 func (engine *ConversationEngine) postResponse(ctx context.Context, channel, text string, role agent.Role, threadTS string) error {
