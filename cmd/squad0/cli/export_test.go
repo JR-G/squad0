@@ -37,7 +37,7 @@ func DurationUntilHour(hour int, now time.Time) time.Duration {
 }
 
 // SetupLogger exports setupLogger for testing with a configurable data dir.
-func SetupLogger(dataDir string, out io.Writer) (*logging.Logger, error) {
+func SetupLogger(dataDir string, out io.Writer) (*logging.Logger, *logging.ConsoleWriter, error) {
 	return setupLogger(dataDir, out)
 }
 

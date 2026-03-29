@@ -123,7 +123,7 @@ func TestSetupLogger_ValidPath_ReturnsLogger(t *testing.T) {
 	dataDir := t.TempDir()
 	out := &bytes.Buffer{}
 
-	appLogger, err := cli.SetupLogger(dataDir, out)
+	appLogger, _, err := cli.SetupLogger(dataDir, out)
 
 	require.NoError(t, err)
 	require.NotNil(t, appLogger)
@@ -136,7 +136,7 @@ func TestSetupLogger_InvalidPath_ReturnsError(t *testing.T) {
 
 	out := &bytes.Buffer{}
 
-	appLogger, err := cli.SetupLogger("/dev/null/impossible/path", out)
+	appLogger, _, err := cli.SetupLogger("/dev/null/impossible/path", out)
 
 	assert.Error(t, err)
 	assert.Nil(t, appLogger)

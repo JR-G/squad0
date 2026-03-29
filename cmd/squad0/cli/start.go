@@ -83,7 +83,7 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 
 	_, _ = fmt.Fprint(out, tui.Banner())
 
-	appLogger, err := setupLogger(deps.DataDir, out)
+	appLogger, consoleWriter, err := setupLogger(deps.DataDir, out)
 	if err != nil {
 		return err
 	}
@@ -199,6 +199,13 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 		roster[role] = persona.Name
 	}
 
+	// Wire roster to console writer so logs show agent names.
+	stringRoster := make(map[string]string, len(roster))
+	for role, name := range roster {
+		stringRoster[string(role)] = name
+	}
+	consoleWriter.SetRoster(stringRoster)
+
 	alerter.SetRoster(roster)
 	scheduler.SetPipeline(pipelineStore)
 	scheduler.SetAgents(agents)
@@ -244,20 +251,20 @@ func runEventLoop(
 	return <-errCh
 }
 
-func setupLogger(dataDir string, out io.Writer) (*logging.Logger, error) {
+func setupLogger(dataDir string, out io.Writer) (*logging.Logger, *logging.ConsoleWriter, error) {
 	logDir := filepath.Join(dataDir, "logs")
 	appLogger, err := logging.NewLogger(logDir)
 	if err != nil {
 		_, _ = fmt.Fprint(out, tui.StepFail("Logger failed"))
-		return nil, fmt.Errorf("creating logger: %w", err)
+		return nil, nil, fmt.Errorf("creating logger: %w", err)
 	}
 
-	// Coloured console output for the standard logger.
-	log.SetOutput(logging.NewConsoleWriter(os.Stderr))
-	log.SetFlags(0) // ConsoleWriter handles timestamps.
+	consoleWriter := logging.NewConsoleWriter(os.Stderr)
+	log.SetOutput(consoleWriter)
+	log.SetFlags(0)
 
 	_, _ = fmt.Fprint(out, tui.StepDone("Logger started"))
-	return appLogger, nil
+	return appLogger, consoleWriter, nil
 }
 
 func loadSecrets(ctx context.Context, loader SecretLoader, out io.Writer) (secrets.Secrets, error) {

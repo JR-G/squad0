@@ -26,7 +26,7 @@ func TestSetupLogger_CreatesLogDir(t *testing.T) {
 	tmpDir := t.TempDir()
 	out := &bytes.Buffer{}
 
-	appLogger, err := cli.SetupLogger(tmpDir, out)
+	appLogger, _, err := cli.SetupLogger(tmpDir, out)
 
 	require.NoError(t, err)
 	require.NotNil(t, appLogger)
@@ -48,7 +48,7 @@ func TestSetupLogger_UnwritableDir_ReturnsError(t *testing.T) {
 	logsPath := filepath.Join(tmpDir, "logs")
 	require.NoError(t, os.WriteFile(logsPath, []byte("blocker"), 0o444))
 
-	appLogger, err := cli.SetupLogger(tmpDir, out)
+	appLogger, _, err := cli.SetupLogger(tmpDir, out)
 
 	assert.Error(t, err)
 	assert.Nil(t, appLogger)
