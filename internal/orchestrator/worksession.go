@@ -98,6 +98,7 @@ func logWorktreeRemoval(ctx context.Context, repoDir, worktreeDir string) {
 func cleanupStaleWorktree(ctx context.Context, repoDir, worktreeDir, branch string) {
 	_, _ = gitCommand(ctx, repoDir, "worktree", "remove", "--force", worktreeDir)
 	_, _ = gitCommand(ctx, repoDir, "branch", "-D", branch)
+	_, _ = gitCommand(ctx, repoDir, "push", "origin", "--delete", branch)
 	_, _ = gitCommand(ctx, repoDir, "worktree", "prune")
 }
 

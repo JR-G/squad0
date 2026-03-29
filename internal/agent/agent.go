@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/JR-G/squad0/internal/memory"
 )
@@ -142,7 +143,7 @@ func (agent *Agent) QuickChat(ctx context.Context, prompt string) (string, error
 		Role:       agent.role,
 		Model:      chatModel,
 		Prompt:     fullPrompt,
-		WorkingDir: agent.defaultWorkDir,
+		WorkingDir: os.TempDir(), // Neutral dir — no CLAUDE.md to read.
 	}
 
 	result, err := agent.session.Run(ctx, cfg)

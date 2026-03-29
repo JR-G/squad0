@@ -24,14 +24,14 @@ func (orch *Orchestrator) TechLeadDiscussionReview(ctx context.Context, channel,
 		lines = orch.conversation.RecentMessages(channel)
 	}
 
-	prompt := fmt.Sprintf("An engineer just posted their plan for ticket %s. "+
+	prompt := fmt.Sprintf("An engineer just posted their plan for ticket %s:\n\n> %s\n\n"+
 		"Review it from an architectural perspective. Consider:\n"+
 		"- Does this approach fit the system's design?\n"+
 		"- Are there better patterns or approaches?\n"+
-		"- Any risks or concerns?\n\n", ticket)
+		"- Any risks or concerns?\n\n", ticket, plan)
 
 	if len(lines) > 0 {
-		prompt += "Discussion so far:\n"
+		prompt += "Other discussion:\n"
 		for _, line := range lines {
 			prompt += "> " + line + "\n"
 		}

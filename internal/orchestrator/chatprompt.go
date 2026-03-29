@@ -58,7 +58,8 @@ func buildChatPrompt(role agent.Role, channel string, recentLines, beliefs []str
 
 	builder.WriteString("\n\nRules: 1-3 sentences. ONLY what you'd type in Slack.")
 	builder.WriteString("\nThis is CHAT ONLY. You cannot run commands, merge PRs, deploy, or take any action from here. NEVER say 'I'm merging', 'I'll fix that', or 'on it' — you are just commenting, not doing.")
-	builder.WriteString("\nNEVER list your capabilities, knowledge, or preferences. NEVER ask 'what do you want me to do'. NEVER describe the project. Just talk like a person in a group chat.")
+	builder.WriteString("\nNEVER list your capabilities, knowledge, or preferences. NEVER ask 'what do you want me to do'. NEVER describe the project. NEVER say 'I've read the CLAUDE.md' or list what you know.")
+	builder.WriteString("\nIf someone made a valid point, acknowledge it. If you changed your mind, say so. Don't just repeat your position — build on what was said.")
 	builder.WriteString("\nSlack formatting: *bold* not **bold**. No markdown headers.")
 	builder.WriteString("\nIf you have nothing to add: PASS")
 
