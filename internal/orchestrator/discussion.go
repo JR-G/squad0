@@ -35,16 +35,14 @@ func filterPassResponse(text string) string {
 	return trimmed
 }
 
-const planPromptTemplate = `You're about to work on ticket %s: %s
+const planPromptTemplate = `You're about to work on ticket %s.
 
-Post your planned approach to #engineering. Be specific:
-- What files will you create or modify?
-- What's your high-level approach?
-- Any concerns or questions for the team?
+Summary: %s
 
-Keep it to 3-5 sentences. Be concrete, not vague.
-Use Slack formatting: *bold* not **bold**. No markdown headers (no # or ##). No numbered lists with bold items.
-Respond with ONLY your plan.
+Step 1: Read the full ticket from Linear — use your MCP tools to get the complete description and acceptance criteria.
+Step 2: Write your planned approach in 3-5 sentences. Be specific: what files, what approach, any concerns.
+
+Use Slack formatting (*bold* not **bold**). No headers. Respond with ONLY your plan.
 `
 
 // runDiscussionPhase posts the engineer's plan and waits for team
@@ -54,11 +52,14 @@ func (orch *Orchestrator) runDiscussionPhase(ctx context.Context, agentInstance 
 	role := agentInstance.Role()
 	planPrompt := fmt.Sprintf(planPromptTemplate, assignment.Ticket, assignment.Description)
 
-	plan, err := agentInstance.QuickChat(ctx, planPrompt)
+	// DirectSession — the engineer needs MCP tools to read the full
+	// ticket from Linear during planning.
+	result, err := agentInstance.DirectSession(ctx, planPrompt)
 	if err != nil {
 		log.Printf("discussion: %s failed to generate plan: %v", role, err)
 		return ""
 	}
+	plan := result.Transcript
 
 	plan = filterPassResponse(plan)
 	if plan == "" {

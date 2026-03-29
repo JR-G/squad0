@@ -98,28 +98,48 @@ func ExtractDecisionLine(text string) string {
 	return ""
 }
 
-// StoreArchitectureDecision saves a Tech Lead's architectural decision
-// as a belief in the project knowledge graph for future recall.
+// StoreArchitectureDecision saves a decision to BOTH the Tech Lead's
+// personal store AND the shared project store. All agents recall
+// team decisions, not just the TL.
 func (orch *Orchestrator) StoreArchitectureDecision(ctx context.Context, decision, ticket string) {
-	techLead, ok := orch.agents[agent.RoleTechLead]
+	content := fmt.Sprintf("[%s] %s", ticket, decision)
+	belief := memory.Belief{
+		Content:       content,
+		Confidence:    0.7,
+		Confirmations: 1,
+	}
+
+	orch.storeBelief(ctx, belief, agent.RoleTechLead)
+}
+
+func (orch *Orchestrator) storeBelief(ctx context.Context, belief memory.Belief, role agent.Role) {
+	orch.storePersonalBelief(ctx, belief, role)
+	orch.storeProjectBelief(ctx, belief)
+}
+
+func (orch *Orchestrator) storePersonalBelief(ctx context.Context, belief memory.Belief, role agent.Role) {
+	agentInstance, ok := orch.agents[role]
 	if !ok {
 		return
 	}
 
-	factStore := techLead.FactStore()
+	factStore := agentInstance.FactStore()
 	if factStore == nil {
 		return
 	}
 
-	content := fmt.Sprintf("[%s] %s", ticket, decision)
+	if _, err := factStore.CreateBelief(ctx, belief); err != nil {
+		log.Printf("failed to store belief for %s: %v", role, err)
+	}
+}
 
-	_, err := factStore.CreateBelief(ctx, memory.Belief{
-		Content:       content,
-		Confidence:    0.7,
-		Confirmations: 1,
-	})
-	if err != nil {
-		log.Printf("failed to store architecture decision: %v", err)
+func (orch *Orchestrator) storeProjectBelief(ctx context.Context, belief memory.Belief) {
+	if orch.projectFactStore == nil {
+		return
+	}
+
+	if _, err := orch.projectFactStore.CreateBelief(ctx, belief); err != nil {
+		log.Printf("failed to store project belief: %v", err)
 	}
 }
 
