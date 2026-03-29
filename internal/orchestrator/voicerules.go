@@ -67,8 +67,8 @@ func DefaultVoiceRules(role agent.Role) VoiceRules {
 		base.MaxChars = 300
 		base.MaxSentences = 3
 	case agent.RoleEngineer3:
-		base.MaxChars = 200
-		base.MaxSentences = 2
+		base.MaxChars = 350
+		base.MaxSentences = 3
 	case agent.RoleReviewer:
 		base.MaxChars = 350
 		base.MaxSentences = 3

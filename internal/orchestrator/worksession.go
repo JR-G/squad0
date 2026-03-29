@@ -13,24 +13,21 @@ import (
 
 const implementationPromptTemplate = `You are working on ticket %s.
 
-## Task
+## Summary
 %s
 
-## Instructions
-1. Read the ticket carefully and understand what needs to be done
-2. Use recall to check your memory for anything relevant to this work
-3. Explore the codebase to understand the existing code
-4. Implement the changes with clean, well-tested code
-5. Make atomic commits with conventional commit messages (feat:, fix:, etc.)
-6. Push your branch and open a PR — this is MANDATORY, do not skip:
+## Workflow
+Step 1: CONTEXT — Read the full ticket from Linear using your MCP tools. Use recall to check memory for anything relevant.
+Step 2: EXPLORE — Read the codebase to understand the existing code and patterns.
+Step 3: IMPLEMENT — Write clean, well-tested code. Make atomic commits (feat:, fix:, etc.).
+Step 4: SELF-REVIEW — Read your own diff. Check for missing tests, error handling, edge cases.
+Step 5: VERIFY — Run the test suite. Fix any failures.
+Step 6: SUBMIT — Push and create a PR:
    git push -u origin HEAD
    gh pr create --title "%s: <description>" --body "<what and why>"
-7. Move the ticket to "In Review" status using Linear MCP tools
-8. Use remember_fact to store any important learnings from this work
+Step 7: DONE — Move ticket to "In Review" status.
 
-CRITICAL: Your session is not complete until a PR exists on GitHub. After implementing, you MUST push and create a PR. If gh pr create fails, fix the issue and retry.
-
-Keep your implementation focused on the ticket scope. If you discover issues outside the scope, create new Linear tickets for them — don't expand the scope of your current work.
+Your session is not complete until a PR exists on GitHub. If a step fails, fix it and continue.
 `
 
 const maxWorktreeRetries = 3

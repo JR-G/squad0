@@ -25,10 +25,10 @@ func TestBuildImplementationPrompt_IncludesTicketAndDescription(t *testing.T) {
 	assert.Contains(t, prompt, "Add user authentication")
 	assert.Contains(t, prompt, "gh pr create")
 	assert.Contains(t, prompt, "git push -u origin HEAD")
-	assert.Contains(t, prompt, "CRITICAL")
-	assert.Contains(t, prompt, "MANDATORY")
+	assert.Contains(t, prompt, "Step 1:")
+	assert.Contains(t, prompt, "SELF-REVIEW")
 	assert.Contains(t, prompt, "recall")
-	assert.Contains(t, prompt, "Linear MCP")
+	assert.Contains(t, prompt, "Linear")
 }
 
 func TestNewWorkSession_CreatesWorktree(t *testing.T) {

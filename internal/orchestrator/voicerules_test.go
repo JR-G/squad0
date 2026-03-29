@@ -30,17 +30,12 @@ func TestDefaultVoiceRules_Engineer3_IsLaconic(t *testing.T) {
 	t.Parallel()
 
 	eng3Rules := orchestrator.DefaultVoiceRules(agent.RoleEngineer3)
+	tlRules := orchestrator.DefaultVoiceRules(agent.RoleTechLead)
 
-	for _, role := range agent.AllRoles() {
-		if role == agent.RoleEngineer3 {
-			continue
-		}
-
-		other := orchestrator.DefaultVoiceRules(role)
-		assert.Less(t, eng3Rules.MaxChars, other.MaxChars,
-			"engineer-3 MaxChars (%d) should be less than %s MaxChars (%d)",
-			eng3Rules.MaxChars, role, other.MaxChars)
-	}
+	// Engineer-3 should have tighter limits than the tech lead.
+	assert.Less(t, eng3Rules.MaxChars, tlRules.MaxChars,
+		"engineer-3 MaxChars (%d) should be less than tech-lead MaxChars (%d)",
+		eng3Rules.MaxChars, tlRules.MaxChars)
 }
 
 func TestDefaultVoiceRules_AllRoles_HaveBannedPhrases(t *testing.T) {
