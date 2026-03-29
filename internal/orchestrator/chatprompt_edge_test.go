@@ -15,11 +15,11 @@ func TestChannelInstruction_Chitchat_ReturnsCasualMessage(t *testing.T) {
 	assert.Contains(t, result, "casual")
 }
 
-func TestChannelInstruction_Engineering_ReturnsDefault(t *testing.T) {
+func TestChannelInstruction_Engineering_ReturnsWork(t *testing.T) {
 	t.Parallel()
 
 	result := orchestrator.ChannelInstructionForTest("engineering")
-	assert.Contains(t, result, "Respond")
+	assert.Equal(t, "work", result)
 }
 
 func TestRoleDescription_AllRoles_NonEmpty(t *testing.T) {
@@ -31,12 +31,12 @@ func TestRoleDescription_AllRoles_NonEmpty(t *testing.T) {
 		want string
 	}{
 		{"PM", agent.RolePM, "PM"},
-		{"TechLead", agent.RoleTechLead, "tech lead"},
-		{"Engineer1", agent.RoleEngineer1, "thorough"},
-		{"Engineer2", agent.RoleEngineer2, "pragmatic"},
-		{"Engineer3", agent.RoleEngineer3, "architectural"},
-		{"Reviewer", agent.RoleReviewer, "reviewer"},
-		{"Designer", agent.RoleDesigner, "designer"},
+		{"TechLead", agent.RoleTechLead, "Tech Lead"},
+		{"Engineer1", agent.RoleEngineer1, "Engineer"},
+		{"Engineer2", agent.RoleEngineer2, "Engineer"},
+		{"Engineer3", agent.RoleEngineer3, "Engineer"},
+		{"Reviewer", agent.RoleReviewer, "Reviewer"},
+		{"Designer", agent.RoleDesigner, "Designer"},
 	}
 
 	for _, tt := range tests {
@@ -44,7 +44,7 @@ func TestRoleDescription_AllRoles_NonEmpty(t *testing.T) {
 			t.Parallel()
 			result := orchestrator.RoleDescriptionForTest(tt.role)
 			assert.NotEmpty(t, result)
-			assert.Contains(t, result, tt.want)
+			assert.Equal(t, tt.want, result)
 		})
 	}
 }

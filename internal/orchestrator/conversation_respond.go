@@ -62,6 +62,12 @@ func (engine *ConversationEngine) postAndRecord(ctx context.Context, channel str
 		return
 	}
 
+	// Re-check similarity against live channel state. Other agents
+	// may have posted while this response was being generated.
+	if engine.isDuplicate(channel, role, text) {
+		return
+	}
+
 	postErr := engine.postResponse(ctx, channel, text, role, threadTS)
 	if postErr != nil {
 		log.Printf("chat: failed to post for %s in %s: %v", role, channel, postErr)
@@ -75,4 +81,21 @@ func (engine *ConversationEngine) postAndRecord(ctx context.Context, channel str
 
 	engine.maybeStoreConversationBelief(ctx, role, text)
 	engine.maybeStoreConcerns(role, text)
+}
+
+func (engine *ConversationEngine) isDuplicate(channel string, role agent.Role, text string) bool {
+	if engine.outputPipeline == nil {
+		return false
+	}
+
+	liveRecent := engine.RecentMessages(channel)
+	rules := engine.outputPipeline.RulesForRole(role)
+	sim := checkSimilarity(text, liveRecent, rules.RejectIfSimilar)
+
+	if !sim.OK {
+		log.Printf("chat: %s dropped (similar to recent post)", role)
+		return true
+	}
+
+	return false
 }

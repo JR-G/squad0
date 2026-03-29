@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
+	"sync"
 
 	"github.com/JR-G/squad0/internal/memory"
 )
@@ -27,7 +27,10 @@ type Agent struct {
 	dbPath         string
 	MCPConfigPath  string
 	ghToken        string // If set, passed as GH_TOKEN env var only — never on disk.
-	defaultWorkDir string // CWD for QuickChat/DirectSession — prevents CLAUDE.md leakage.
+	defaultWorkDir string // CWD for DirectSession — target repo access.
+	chatMu         sync.Mutex
+	chatRoster     map[Role]string
+	chatBeliefs    []string
 }
 
 // NewAgent creates an Agent with all dependencies injected.
@@ -129,21 +132,28 @@ func (agent *Agent) ExecuteTask(ctx context.Context, taskDescription string, fil
 }
 
 // QuickChat runs a lightweight Claude Code session for conversation.
-// Loads personality for authentic voice but skips full memory retrieval.
-// Top beliefs are injected by the caller's prompt. Uses the agent's
-// own model so personality comes through.
+// Creates a temp directory with a CLAUDE.md containing the agent's
+// personality — Claude Code reads this as project context, making
+// the identity part of its operating instructions rather than a
+// user prompt it can ignore.
 func (agent *Agent) QuickChat(ctx context.Context, prompt string) (string, error) {
-	// Load only the voice section — not the full personality file.
-	// The full file includes Memory/How You Work sections that add
-	// noise for quick chat responses. The voice is what matters.
-	voice := agent.loader.LoadVoice(agent.role)
-	fullPrompt := voice + "\n\n" + prompt
+	agent.chatMu.Lock()
+	roster := agent.chatRoster
+	beliefs := agent.chatBeliefs
+	agent.chatMu.Unlock()
+
+	chatCtx, err := NewChatContext(agent.role, roster, beliefs)
+	if err != nil {
+		log.Printf("quick chat context failed for %s: %v", agent.role, err)
+		return "", err
+	}
+	defer chatCtx.Cleanup()
 
 	cfg := SessionConfig{
 		Role:       agent.role,
 		Model:      chatModel,
-		Prompt:     fullPrompt,
-		WorkingDir: os.TempDir(), // Neutral dir — no CLAUDE.md to read.
+		Prompt:     prompt,
+		WorkingDir: chatCtx.Dir(),
 	}
 
 	result, err := agent.session.Run(ctx, cfg)
@@ -153,6 +163,15 @@ func (agent *Agent) QuickChat(ctx context.Context, prompt string) (string, error
 	}
 
 	return result.Transcript, nil
+}
+
+// SetChatContext provides the roster and beliefs for CLAUDE.md
+// generation during QuickChat sessions. Thread-safe.
+func (agent *Agent) SetChatContext(roster map[Role]string, beliefs []string) {
+	agent.chatMu.Lock()
+	defer agent.chatMu.Unlock()
+	agent.chatRoster = roster
+	agent.chatBeliefs = beliefs
 }
 
 // SetGHToken sets a custom GitHub token for this agent's sessions.

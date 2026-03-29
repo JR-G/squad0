@@ -13,24 +13,33 @@ type VoiceRules struct {
 
 // sharedBannedPhrases are filtered from ALL agent responses.
 var sharedBannedPhrases = []string{
+	// Capability listing.
 	"i can help with",
 	"my capabilities",
 	"i'm able to",
+	"i'm ready to work with you",
+	"i understand. i'm ready",
+	"i'll adopt this approach",
+	"key things i'm holding",
+	"i understand the project",
+	"ready to ship",
+	"what are you working on",
+	// Asking what to do.
 	"what would you like",
 	"what should i",
 	"what do you need",
 	"what's the task",
+	"what do you want me to",
+	// Claiming actions from chat.
 	"i'll go ahead",
 	"i'm merging",
 	"i'll fix that",
 	"i'll deploy",
 	"on it!",
+	// AI identity leak.
 	"i've read the claude",
 	"as an ai",
 	"i don't have the ability",
-	"key things i'm holding",
-	"i understand the project",
-	"ready to ship",
 }
 
 // DefaultVoiceRules returns per-role output constraints derived from

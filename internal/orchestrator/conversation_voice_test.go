@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -48,18 +47,15 @@ func TestSetVoices_LoadsPersonalityVoiceSections(t *testing.T) {
 	engine := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
 	engine.SetVoices(loader)
 
-	// Send a message to exercise the voice-injected prompts.
+	// Send a message to exercise the engine with voices loaded.
 	engine.OnMessage(ctx, "engineering", "ceo", "what's the plan?")
 
-	// At least one prompt should contain voice text.
-	foundVoice := false
-	for _, call := range runner.calls {
-		if strings.Contains(call.stdin, "Distinct voice for") {
-			foundVoice = true
-			break
-		}
-	}
-	assert.True(t, foundVoice, "expected prompts to include voice sections")
+	// Voice is now in CLAUDE.md (per-session file), not the user prompt.
+	// Verify the engine processed messages and at least one prompt uses
+	// the minimal Reply as format.
+	assert.GreaterOrEqual(t, len(runner.calls), 1, "expected at least one agent to be called")
+	assert.Contains(t, runner.calls[0].stdin, "Reply as",
+		"prompt should use the minimal Reply as format")
 }
 
 func TestSetVoices_NilLoader_DoesNotPanic(t *testing.T) {

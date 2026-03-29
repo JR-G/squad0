@@ -306,8 +306,12 @@ func (engine *ConversationEngine) tryRespondInThread(ctx context.Context, channe
 	voiceText := engine.voices[role]
 	engine.mu.Unlock()
 
+	// Feed beliefs + roster into the agent so its CLAUDE.md reflects
+	// accumulated experience. Beliefs grow over time from the memory DB.
+	agentInstance.SetChatContext(engine.roster, engine.topBeliefs(ctx, role))
+
 	summary := SummariseThread(recentLines, summariseThreshold)
-	prompt := BuildChatPromptWithSummary(role, channel, recentLines, engine.topBeliefs(ctx, role), engine.roster, voiceText, summary)
+	prompt := BuildChatPromptWithSummary(role, channel, recentLines, nil, engine.roster, voiceText, summary)
 
 	text := engine.generateValidResponse(ctx, agentInstance, role, prompt, recentLines)
 	if text == "" {

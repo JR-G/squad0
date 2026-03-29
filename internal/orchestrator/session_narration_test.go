@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
+	"sync"
 	"testing"
 	"time"
 
@@ -237,9 +238,12 @@ func TestRunSession_WithBotAndConversation_PostsNarration(t *testing.T) {
 	ctx := context.Background()
 
 	var messages []string
+	var msgMu sync.Mutex
 	handler := http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
 		_ = req.ParseForm()
+		msgMu.Lock()
 		messages = append(messages, req.FormValue("text"))
+		msgMu.Unlock()
 		resp := map[string]interface{}{"ok": true, "channel": "C004", "ts": "123"}
 		writer.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(writer).Encode(resp)

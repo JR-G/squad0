@@ -107,7 +107,7 @@ func TestConversationEngine_TryRespond_SessionError_DoesNotPanic(t *testing.T) {
 	})
 }
 
-func TestConversationEngine_TopBeliefs_WithBeliefs_IncludedInPrompt(t *testing.T) {
+func TestConversationEngine_TopBeliefs_WithBeliefs_PassedViaSetChatContext(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -125,7 +125,7 @@ func TestConversationEngine_TopBeliefs_WithBeliefs_IncludedInPrompt(t *testing.T
 		output: []byte(`{"type":"result","result":"Good point."}` + "\n"),
 	}
 
-	// Include all roles so pickCandidates has valid candidates
+	// Include all roles so pickCandidates has valid candidates.
 	allRoles := agent.AllRoles()
 	agents := make(map[agent.Role]*agent.Agent, len(allRoles))
 	factStores := make(map[agent.Role]*memory.FactStore, len(allRoles))
@@ -136,10 +136,11 @@ func TestConversationEngine_TopBeliefs_WithBeliefs_IncludedInPrompt(t *testing.T
 
 	engine := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
 
-	// Trigger conversation where beliefs should be loaded
+	// Trigger conversation where beliefs are loaded via SetChatContext.
 	engine.OnMessage(ctx, "engineering", "ceo", "what do you know?")
 
-	// The agent was called, which means topBeliefs was invoked
+	// The agent was called, which means topBeliefs + SetChatContext was invoked.
+	// Beliefs are now in CLAUDE.md, not the user prompt.
 	assert.GreaterOrEqual(t, len(runner.calls), 1)
 }
 
@@ -249,7 +250,7 @@ func TestConversationEngine_ResetRound_UnknownChannel_DoesNotPanic(t *testing.T)
 	})
 }
 
-func TestRoleDescription_AllRoles_ReturnDescriptions(t *testing.T) {
+func TestBuildChatPrompt_AllRoles_ContainReplyAs(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -257,7 +258,7 @@ func TestRoleDescription_AllRoles_ReturnDescriptions(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	// Use a runner per role so we can check which prompts were built
+	// Use a runner per role so we can check which prompts were built.
 	runners := make(map[agent.Role]*fakeProcessRunner)
 	allRoles := agent.AllRoles()
 	agents := make(map[agent.Role]*agent.Agent, len(allRoles))
@@ -280,27 +281,22 @@ func TestRoleDescription_AllRoles_ReturnDescriptions(t *testing.T) {
 		engine.OnMessage(ctx, "engineering", "ceo", "what do you think?")
 	}
 
-	// Check that at least some non-reviewer roles were called with role descriptions
-	expectedDescriptions := map[agent.Role]string{
-		agent.RolePM:        "PM",
-		agent.RoleTechLead:  "tech lead",
-		agent.RoleEngineer1: "thorough",
-		agent.RoleEngineer2: "pragmatic",
-		agent.RoleEngineer3: "architectural",
-		agent.RoleDesigner:  "designer",
-	}
-
+	// Identity is now in CLAUDE.md, not the user prompt. The prompt
+	// should contain "Reply as {name}" for each role that was called.
 	calledCount := 0
-	for role, desc := range expectedDescriptions {
+	for role := range runners {
+		if role == agent.RoleReviewer {
+			continue // excluded by pickCandidates
+		}
 		runner := runners[role]
 		if len(runner.calls) > 0 {
 			calledCount++
-			assert.Contains(t, runner.calls[0].stdin, desc,
-				"prompt for %s should contain %q", role, desc)
+			assert.Contains(t, runner.calls[0].stdin, "Reply as",
+				"prompt for %s should contain Reply as instruction", role)
 		}
 	}
 
-	// With 20 messages and random selection, we should hit most roles
+	// With 20 messages and random selection, we should hit most roles.
 	assert.GreaterOrEqual(t, calledCount, 3,
 		"expected at least 3 distinct roles to be called")
 }

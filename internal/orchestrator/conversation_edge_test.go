@@ -193,7 +193,7 @@ func TestExtractFirstWord_WhitespaceOnly_ReturnsEmpty(t *testing.T) {
 	assert.Empty(t, name)
 }
 
-func TestBuildChatPrompt_WithRoster_IncludesTeamNames(t *testing.T) {
+func TestBuildChatPrompt_WithRoster_UsesRosterNames(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -226,23 +226,23 @@ func TestBuildChatPrompt_WithRoster_IncludesTeamNames(t *testing.T) {
 	engine := orchestrator.NewConversationEngine(agents, factStores, nil, roster)
 	engine.OnMessage(ctx, "engineering", "ceo", "morning team")
 
-	// Check that at least one prompt includes roster names and role titles
-	foundRoster := false
+	// Roster names are now in CLAUDE.md, not the user prompt. The prompt
+	// uses "Reply as {name}" where {name} comes from the roster. Check
+	// that at least one prompt uses a roster name in its Reply instruction.
+	foundRosterName := false
+	rosterNames := []string{"Ada", "Kai", "Spark", "Nova", "Flux", "Atlas", "Iris"}
 	for _, call := range runner.calls {
-		if strings.Contains(call.stdin, "Your team:") {
-			foundRoster = true
-			// roleTitle is exercised via writeRoster — check for role titles
-			assert.True(t,
-				strings.Contains(call.stdin, "PM") ||
-					strings.Contains(call.stdin, "Tech Lead") ||
-					strings.Contains(call.stdin, "Engineer") ||
-					strings.Contains(call.stdin, "Designer"),
-				"expected roster to contain role titles",
-			)
+		for _, name := range rosterNames {
+			if strings.Contains(call.stdin, "Reply as "+name) {
+				foundRosterName = true
+				break
+			}
+		}
+		if foundRosterName {
 			break
 		}
 	}
-	assert.True(t, foundRoster, "expected at least one prompt to include roster")
+	assert.True(t, foundRosterName, "expected at least one prompt to use a roster name in Reply as instruction")
 }
 
 func TestBuildChatPrompt_AllRolesExercised(t *testing.T) {
@@ -279,7 +279,7 @@ func TestBuildChatPrompt_AllRolesExercised(t *testing.T) {
 	assert.GreaterOrEqual(t, len(runner.calls), 10)
 }
 
-func TestBuildChatPrompt_DesignerRole_HasDescription(t *testing.T) {
+func TestBuildChatPrompt_DesignerRole_HasReplyAs(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -302,11 +302,12 @@ func TestBuildChatPrompt_DesignerRole_HasDescription(t *testing.T) {
 	engine.OnMessage(ctx, "engineering", "ceo", "what do you think of the UI?")
 
 	if len(runner.calls) > 0 {
-		assert.Contains(t, runner.calls[0].stdin, "designer")
+		// Identity is now in CLAUDE.md; the prompt just has "Reply as {name}".
+		assert.Contains(t, runner.calls[0].stdin, "Reply as")
 	}
 }
 
-func TestBuildChatPrompt_PMRole_HasDescription(t *testing.T) {
+func TestBuildChatPrompt_PMRole_HasReplyAs(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -329,11 +330,12 @@ func TestBuildChatPrompt_PMRole_HasDescription(t *testing.T) {
 	engine.OnMessage(ctx, "engineering", "ceo", "what should we prioritise?")
 
 	if len(runner.calls) > 0 {
-		assert.Contains(t, runner.calls[0].stdin, "PM")
+		// Identity is now in CLAUDE.md; the prompt just has "Reply as {name}".
+		assert.Contains(t, runner.calls[0].stdin, "Reply as")
 	}
 }
 
-func TestBuildChatPrompt_WithBeliefs_IncludesBeliefText(t *testing.T) {
+func TestBuildChatPrompt_WithBeliefs_SetChatContextCalled(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -360,13 +362,10 @@ func TestBuildChatPrompt_WithBeliefs_IncludesBeliefText(t *testing.T) {
 	engine := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
 	engine.OnMessage(ctx, "engineering", "ceo", "how should we approach testing?")
 
-	// Check that the prompt includes belief text
-	foundBelief := false
-	for _, call := range runner.calls {
-		if strings.Contains(call.stdin, "always write tests first") {
-			foundBelief = true
-			break
-		}
-	}
-	assert.True(t, foundBelief, "expected at least one prompt to include belief text")
+	// Beliefs now go through SetChatContext into CLAUDE.md, not the user prompt.
+	// Verify that the engine called agents (which means SetChatContext was invoked
+	// in tryRespondInThread) and the prompts use the minimal Reply as format.
+	assert.GreaterOrEqual(t, len(runner.calls), 1, "expected at least one agent to be called")
+	assert.Contains(t, runner.calls[0].stdin, "Reply as",
+		"prompt should use the minimal Reply as format")
 }

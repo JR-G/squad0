@@ -22,7 +22,7 @@ func TestContainsQuestion_WithoutQuestionMark_ReturnsFalse(t *testing.T) {
 	assert.False(t, orchestrator.ContainsQuestionForTest("I think we should use goroutines"))
 }
 
-func TestBuildChatPrompt_ContainsChatOnlyWarning(t *testing.T) {
+func TestBuildChatPrompt_ContainsReplyInstruction(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -45,19 +45,19 @@ func TestBuildChatPrompt_ContainsChatOnlyWarning(t *testing.T) {
 	engine := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
 	engine.OnMessage(ctx, "engineering", "ceo", "can someone merge that PR?")
 
-	// At least one prompt should contain the chat-only warning.
-	foundWarning := false
+	// At least one prompt should contain the "Reply as" instruction.
+	foundReplyAs := false
 	for _, call := range runner.calls {
-		if containsStr(call.stdin, "CHAT ONLY") && containsStr(call.stdin, "cannot run commands") {
-			foundWarning = true
+		if containsStr(call.stdin, "Reply as") {
+			foundReplyAs = true
 			break
 		}
 	}
 
-	assert.True(t, foundWarning, "chat prompt should contain CHAT ONLY warning")
+	assert.True(t, foundReplyAs, "chat prompt should contain Reply as instruction")
 }
 
-func TestBuildChatPrompt_WithVoice_IncludesVoiceSection(t *testing.T) {
+func TestBuildChatPrompt_WithVoice_EngineDoesNotPanic(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -80,24 +80,15 @@ func TestBuildChatPrompt_WithVoice_IncludesVoiceSection(t *testing.T) {
 	engine := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
 
 	// Set voices manually via SetVoicesMap (we test the real loader in personality_test.go).
+	// Voice text now goes into CLAUDE.md, not the user prompt.
 	engine.SetVoicesMap(map[agent.Role]string{
 		agent.RoleEngineer2: "You talk like someone in the middle of building something. Informal, enthusiastic.",
 	})
 
 	engine.OnMessage(ctx, "engineering", "ceo", "what should we build next?")
 
-	// Check that the voice text appeared in at least one prompt.
-	foundVoice := false
-	for _, call := range runner.calls {
-		if containsStr(call.stdin, "Informal, enthusiastic") {
-			foundVoice = true
-			break
-		}
-	}
-
-	// Voice only appears for engineer-2 who may or may not be picked randomly.
-	// At minimum, verify the engine didn't panic and messages were processed.
-	_ = foundVoice
+	// Voice is now in CLAUDE.md (per-session file), not the user prompt.
+	// Verify the engine processed messages without panicking.
 	recent := engine.RecentMessages("engineering")
 	assert.NotEmpty(t, recent)
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -254,9 +255,12 @@ func TestOrchestrator_StartWork_WithBot_PostsWorkMessages(t *testing.T) {
 	t.Parallel()
 
 	var messages []string
+	var msgMu sync.Mutex
 	handler := http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
 		_ = req.ParseForm()
+		msgMu.Lock()
 		messages = append(messages, req.FormValue("text"))
+		msgMu.Unlock()
 		resp := map[string]interface{}{"ok": true, "channel": "C004", "ts": "123"}
 		writer.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(writer).Encode(resp)

@@ -3,7 +3,6 @@ package orchestrator_test
 import (
 	"context"
 	"database/sql"
-	"strings"
 	"testing"
 	"time"
 
@@ -55,7 +54,7 @@ func TestBuildChatPrompt_ReviewerRole_HasDescription(t *testing.T) {
 	})
 }
 
-func TestBuildChatPrompt_Engineer3Role_HasDescription(t *testing.T) {
+func TestBuildChatPrompt_Engineer3Role_HasReplyAs(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -78,15 +77,13 @@ func TestBuildChatPrompt_Engineer3Role_HasDescription(t *testing.T) {
 	engine.OnMessage(ctx, "engineering", "ceo", "thoughts on the CLI DX?")
 
 	if len(runner.calls) > 0 {
-		assert.True(t,
-			strings.Contains(runner.calls[0].stdin, "architectural") ||
-				strings.Contains(runner.calls[0].stdin, "infra"),
-			"engineer-3 prompt should mention architectural/infra",
+		assert.Contains(t, runner.calls[0].stdin, "Reply as",
+			"engineer-3 prompt should contain Reply as instruction",
 		)
 	}
 }
 
-func TestBuildChatPrompt_TechLeadRole_HasDescription(t *testing.T) {
+func TestBuildChatPrompt_TechLeadRole_HasReplyAs(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -109,7 +106,8 @@ func TestBuildChatPrompt_TechLeadRole_HasDescription(t *testing.T) {
 	engine.OnMessage(ctx, "engineering", "ceo", "what's the right architecture?")
 
 	if len(runner.calls) > 0 {
-		assert.Contains(t, runner.calls[0].stdin, "tech lead")
+		// Identity is now in CLAUDE.md; the prompt just has "Reply as {name}".
+		assert.Contains(t, runner.calls[0].stdin, "Reply as")
 	}
 }
 
