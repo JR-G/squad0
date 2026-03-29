@@ -74,18 +74,7 @@ func (cw *ConsoleWriter) Write(data []byte) (int, error) {
 }
 
 func shouldSuppress(msg string) bool {
-	lower := strings.ToLower(msg)
-	// Suppress repetitive tick noise.
-	if strings.HasPrefix(lower, "tick: work_enabled=") {
-		return true
-	}
-	if strings.HasPrefix(lower, "tick: no idle engineers") {
-		return true
-	}
-	if strings.HasPrefix(lower, "tick: assignment already in progress") {
-		return true
-	}
-	return false
+	return strings.HasPrefix(strings.ToLower(msg), "tick: work_enabled=")
 }
 
 func stripLogTimestamp(msg string) string {

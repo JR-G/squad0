@@ -41,8 +41,6 @@ func TestConsoleWriter_SuppressesNoiseLines(t *testing.T) {
 		input string
 	}{
 		{"work_enabled", "tick: work_enabled=true"},
-		{"no idle engineers", "tick: no idle engineers"},
-		{"assignment in progress", "tick: assignment already in progress, skipping"},
 	}
 
 	for _, tt := range tests {
