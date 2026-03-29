@@ -60,7 +60,7 @@ func buildAssignmentPrompt(idleEngineers []agent.Role, teamKey string) string {
 	builder.WriteString("  security find-generic-password -s squad0 -a LINEAR_API_KEY -w\n\n")
 
 	builder.WriteString("Step 2: Query Linear for available tickets by running:\n")
-	fmt.Fprintf(&builder, "  curl -s -X POST https://api.linear.app/graphql -H \"Authorization: $LINEAR_API_KEY\" -H \"Content-Type: application/json\" -d '{\"query\":\"{ team(id:\\\"%s\\\") { issues(filter:{state:{type:{in:[\\\"unstarted\\\",\\\"backlog\\\"]}}}) { nodes { identifier title state { name } } } } }\"}'", teamKey)
+	fmt.Fprintf(&builder, "  curl -s -X POST https://api.linear.app/graphql -H \"Authorization: $LINEAR_API_KEY\" -H \"Content-Type: application/json\" -d '{\"query\":\"{ team(id:\\\"%s\\\") { issues(filter:{state:{type:{in:[\\\"unstarted\\\",\\\"backlog\\\"]}}}) { nodes { identifier title description state { name } } } } }\"}'", teamKey)
 	builder.WriteString("\n\nStep 3: Pick tickets from the results and assign them to engineers.\n\n")
 
 	builder.WriteString("Available engineers:\n")
@@ -70,7 +70,7 @@ func buildAssignmentPrompt(idleEngineers []agent.Role, teamKey string) string {
 
 	builder.WriteString("\nBased on the tickets you find, assign them to engineers.\n")
 	builder.WriteString("Respond with ONLY a JSON array — no explanation, no markdown, no code fences.\n")
-	builder.WriteString("Format: [{\"role\": \"engineer-1\", \"ticket\": \"JAM-42\", \"description\": \"Brief task description\"}]\n")
+	builder.WriteString("Format: [{\"role\": \"engineer-1\", \"ticket\": \"JAM-42\", \"description\": \"Include the FULL ticket description from Linear — the engineer needs it to plan.\"}]\n")
 	builder.WriteString("If no tickets are ready, respond with: []\n")
 
 	return builder.String()
