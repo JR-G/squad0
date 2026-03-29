@@ -45,6 +45,7 @@ type Orchestrator struct {
 	mergeAnnounceMu     sync.Mutex
 	concerns            *ConcernTracker
 	eventBus            *EventBus
+	startedAt           time.Time
 }
 
 // Config holds orchestrator-level settings.
@@ -98,6 +99,7 @@ func (orch *Orchestrator) Run(ctx context.Context) error {
 		return fmt.Errorf("initialising check-ins: %w", err)
 	}
 
+	orch.startedAt = time.Now()
 	log.Println("orchestrator started")
 	orch.announceAsRole(ctx, "feed", "Squad0 is online. Ready to work.", agent.RolePM)
 	orch.resumePendingWork(ctx)

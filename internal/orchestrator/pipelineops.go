@@ -190,11 +190,16 @@ func (orch *Orchestrator) resumeWithGitHubState(ctx context.Context, item pipeli
 // and needs reassignment. Otherwise it is left for the engineer to
 // pick up naturally.
 func (orch *Orchestrator) resumeStaleWorkingItem(ctx context.Context, item pipeline.WorkItem) {
-	// No age check — if the process restarted and the item has no PR,
-	// the session is dead. Mark failed so the engineer is unblocked.
+	// Only fail items from a previous process lifetime. If the item
+	// was updated after this process started, the engineer might
+	// still be working — don't nuke their session.
+	if item.UpdatedAt.After(orch.startedAt) {
+		log.Printf("work item %s is from this session — leaving for engineer", item.Ticket)
+		return
+	}
+
 	age := time.Since(item.UpdatedAt)
 	log.Printf("work item %s has no PR after %s — marking failed", item.Ticket, formatDuration(age))
-
 	orch.failAndRequeue(ctx, item)
 }
 
