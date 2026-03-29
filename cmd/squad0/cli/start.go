@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -250,6 +251,11 @@ func setupLogger(dataDir string, out io.Writer) (*logging.Logger, error) {
 		_, _ = fmt.Fprint(out, tui.StepFail("Logger failed"))
 		return nil, fmt.Errorf("creating logger: %w", err)
 	}
+
+	// Coloured console output for the standard logger.
+	log.SetOutput(logging.NewConsoleWriter(os.Stderr))
+	log.SetFlags(0) // ConsoleWriter handles timestamps.
+
 	_, _ = fmt.Fprint(out, tui.StepDone("Logger started"))
 	return appLogger, nil
 }
