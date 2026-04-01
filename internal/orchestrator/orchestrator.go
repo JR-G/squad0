@@ -152,10 +152,13 @@ func (orch *Orchestrator) tick(ctx context.Context) {
 
 	log.Printf("tick: %d idle agents, roles: %v", len(idleRoles), idleRoles)
 
-	// Review unreviewed PRs before assigning new work.
+	// Priority 1: Fix conflicting PRs — nothing else matters until conflicts are resolved.
+	orch.resolveConflicts(ctx, idleRoles)
+
+	// Priority 2: Review unreviewed PRs before assigning new work.
 	orch.triggerPendingReviews(ctx, idleRoles)
 
-	// Assignment first — then idle duties run so they don't block work.
+	// Priority 3: Assign new work to free engineers.
 	idleEngineers := orch.filterByWIP(ctx, orch.filterHealthyEngineers(idleRoles))
 	orch.tryAssignWork(ctx, idleEngineers)
 
