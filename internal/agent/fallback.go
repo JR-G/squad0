@@ -65,7 +65,7 @@ func BuildCodexArgs(prompt, workingDir, model string) []string {
 		"--dangerously-bypass-approvals-and-sandbox",
 	}
 
-	if model != "" {
+	if model != "" && model != "auto" {
 		args = append(args, "-m", model)
 	}
 
