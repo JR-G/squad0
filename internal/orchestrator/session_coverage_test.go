@@ -232,11 +232,13 @@ func TestFailAndRequeue_MarksFailedAndMovesTicket(t *testing.T) {
 
 	orch.FailAndRequeueForTest(ctx, pipeline.WorkItem{ID: itemID, Ticket: "JAM-FAIL"})
 
+	// MoveTicketState runs in a goroutine — give it time.
+	time.Sleep(200 * time.Millisecond)
+
 	item, getErr := pipeStore.GetByID(ctx, itemID)
 	require.NoError(t, getErr)
 	assert.Equal(t, pipeline.StageFailed, item.Stage)
 
-	// PM should have been called to move ticket to Todo.
 	pmRunner.mu.Lock()
 	defer pmRunner.mu.Unlock()
 	assert.GreaterOrEqual(t, len(pmRunner.calls), 1, "PM should move ticket to Todo")

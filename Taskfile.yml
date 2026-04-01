@@ -22,6 +22,7 @@ tasks:
 
   restart:
     desc: Rebuild, kill existing process, and start fresh
+    deps: [unlock]
     cmds:
       - go build -tags sqlite_fts5 -o bin/squad0 ./cmd/squad0
       - go build -tags sqlite_fts5 -o bin/squad0-memory-mcp ./cmd/squad0-memory-mcp

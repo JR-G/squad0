@@ -55,8 +55,8 @@ func DefaultVoiceRules(role agent.Role) VoiceRules {
 
 	switch role {
 	case agent.RolePM:
-		base.MaxChars = 280
-		base.MaxSentences = 3
+		base.MaxChars = 400
+		base.MaxSentences = 5
 	case agent.RoleTechLead:
 		base.MaxChars = 400
 		base.MaxSentences = 4

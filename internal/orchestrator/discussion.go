@@ -68,10 +68,7 @@ func (orch *Orchestrator) runDiscussionPhase(ctx context.Context, agentInstance 
 
 	// Post the plan — this triggers the conversation engine so
 	// teammates can respond in the thread.
-	orch.postAsRole(ctx, "engineering",
-		fmt.Sprintf("Here's my plan for %s:\n\n%s",
-			orch.cfg.Links.TicketLink(assignment.Ticket), plan),
-		role)
+	orch.postAsRole(ctx, "engineering", plan, role)
 
 	// Tech Lead weighs in on every discussion.
 	orch.TechLeadDiscussionReview(ctx, "engineering", plan, assignment.Ticket)
