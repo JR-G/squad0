@@ -257,6 +257,26 @@ func (orch *Orchestrator) clearStaleWork(ctx context.Context, role agent.Role, i
 	return allCleared
 }
 
+// CheckCircuitBreakerForTest exports checkCircuitBreaker for testing.
+func (orch *Orchestrator) CheckCircuitBreakerForTest(ctx context.Context, ticket string) {
+	orch.checkCircuitBreaker(ctx, ticket)
+}
+
+func (orch *Orchestrator) checkCircuitBreaker(ctx context.Context, ticket string) {
+	if orch.assigner == nil {
+		return
+	}
+
+	if !orch.assigner.RecordAssignmentFailure(ticket) {
+		return
+	}
+
+	log.Printf("circuit breaker open for %s — 3+ failures", ticket)
+	orch.announceAsRole(ctx, "triage",
+		fmt.Sprintf("%s has failed 3+ times — needs investigation", ticket),
+		agent.RolePM)
+}
+
 // FailAndRequeueForTest exports failAndRequeue for testing.
 func (orch *Orchestrator) FailAndRequeueForTest(ctx context.Context, item pipeline.WorkItem) {
 	orch.failAndRequeue(ctx, item)

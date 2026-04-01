@@ -19,21 +19,77 @@ type Assignment struct {
 	WorkItemID  int64
 }
 
-// Assigner uses the PM agent to decide ticket assignments for idle
-// engineers.
+// Assigner fetches tickets from Linear directly, applies smart
+// filtering (dependencies, circuit breakers, skill matching), and
+// assigns work to idle engineers. The PM is not involved in fetching
+// or filtering — only in optional tiebreaking.
 type Assigner struct {
-	pmAgent *agent.Agent
-	teamKey string
+	pmAgent       *agent.Agent
+	teamKey       string
+	linearAPIKey  string
+	linearURL     string // override for testing
+	smartAssigner *SmartAssigner
 }
 
 // NewAssigner creates an Assigner backed by the given PM agent.
 func NewAssigner(pmAgent *agent.Agent, teamKey string) *Assigner {
-	return &Assigner{pmAgent: pmAgent, teamKey: teamKey}
+	return &Assigner{
+		pmAgent: pmAgent,
+		teamKey: teamKey,
+	}
 }
 
-// RequestAssignments asks the PM to review the Linear board and assign
-// tickets to the given idle engineers.
+// SetLinearAPIKey provides the API key for direct Linear queries.
+func (assigner *Assigner) SetLinearAPIKey(key string) {
+	assigner.linearAPIKey = key
+}
+
+// SetLinearURL overrides the Linear API URL (for testing).
+func (assigner *Assigner) SetLinearURL(url string) {
+	assigner.linearURL = url
+}
+
+// SetSmartAssigner connects the smart filtering layer.
+func (assigner *Assigner) SetSmartAssigner(sa *SmartAssigner) {
+	assigner.smartAssigner = sa
+}
+
+// RequestAssignments fetches tickets from Linear, filters them, and
+// matches them to idle engineers. Falls back to the PM if smart
+// dispatch is not configured.
 func (assigner *Assigner) RequestAssignments(ctx context.Context, idleEngineers []agent.Role) ([]Assignment, error) {
+	if assigner.linearAPIKey != "" && assigner.smartAssigner != nil {
+		return assigner.smartAssign(ctx, idleEngineers)
+	}
+
+	return assigner.pmAssign(ctx, idleEngineers)
+}
+
+func (assigner *Assigner) smartAssign(ctx context.Context, idleEngineers []agent.Role) ([]Assignment, error) {
+	apiURL := assigner.linearURL
+	if apiURL == "" {
+		apiURL = "https://api.linear.app/graphql"
+	}
+	tickets, err := FetchLinearTicketsWithURL(ctx, assigner.linearAPIKey, assigner.teamKey, apiURL)
+	if err != nil {
+		log.Printf("smart assign: Linear fetch failed, falling back to PM: %v", err)
+		return assigner.pmAssign(ctx, idleEngineers)
+	}
+
+	if len(tickets) == 0 {
+		log.Println("smart assign: no tickets available in Linear")
+		return nil, nil
+	}
+
+	assignments := assigner.smartAssigner.FilterAndRank(ctx, tickets, idleEngineers)
+	log.Printf("smart assign: %d tickets → %d assignments", len(tickets), len(assignments))
+
+	return assignments, nil
+}
+
+// pmAssign is the legacy fallback — asks the PM to query Linear and
+// decide assignments via a DirectSession.
+func (assigner *Assigner) pmAssign(ctx context.Context, idleEngineers []agent.Role) ([]Assignment, error) {
 	prompt := buildAssignmentPrompt(idleEngineers, assigner.teamKey)
 
 	result, err := assigner.pmAgent.DirectSession(ctx, prompt)
@@ -43,9 +99,9 @@ func (assigner *Assigner) RequestAssignments(ctx context.Context, idleEngineers 
 
 	log.Printf("PM said: %q", result.Transcript)
 
-	assignments, err := parseAssignments(result.Transcript, idleEngineers)
-	if err != nil {
-		return nil, fmt.Errorf("parsing PM assignments: %w", err)
+	assignments, parseErr := parseAssignments(result.Transcript, idleEngineers)
+	if parseErr != nil {
+		return nil, fmt.Errorf("parsing PM assignments: %w", parseErr)
 	}
 
 	return assignments, nil
@@ -55,22 +111,17 @@ func buildAssignmentPrompt(idleEngineers []agent.Role, teamKey string) string {
 	var builder strings.Builder
 
 	builder.WriteString("You are the PM. Your job is to check the Linear board and assign work.\n\n")
-
 	builder.WriteString("Step 1: Get the Linear API key from Keychain by running:\n")
 	builder.WriteString("  security find-generic-password -s squad0 -a LINEAR_API_KEY -w\n\n")
-
 	builder.WriteString("Step 2: Query Linear for available tickets by running:\n")
 	fmt.Fprintf(&builder, "  curl -s -X POST https://api.linear.app/graphql -H \"Authorization: $LINEAR_API_KEY\" -H \"Content-Type: application/json\" -d '{\"query\":\"{ team(id:\\\"%s\\\") { issues(filter:{state:{type:{in:[\\\"unstarted\\\",\\\"backlog\\\"]}}}) { nodes { identifier title description state { name } } } } }\"}'", teamKey)
 	builder.WriteString("\n\nStep 3: Pick tickets from the results and assign them to engineers.\n\n")
-
 	builder.WriteString("Available engineers:\n")
 	for _, role := range idleEngineers {
 		fmt.Fprintf(&builder, "- %s\n", role)
 	}
-
-	builder.WriteString("\nBased on the tickets you find, assign them to engineers.\n")
-	builder.WriteString("Respond with ONLY a JSON array — no explanation, no markdown, no code fences.\n")
-	builder.WriteString("Format: [{\"role\": \"engineer-1\", \"ticket\": \"JAM-42\", \"description\": \"Include the FULL ticket description from Linear — the engineer needs it to plan.\"}]\n")
+	builder.WriteString("\nRespond with ONLY a JSON array:\n")
+	builder.WriteString("[{\"role\": \"engineer-1\", \"ticket\": \"JAM-42\", \"description\": \"Full ticket description\"}]\n")
 	builder.WriteString("If no tickets are ready, respond with: []\n")
 
 	return builder.String()
@@ -126,4 +177,15 @@ func extractJSON(text string) string {
 	}
 
 	return text[start : end+1]
+}
+
+// RecordAssignmentFailure records a failed assignment and returns
+// true if the circuit breaker has opened (3+ failures).
+func (assigner *Assigner) RecordAssignmentFailure(ticket string) bool {
+	if assigner.smartAssigner == nil {
+		return false
+	}
+
+	count := assigner.smartAssigner.RecordFailure(ticket)
+	return count >= 3
 }

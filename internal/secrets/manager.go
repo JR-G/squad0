@@ -26,6 +26,7 @@ var RequiredSecrets = []string{
 type Secrets struct {
 	SlackBotToken string
 	SlackAppToken string
+	LinearAPIKey  string // Optional — enables smart dispatch.
 }
 
 // Manager handles secret lifecycle operations including retrieval,
@@ -62,9 +63,13 @@ func (mgr *Manager) LoadAll(ctx context.Context) (Secrets, error) {
 		return Secrets{}, fmt.Errorf("missing required secrets: %s", strings.Join(missing, ", "))
 	}
 
+	// Linear API key is optional — smart dispatch degrades gracefully.
+	linearKey, _ := mgr.keychain.Get(ctx, "LINEAR_API_KEY")
+
 	return Secrets{
 		SlackBotToken: values["SLACK_BOT_TOKEN"],
 		SlackAppToken: values["SLACK_APP_TOKEN"],
+		LinearAPIKey:  linearKey,
 	}, nil
 }
 

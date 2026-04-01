@@ -214,6 +214,41 @@ func (store *WorkItemStore) OpenWithPR(ctx context.Context) ([]WorkItem, error) 
 	return scanWorkItems(rows)
 }
 
+// GetByTicket returns all work items (including terminal) for a ticket.
+func (store *WorkItemStore) GetByTicket(ctx context.Context, ticket string) ([]WorkItem, error) {
+	rows, err := store.db.QueryContext(ctx, `
+		SELECT id, ticket, engineer, reviewer, stage, pr_url, branch,
+		       review_cycles, started_at, updated_at, finished_at
+		FROM work_items WHERE ticket = ? ORDER BY id`, ticket)
+	if err != nil {
+		return nil, fmt.Errorf("querying items for ticket %s: %w", ticket, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	return scanWorkItems(rows)
+}
+
+// CompletedTickets returns distinct ticket IDs that have reached merged stage.
+func (store *WorkItemStore) CompletedTickets(ctx context.Context) ([]string, error) {
+	rows, err := store.db.QueryContext(ctx, `
+		SELECT DISTINCT ticket FROM work_items WHERE stage = 'merged'`)
+	if err != nil {
+		return nil, fmt.Errorf("querying completed tickets: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var tickets []string
+	for rows.Next() {
+		var ticket string
+		if err := rows.Scan(&ticket); err != nil {
+			return nil, fmt.Errorf("scanning completed ticket: %w", err)
+		}
+		tickets = append(tickets, ticket)
+	}
+
+	return tickets, rows.Err()
+}
+
 func scanWorkItem(row interface{ Scan(...any) error }) (WorkItem, error) {
 	var item WorkItem
 	var engineer, reviewer, stage string

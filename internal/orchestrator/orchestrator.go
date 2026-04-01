@@ -338,6 +338,7 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 	if err != nil {
 		log.Printf("session error for %s on %s: %v", role, assignment.Ticket, err)
 		orch.recordSessionEnd(role, assignment.Ticket, false)
+		orch.checkCircuitBreaker(ctx, assignment.Ticket)
 		orch.writeHandoff(ctx, assignment.Ticket, role, "failed", result.Transcript, branch)
 		orch.postAsRole(ctx, "engineering",
 			fmt.Sprintf("Hit an issue with %s — will need to pick this up again", assignment.Ticket),

@@ -180,6 +180,13 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	concerns := orchestrator.NewConcernTracker()
 	orch.SetConcernTracker(concerns)
 
+	// Smart dispatch: direct Linear queries + dependency/priority/skill filtering.
+	if slackSecrets.LinearAPIKey != "" {
+		assigner.SetLinearAPIKey(slackSecrets.LinearAPIKey)
+		assigner.SetSmartAssigner(orchestrator.NewSmartAssigner(pipelineStore))
+		_, _ = fmt.Fprint(out, tui.StepDone("Smart dispatch enabled"))
+	}
+
 	eventBus := orchestrator.NewEventBus()
 	orch.RegisterDefaultHandlers(eventBus)
 	orch.SetEventBus(eventBus)

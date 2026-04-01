@@ -9,6 +9,35 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestFormatStatusWithLinks_WithPersonas_UsesNames(t *testing.T) {
+	t.Parallel()
+
+	checkIns := []coordination.CheckIn{
+		{Agent: agent.RoleEngineer1, Status: "working", Ticket: "JAM-1"},
+		{Agent: agent.RoleEngineer2, Status: "idle"},
+	}
+
+	personas := map[agent.Role]slack.Persona{
+		agent.RoleEngineer1: {Role: agent.RoleEngineer1, Name: "Callum"},
+		agent.RoleEngineer2: {Role: agent.RoleEngineer2, Name: "Mara"},
+	}
+
+	result := slack.FormatStatusWithLinks(checkIns, personas, slack.LinkConfig{})
+	assert.Contains(t, result, "Callum")
+	assert.Contains(t, result, "Mara")
+}
+
+func TestFormatStatusWithLinks_NilPersonas_UsesRoleIDs(t *testing.T) {
+	t.Parallel()
+
+	checkIns := []coordination.CheckIn{
+		{Agent: agent.RoleEngineer1, Status: "idle"},
+	}
+
+	result := slack.FormatStatusWithLinks(checkIns, nil, slack.LinkConfig{})
+	assert.Contains(t, result, string(agent.RoleEngineer1))
+}
+
 func TestFormatStatusForSlack_ShowsAllAgents(t *testing.T) {
 	t.Parallel()
 

@@ -182,6 +182,9 @@ func (sched *Scheduler) buildEngineerLine(ctx context.Context, role agent.Role) 
 	return prefix + strings.Join(itemDescs, "; ")
 }
 
+// PRStatusForTest exports prStatus for testing.
+func PRStatusForTest(prURL string) string { return prStatus(prURL) }
+
 func prStatus(prURL string) string {
 	if prURL == "" {
 		return "none"

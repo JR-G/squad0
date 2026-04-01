@@ -9,6 +9,16 @@ import (
 	"github.com/JR-G/squad0/internal/memory"
 )
 
+// RecordSessionStartForTest exports recordSessionStart for testing.
+func (orch *Orchestrator) RecordSessionStartForTest(role agent.Role) {
+	orch.recordSessionStart(role)
+}
+
+// RecordSessionEndForTest exports recordSessionEnd for testing.
+func (orch *Orchestrator) RecordSessionEndForTest(role agent.Role, ticket string, success bool) {
+	orch.recordSessionEnd(role, ticket, success)
+}
+
 func (orch *Orchestrator) recordSessionStart(role agent.Role) {
 	if orch.monitor == nil {
 		return

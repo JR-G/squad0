@@ -141,9 +141,11 @@ func (orch *Orchestrator) EventBus() *EventBus {
 	return orch.eventBus
 }
 
-// emitEvent fires an event if the bus is configured. Does nothing
-// when the bus is nil — used for informational events that don't
-// need a fallback.
+// EmitEventForTest exports emitEvent for testing.
+func (orch *Orchestrator) EmitEventForTest(ctx context.Context, kind EventKind, prURL, ticket string, workItemID int64, engineerRole agent.Role) {
+	orch.emitEvent(ctx, kind, prURL, ticket, workItemID, engineerRole)
+}
+
 func (orch *Orchestrator) emitEvent(ctx context.Context, kind EventKind, prURL, ticket string, workItemID int64, engineerRole agent.Role) {
 	if orch.eventBus == nil {
 		return

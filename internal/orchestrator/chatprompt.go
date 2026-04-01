@@ -57,6 +57,11 @@ func roleTitle(role agent.Role) string {
 	return roleDescription(role)
 }
 
+// ReplyInstructionForTest exports replyInstruction for testing.
+func ReplyInstructionForTest(name, channel string) string {
+	return replyInstruction(name, channel)
+}
+
 func replyInstruction(name, channel string) string {
 	if channel == chitchatChannel {
 		return fmt.Sprintf("Reply as %s — casual, not about work. Or PASS.", name)
