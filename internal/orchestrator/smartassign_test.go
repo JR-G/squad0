@@ -264,6 +264,34 @@ func TestSmartAssigner_FilterAndRank_DepsMetViaCompletedTickets(t *testing.T) {
 	assert.Equal(t, "JAM-12", assignments[0].Ticket)
 }
 
+func TestPriorityRank_ZeroPriorityIsLast(t *testing.T) {
+	t.Parallel()
+
+	sa := orchestrator.NewSmartAssigner(nil)
+	tickets := []orchestrator.LinearTicket{
+		{ID: "JAM-NONE", Title: "none", Priority: 0},
+		{ID: "JAM-LOW", Title: "low", Priority: 4},
+	}
+
+	assignments := sa.FilterAndRank(context.Background(), tickets, []agent.Role{agent.RoleEngineer1, agent.RoleEngineer2})
+	require.Len(t, assignments, 2)
+	assert.Equal(t, "JAM-LOW", assignments[0].Ticket)
+	assert.Equal(t, "JAM-NONE", assignments[1].Ticket)
+}
+
+func TestTruncateDescription_ShortString(t *testing.T) {
+	t.Parallel()
+
+	sa := orchestrator.NewSmartAssigner(nil)
+	tickets := []orchestrator.LinearTicket{
+		{ID: "JAM-1", Title: "test", Description: "short", Priority: 2},
+	}
+
+	assignments := sa.FilterAndRank(context.Background(), tickets, []agent.Role{agent.RoleEngineer1})
+	require.Len(t, assignments, 1)
+	assert.Contains(t, assignments[0].Description, "short")
+}
+
 func TestParseDependencies(t *testing.T) {
 	t.Parallel()
 

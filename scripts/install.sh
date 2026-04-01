@@ -99,6 +99,7 @@ export PATH="$HOME/go/bin:$PATH"\
   fi
 done
 
+
 # Build
 echo ""
 echo "--- Build ---"

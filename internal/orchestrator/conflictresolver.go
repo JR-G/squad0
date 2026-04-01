@@ -10,6 +10,11 @@ import (
 	"github.com/JR-G/squad0/internal/pipeline"
 )
 
+// StartConflictResolutionForTest exports startConflictResolution for testing.
+func (orch *Orchestrator) StartConflictResolutionForTest(ctx context.Context, item pipeline.WorkItem) {
+	orch.startConflictResolution(ctx, item)
+}
+
 // ResolveConflictsForTest exports resolveConflicts for testing.
 func (orch *Orchestrator) ResolveConflictsForTest(ctx context.Context, idleRoles []agent.Role) {
 	orch.resolveConflicts(ctx, idleRoles)

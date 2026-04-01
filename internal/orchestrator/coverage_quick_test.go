@@ -194,6 +194,42 @@ func TestFilterHealthyEngineers_NilMonitor_ReturnsAll(t *testing.T) {
 	_ = orch.Run(timedCtx)
 }
 
+func TestStoreProjectBelief_WithStore_StoresBelief(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	memDB, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = memDB.Close() })
+
+	sqlDB, sqlErr := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, sqlErr)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	tlRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"done"}` + "\n")}
+	tlAgent := buildAgent(t, tlRunner, agent.RoleTechLead, memDB)
+	factStore := memory.NewFactStore(memDB)
+	graphStore := memory.NewGraphStore(memDB)
+	tlAgent.SetMemoryStores(graphStore, factStore)
+
+	projectFactStore := memory.NewFactStore(memDB)
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{},
+		map[agent.Role]*agent.Agent{agent.RoleTechLead: tlAgent},
+		checkIns, nil, nil,
+	)
+	orch.SetProjectFactStore(projectFactStore)
+
+	orch.StoreArchitectureDecision(ctx, "use interfaces at boundaries", "JAM-99")
+
+	beliefs, bErr := projectFactStore.TopBeliefs(ctx, 5)
+	require.NoError(t, bErr)
+	assert.NotEmpty(t, beliefs)
+	assert.Contains(t, beliefs[0].Content, "use interfaces at boundaries")
+}
+
 func TestPRStatus_Empty_ReturnsNone(t *testing.T) {
 	t.Parallel()
 	assert.Equal(t, "none", orchestrator.PRStatusForTest(""))

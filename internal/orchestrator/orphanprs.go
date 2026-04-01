@@ -14,6 +14,19 @@ import (
 
 var ticketFromBranch = regexp.MustCompile(`(?i)feat/(jam-\d+)`)
 
+// RecoverOrphanedPRsForTest exports recoverOrphanedPRs for testing.
+func (orch *Orchestrator) RecoverOrphanedPRsForTest(ctx context.Context) {
+	orch.recoverOrphanedPRs(ctx)
+}
+
+// HasPipelineItemForTest exports hasPipelineItem for testing.
+func (orch *Orchestrator) HasPipelineItemForTest(ctx context.Context, ticket string) bool {
+	return orch.hasPipelineItem(ctx, ticket)
+}
+
+// GuessEngineerForTest exports guessEngineer for testing.
+func GuessEngineerForTest(branch string) agent.Role { return guessEngineer(branch) }
+
 // recoverOrphanedPRs scans GitHub for open PRs that have no pipeline
 // item. Creates pipeline items so the reviewer picks them up.
 func (orch *Orchestrator) recoverOrphanedPRs(ctx context.Context) {

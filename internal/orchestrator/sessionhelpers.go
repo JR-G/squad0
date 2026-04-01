@@ -33,6 +33,16 @@ func (orch *Orchestrator) recordSessionEnd(role agent.Role, ticket string, succe
 	orch.monitor.RecordSessionEnd(role, ticket, success)
 }
 
+// WriteMCPConfigForTest exports writeMCPConfig for testing.
+func (orch *Orchestrator) WriteMCPConfigForTest(agentInstance *agent.Agent, workDir string) {
+	orch.writeMCPConfig(agentInstance, workDir)
+}
+
+// AgentFactStoresForTest exports agentFactStores for testing.
+func (orch *Orchestrator) AgentFactStoresForTest() map[agent.Role]*memory.FactStore {
+	return orch.agentFactStores()
+}
+
 // writeMCPConfig writes the .mcp.json to the session working directory
 // and sets the agent's MCPConfigPath so the Claude Code process can
 // find it.
