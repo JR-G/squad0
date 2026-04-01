@@ -64,7 +64,7 @@ func CreateAgents(
 	if len(dataDir) > 0 {
 		dir = dataDir[0]
 	}
-	return createAgents(agentDBs, embedder, modelMap, personalityDir, dir, "")
+	return createAgents(agentDBs, embedder, modelMap, personalityDir, dir, "", "")
 }
 
 // BuildSingleAgent exports buildSingleAgent for testing.
@@ -76,7 +76,7 @@ func BuildSingleAgent(
 	loader *agent.PersonalityLoader,
 ) *agent.Agent {
 	runner := agent.ExecProcessRunner{}
-	return buildSingleAgent(role, agentDB, embedder, modelMap, loader, runner)
+	return buildSingleAgent(role, agentDB, embedder, modelMap, loader, runner, "")
 }
 
 // CreateCoordinationStore exports createCoordinationStore for testing

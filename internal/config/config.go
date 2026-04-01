@@ -59,6 +59,7 @@ type AgentsConfig struct {
 	CooldownSeconds       int          `toml:"cooldown_seconds"`
 	TicketBatchSize       int          `toml:"ticket_batch_size"`
 	PersonalityRegenEvery int          `toml:"personality_regen_every"`
+	CodexFallbackModel    string       `toml:"codex_fallback_model"`
 	Models                ModelsConfig `toml:"models"`
 }
 

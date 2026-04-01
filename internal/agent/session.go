@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -80,7 +81,8 @@ type SessionConfig struct {
 
 // Session manages a single Claude Code agent session.
 type Session struct {
-	runner ProcessRunner
+	runner     ProcessRunner
+	codexModel string // If set, enables Codex CLI fallback on rate limit.
 }
 
 // NewSession creates a Session with the given process runner.
@@ -88,31 +90,65 @@ func NewSession(runner ProcessRunner) *Session {
 	return &Session{runner: runner}
 }
 
+// SetCodexFallback enables automatic fallback to Codex CLI when
+// Claude is rate limited. The codexModel specifies which model
+// to use (e.g. "o3", "gpt-4.1").
+func (session *Session) SetCodexFallback(model string) {
+	session.codexModel = model
+}
+
 // Run executes a Claude Code session with the given configuration and
-// returns the parsed result.
+// returns the parsed result. If Claude is rate limited and Codex
+// fallback is configured, retries with Codex CLI automatically.
 func (session *Session) Run(ctx context.Context, cfg SessionConfig) (SessionResult, error) {
-	// Apply extra env vars for the duration of this session.
 	restoreEnv := applyEnv(cfg.Env)
 	defer restoreEnv()
 
 	args := buildArgs(cfg)
-
 	output, err := session.runner.Run(ctx, cfg.Prompt, cfg.WorkingDir, "claude", args...)
+
+	result := parseClaudeResult(output, err)
+
+	// If rate limited and Codex fallback is configured, retry.
+	if err != nil && session.codexModel != "" && isRateLimited(result.RawOutput, err) {
+		log.Printf("rate limited on Claude, falling back to Codex (%s)", session.codexModel)
+		return session.runCodex(ctx, cfg)
+	}
+
+	if err != nil {
+		return result, fmt.Errorf("claude session failed (exit %d): %w", result.ExitCode, err)
+	}
+
+	return result, nil
+}
+
+func parseClaudeResult(output []byte, err error) SessionResult {
+	var result SessionResult
+	result.RawOutput = string(output)
+
+	if err != nil {
+		result.ExitCode = ExtractExitError(err)
+	}
+
+	result.Messages = parseStreamOutput(result.RawOutput)
+	result.Transcript = extractTranscript(result.Messages)
+	return result
+}
+
+func (session *Session) runCodex(ctx context.Context, cfg SessionConfig) (SessionResult, error) {
+	codexArgs := BuildCodexArgs(cfg.Prompt, cfg.WorkingDir, session.codexModel)
+	output, err := session.runner.Run(ctx, "", cfg.WorkingDir, "codex", codexArgs...)
 
 	var result SessionResult
 	result.RawOutput = string(output)
 
 	if err != nil {
-		exitErr := ExtractExitError(err)
-		result.ExitCode = exitErr
-		result.Messages = parseStreamOutput(result.RawOutput)
-		result.Transcript = extractTranscript(result.Messages)
-		return result, fmt.Errorf("claude session failed (exit %d): %w", result.ExitCode, err)
+		result.ExitCode = ExtractExitError(err)
+		result.Transcript = ParseCodexOutput(result.RawOutput)
+		return result, fmt.Errorf("codex session failed (exit %d): %w", result.ExitCode, err)
 	}
 
-	result.Messages = parseStreamOutput(result.RawOutput)
-	result.Transcript = extractTranscript(result.Messages)
-
+	result.Transcript = ParseCodexOutput(result.RawOutput)
 	return result, nil
 }
 

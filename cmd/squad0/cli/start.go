@@ -104,7 +104,7 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	embedder := memory.NewEmbedder(cfg.Embeddings.OllamaURL, cfg.Embeddings.Model)
 	modelMap := buildModelMap(cfg)
 	targetRepoDir := resolveTargetRepo(cfg.Project.TargetRepo)
-	agents, err := createAgents(agentDBs, embedder, modelMap, deps.PersonalityDir, deps.DataDir, targetRepoDir)
+	agents, err := createAgents(agentDBs, embedder, modelMap, deps.PersonalityDir, deps.DataDir, targetRepoDir, cfg.Agents.CodexFallbackModel)
 	if err != nil {
 		return fmt.Errorf("creating agents: %w", err)
 	}
@@ -337,6 +337,7 @@ func createAgents(
 	personalityDir string,
 	dataDir string,
 	targetRepoDir string,
+	codexFallbackModel string,
 ) (map[agent.Role]*agent.Agent, error) {
 	loader := agent.NewPersonalityLoader(personalityDir)
 	runner := agent.ExecProcessRunner{}
@@ -348,7 +349,7 @@ func createAgents(
 			return nil, fmt.Errorf("no database for role %s", role)
 		}
 
-		newAgent := buildSingleAgent(role, agentDB, embedder, modelMap, loader, runner)
+		newAgent := buildSingleAgent(role, agentDB, embedder, modelMap, loader, runner, codexFallbackModel)
 		dbPath := filepath.Join(dataDir, "agents", string(role)+".db")
 		newAgent.SetDBPath(dbPath)
 		newAgent.SetDefaultWorkDir(targetRepoDir)
@@ -365,6 +366,7 @@ func buildSingleAgent(
 	modelMap map[agent.Role]string,
 	loader *agent.PersonalityLoader,
 	runner agent.ProcessRunner,
+	codexModel string,
 ) *agent.Agent {
 	graphStore := memory.NewGraphStore(agentDB)
 	factStore := memory.NewFactStore(agentDB)
@@ -375,6 +377,9 @@ func buildSingleAgent(
 
 	model := agent.ModelForRole(role, modelMap)
 	session := agent.NewSession(runner)
+	if codexModel != "" {
+		session.SetCodexFallback(codexModel)
+	}
 
 	newAgent := agent.NewAgent(role, model, session, loader, retriever, agentDB, episodeStore, embedder)
 	newAgent.SetMemoryStores(graphStore, factStore)
