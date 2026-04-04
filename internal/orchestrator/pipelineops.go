@@ -329,6 +329,11 @@ func (orch *Orchestrator) isRoleIdle(ctx context.Context, role agent.Role) bool 
 	return checkIn.Status == "idle"
 }
 
+// SetIdleIfStillWorkingForTest exports setIdleIfStillWorking for testing.
+func (orch *Orchestrator) SetIdleIfStillWorkingForTest(ctx context.Context, role agent.Role) {
+	orch.setIdleIfStillWorking(ctx, role)
+}
+
 // setIdleIfStillWorking sets the engineer idle only if they're currently
 // checked in as working. Prevents clobbering a status set by a later
 // lifecycle step (e.g. fix-up or merge already set them to a new state).

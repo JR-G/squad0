@@ -288,3 +288,86 @@ func TestClearStaleWork_WorkingNoPR_FailedDirectly(t *testing.T) {
 	assert.Equal(t, pipeline.StageFailed, updated.Stage,
 		"working item with no PR should be marked failed")
 }
+
+func TestSetIdleIfStillWorking_WorkingAgent_SetsIdle(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{},
+		map[agent.Role]*agent.Agent{},
+		checkIns, nil, nil,
+	)
+
+	// Set engineer to working.
+	require.NoError(t, checkIns.Upsert(ctx, coordination.CheckIn{
+		Agent:         agent.RoleEngineer1,
+		Status:        coordination.StatusWorking,
+		FilesTouching: []string{},
+	}))
+
+	orch.SetIdleIfStillWorkingForTest(ctx, agent.RoleEngineer1)
+
+	checkIn, getErr := checkIns.GetByAgent(ctx, agent.RoleEngineer1)
+	require.NoError(t, getErr)
+	assert.Equal(t, coordination.StatusIdle, checkIn.Status)
+}
+
+func TestSetIdleIfStillWorking_ReviewingAgent_DoesNotChange(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{},
+		map[agent.Role]*agent.Agent{},
+		checkIns, nil, nil,
+	)
+
+	// Set engineer to reviewing — should NOT be changed to idle.
+	require.NoError(t, checkIns.Upsert(ctx, coordination.CheckIn{
+		Agent:         agent.RoleEngineer1,
+		Status:        coordination.StatusReviewing,
+		FilesTouching: []string{},
+	}))
+
+	orch.SetIdleIfStillWorkingForTest(ctx, agent.RoleEngineer1)
+
+	checkIn, getErr := checkIns.GetByAgent(ctx, agent.RoleEngineer1)
+	require.NoError(t, getErr)
+	assert.Equal(t, coordination.StatusReviewing, checkIn.Status)
+}
+
+func TestSetIdleIfStillWorking_NoCheckIn_DoesNotPanic(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{},
+		map[agent.Role]*agent.Agent{},
+		checkIns, nil, nil,
+	)
+
+	// No check-in row exists — should not panic.
+	orch.SetIdleIfStillWorkingForTest(ctx, agent.RoleEngineer1)
+}
