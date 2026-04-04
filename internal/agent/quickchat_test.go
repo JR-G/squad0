@@ -100,3 +100,39 @@ func TestQuickChat_SessionError_ReturnsError(t *testing.T) {
 
 	require.Error(t, err)
 }
+
+type fakeBridge struct {
+	response string
+	err      error
+	calls    int
+}
+
+func (b *fakeBridge) Chat(_ context.Context, _ string) (string, error) {
+	b.calls++
+	return b.response, b.err
+}
+
+func TestQuickChat_WithBridge_RoutesThrough(t *testing.T) {
+	t.Parallel()
+
+	bridge := &fakeBridge{response: "bridge response"}
+	a := agent.NewAgent(agent.RoleEngineer1, "test", nil, nil, nil, nil, nil, nil)
+	a.SetBridge(bridge)
+
+	result, err := a.QuickChat(context.Background(), "test prompt")
+	require.NoError(t, err)
+	assert.Equal(t, "bridge response", result)
+	assert.Equal(t, 1, bridge.calls)
+}
+
+func TestQuickChat_WithBridge_Error_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	bridge := &fakeBridge{err: fmt.Errorf("bridge error")}
+	a := agent.NewAgent(agent.RoleEngineer1, "test", nil, nil, nil, nil, nil, nil)
+	a.SetBridge(bridge)
+
+	_, err := a.QuickChat(context.Background(), "test")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "bridge error")
+}

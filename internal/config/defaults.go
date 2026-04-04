@@ -37,6 +37,14 @@ func DefaultConfig() Config {
 				Reviewer: "claude-opus-4-6",
 				Designer: "claude-sonnet-4-6",
 			},
+			Runtime: RuntimeConfig{
+				Default:  "claude",
+				Fallback: "codex",
+			},
+			Budget: BudgetConfig{
+				MaxTokensPerTicket:   0, // 0 = no limit
+				MaxTokensPerAgentDay: 0,
+			},
 		},
 		Quality: QualityConfig{
 			Lint:              "golangci-lint run",

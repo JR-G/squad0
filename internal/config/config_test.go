@@ -164,6 +164,23 @@ func TestValidate_InvalidFields_ReturnsError(t *testing.T) {
 			},
 			wantErr: "commands",
 		},
+		{
+			name:    "invalid runtime default",
+			modify:  func(cfg *config.Config) { cfg.Agents.Runtime.Default = "gemini" },
+			wantErr: "runtime default",
+		},
+		{
+			name:    "invalid runtime fallback",
+			modify:  func(cfg *config.Config) { cfg.Agents.Runtime.Fallback = "invalid" },
+			wantErr: "runtime fallback",
+		},
+		{
+			name: "invalid runtime override",
+			modify: func(cfg *config.Config) {
+				cfg.Agents.Runtime.Overrides = map[string]string{"engineer": "invalid"}
+			},
+			wantErr: "runtime override",
+		},
 	}
 
 	for _, tt := range tests {

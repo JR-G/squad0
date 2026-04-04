@@ -55,12 +55,28 @@ type EmbeddingsConfig struct {
 
 // AgentsConfig holds agent orchestration settings.
 type AgentsConfig struct {
-	MaxParallel           int          `toml:"max_parallel"`
-	CooldownSeconds       int          `toml:"cooldown_seconds"`
-	TicketBatchSize       int          `toml:"ticket_batch_size"`
-	PersonalityRegenEvery int          `toml:"personality_regen_every"`
-	CodexFallbackModel    string       `toml:"codex_fallback_model"`
-	Models                ModelsConfig `toml:"models"`
+	MaxParallel           int           `toml:"max_parallel"`
+	CooldownSeconds       int           `toml:"cooldown_seconds"`
+	TicketBatchSize       int           `toml:"ticket_batch_size"`
+	PersonalityRegenEvery int           `toml:"personality_regen_every"`
+	CodexFallbackModel    string        `toml:"codex_fallback_model"`
+	Models                ModelsConfig  `toml:"models"`
+	Runtime               RuntimeConfig `toml:"runtime"`
+	Budget                BudgetConfig  `toml:"budget"`
+}
+
+// RuntimeConfig determines which CLI runtime each agent uses.
+// Both Claude Code and Codex are first-class peers.
+type RuntimeConfig struct {
+	Default   string            `toml:"default"`   // "claude" or "codex"
+	Fallback  string            `toml:"fallback"`  // "codex", "claude", or ""
+	Overrides map[string]string `toml:"overrides"` // role → runtime name
+}
+
+// BudgetConfig sets token spend limits for cost control.
+type BudgetConfig struct {
+	MaxTokensPerTicket   int64 `toml:"max_tokens_per_ticket"`
+	MaxTokensPerAgentDay int64 `toml:"max_tokens_per_agent_daily"`
 }
 
 // ModelsConfig maps agent roles to Claude model identifiers.
@@ -140,6 +156,10 @@ func (cfg Config) Validate() error {
 		return err
 	}
 
+	if err := validateRuntime(cfg.Agents.Runtime); err != nil {
+		return err
+	}
+
 	if cfg.Quality.CoverageThreshold < 0 || cfg.Quality.CoverageThreshold > 100 {
 		return fmt.Errorf("quality coverage_threshold must be between 0 and 100, got %d", cfg.Quality.CoverageThreshold)
 	}
@@ -160,6 +180,25 @@ func (cfg Config) Validate() error {
 		return fmt.Errorf("slack channels must include \"commands\"")
 	}
 
+	return nil
+}
+
+var validRuntimes = map[string]bool{
+	"claude": true, "codex": true, "": true,
+}
+
+func validateRuntime(rt RuntimeConfig) error {
+	if !validRuntimes[rt.Default] {
+		return fmt.Errorf("agents runtime default must be \"claude\" or \"codex\", got %q", rt.Default)
+	}
+	if !validRuntimes[rt.Fallback] {
+		return fmt.Errorf("agents runtime fallback must be \"claude\", \"codex\", or empty, got %q", rt.Fallback)
+	}
+	for role, name := range rt.Overrides {
+		if !validRuntimes[name] {
+			return fmt.Errorf("agents runtime override for %s must be \"claude\" or \"codex\", got %q", role, name)
+		}
+	}
 	return nil
 }
 

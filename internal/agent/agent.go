@@ -12,6 +12,14 @@ import (
 
 const chatModel = "claude-haiku-4-5-20251001"
 
+// ChatBridge is an optional bridge for routing QuickChat through a
+// persistent session or alternative runtime. When set, QuickChat
+// delegates to the bridge instead of spawning a fresh process.
+// Implemented by runtime.SessionBridge.
+type ChatBridge interface {
+	Chat(ctx context.Context, prompt string) (string, error)
+}
+
 // Agent represents a squad0 team member with a persistent identity.
 type Agent struct {
 	role           Role
@@ -32,6 +40,7 @@ type Agent struct {
 	chatRoster     map[Role]string
 	chatBeliefs    []string
 	chatVoice      string
+	chatBridge     ChatBridge
 }
 
 // NewAgent creates an Agent with all dependencies injected.
@@ -132,12 +141,19 @@ func (agent *Agent) ExecuteTask(ctx context.Context, taskDescription string, fil
 	return result, nil
 }
 
-// QuickChat runs a lightweight Claude Code session for conversation.
-// Creates a temp directory with a CLAUDE.md containing the agent's
-// personality — Claude Code reads this as project context, making
-// the identity part of its operating instructions rather than a
-// user prompt it can ignore.
+// QuickChat runs a lightweight conversation session. When a ChatBridge
+// is set, routes through it (persistent session or alternative runtime).
+// Otherwise creates a temp CLAUDE.md and spawns a fresh process.
 func (agent *Agent) QuickChat(ctx context.Context, prompt string) (string, error) {
+	// Bridge path — persistent session or alternative runtime.
+	if agent.chatBridge != nil {
+		return agent.chatBridge.Chat(ctx, prompt)
+	}
+
+	return agent.quickChatFresh(ctx, prompt)
+}
+
+func (agent *Agent) quickChatFresh(ctx context.Context, prompt string) (string, error) {
 	agent.chatMu.Lock()
 	roster := agent.chatRoster
 	beliefs := agent.chatBeliefs
@@ -158,10 +174,10 @@ func (agent *Agent) QuickChat(ctx context.Context, prompt string) (string, error
 		WorkingDir: chatCtx.Dir(),
 	}
 
-	result, err := agent.session.Run(ctx, cfg)
-	if err != nil {
-		log.Printf("quick chat failed for %s: %v", agent.role, err)
-		return "", err
+	result, runErr := agent.session.Run(ctx, cfg)
+	if runErr != nil {
+		log.Printf("quick chat failed for %s: %v", agent.role, runErr)
+		return "", runErr
 	}
 
 	return result.Transcript, nil
@@ -175,6 +191,13 @@ func (agent *Agent) SetChatContext(roster map[Role]string, beliefs []string, voi
 	agent.chatRoster = roster
 	agent.chatBeliefs = beliefs
 	agent.chatVoice = voiceText
+}
+
+// SetBridge connects a ChatBridge for routing QuickChat through a
+// persistent session or alternative runtime. Optional — when not set,
+// QuickChat spawns fresh processes as before.
+func (agent *Agent) SetBridge(bridge ChatBridge) {
+	agent.chatBridge = bridge
 }
 
 // SetGHToken sets a custom GitHub token for this agent's sessions.
