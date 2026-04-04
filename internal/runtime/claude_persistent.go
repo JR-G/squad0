@@ -76,6 +76,12 @@ func (rt *ClaudePersistentRuntime) Start(_ context.Context, cfg StartConfig) err
 		workDir = cfg.WorkDir
 	}
 
+	// Write hook configuration so Claude Code runs prime on startup
+	// and drains the inbox on every turn boundary.
+	if hookErr := WriteHookSettings(workDir, rt.role); hookErr != nil {
+		log.Printf("persistent session %s: failed to write hooks: %v", rt.session, hookErr)
+	}
+
 	err := rt.tmux.NewSession(
 		rt.session,
 		workDir,

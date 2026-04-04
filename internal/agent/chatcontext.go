@@ -51,6 +51,16 @@ func (ctx *ChatContext) Cleanup() {
 	_ = os.RemoveAll(ctx.dir)
 }
 
+// BuildPersonalityCLAUDEMDForPrime builds personality output for the
+// prime hook command. Uses the role ID as name if no roster entry exists.
+func BuildPersonalityCLAUDEMDForPrime(role Role, roster map[Role]string, beliefs []string, voiceText string) string {
+	name := roster[role]
+	if name == "" {
+		name = string(role)
+	}
+	return buildPersonalityCLAUDEMD(role, name, roster, beliefs, voiceText)
+}
+
 func buildPersonalityCLAUDEMD(role Role, name string, roster map[Role]string, beliefs []string, voiceText string) string {
 	var builder strings.Builder
 
