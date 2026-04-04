@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/JR-G/squad0/internal/agent"
+	"github.com/JR-G/squad0/internal/coordination"
 	"github.com/JR-G/squad0/internal/memory"
 	"github.com/JR-G/squad0/internal/pipeline"
 )
@@ -326,4 +327,21 @@ func (orch *Orchestrator) isRoleIdle(ctx context.Context, role agent.Role) bool 
 		return true // No check-in row means idle.
 	}
 	return checkIn.Status == "idle"
+}
+
+// setIdleIfStillWorking sets the engineer idle only if they're currently
+// checked in as working. Prevents clobbering a status set by a later
+// lifecycle step (e.g. fix-up or merge already set them to a new state).
+func (orch *Orchestrator) setIdleIfStillWorking(ctx context.Context, role agent.Role) {
+	checkIn, err := orch.checkIns.GetByAgent(ctx, role)
+	if err != nil {
+		return
+	}
+
+	if checkIn.Status != coordination.StatusWorking {
+		return
+	}
+
+	log.Printf("wip: %s still working after review lifecycle ended — setting idle", role)
+	_ = orch.checkIns.SetIdle(ctx, role)
 }

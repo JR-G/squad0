@@ -123,6 +123,13 @@ func (orch *Orchestrator) startReview(ctx context.Context, prURL, ticket string,
 		defer func() { _ = orch.checkIns.SetIdle(ctx, agent.RoleReviewer) }()
 
 		orch.runReview(ctx, reviewer, prURL, ticket, workItemID, engineerRole, false)
+
+		// If runReview returned without triggering the merge or fix-up
+		// lifecycle (e.g. review session failed), the engineer is still
+		// checked in as working. Set them idle so they're not stuck.
+		if engineerRole != "" {
+			orch.setIdleIfStillWorking(ctx, engineerRole)
+		}
 	}()
 }
 
@@ -362,6 +369,8 @@ func (orch *Orchestrator) handleChangesRequested(ctx context.Context, prURL, tic
 	orch.advancePipeline(ctx, workItemID, pipeline.StageChangesRequested)
 
 	if orch.shouldEscalate(ctx, workItemID, ticket) {
+		// Escalated — free the engineer so they can pick up other work.
+		_ = orch.checkIns.SetIdle(ctx, engineerRole)
 		return
 	}
 

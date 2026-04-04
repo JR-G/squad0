@@ -388,11 +388,14 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 
 	if prURL != "" {
 		go MoveTicketState(ctx, orch.agents[agent.RolePM], assignment.Ticket, "In Review")
+		// Don't set idle — the review/merge lifecycle owns the engineer's
+		// state until the PR is merged, failed, or escalated.
 		orch.startReview(ctx, prURL, assignment.Ticket, assignment.WorkItemID, role)
+		orch.emitEvent(ctx, EventSessionComplete, prURL, assignment.Ticket, assignment.WorkItemID, role)
+		return
 	}
-
 	_ = orch.checkIns.SetIdle(ctx, role)
-	orch.emitEvent(ctx, EventSessionComplete, prURL, assignment.Ticket, assignment.WorkItemID, role)
+	orch.emitEvent(ctx, EventSessionComplete, "", assignment.Ticket, assignment.WorkItemID, role)
 }
 
 func (orch *Orchestrator) postAsRole(ctx context.Context, channel, text string, role agent.Role) {
