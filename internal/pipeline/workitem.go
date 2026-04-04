@@ -228,6 +228,24 @@ func (store *WorkItemStore) GetByTicket(ctx context.Context, ticket string) ([]W
 	return scanWorkItems(rows)
 }
 
+// RecentFailures returns work items that failed within the given window.
+func (store *WorkItemStore) RecentFailures(ctx context.Context, window time.Duration) []WorkItem {
+	cutoff := time.Now().Add(-window)
+	rows, err := store.db.QueryContext(ctx, `
+		SELECT id, ticket, engineer, reviewer, stage, pr_url, branch,
+		       review_cycles, started_at, updated_at, finished_at
+		FROM work_items
+		WHERE stage = 'failed' AND updated_at >= ?
+		ORDER BY updated_at DESC`, cutoff)
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = rows.Close() }()
+
+	items, _ := scanWorkItems(rows)
+	return items
+}
+
 // CompletedTickets returns distinct ticket IDs that have reached merged stage.
 func (store *WorkItemStore) CompletedTickets(ctx context.Context) ([]string, error) {
 	rows, err := store.db.QueryContext(ctx, `

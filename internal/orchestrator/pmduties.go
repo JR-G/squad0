@@ -17,10 +17,74 @@ const staleWorkThreshold = 30 * time.Minute
 const staleApprovedThreshold = 15 * time.Minute
 
 // RunPMDuties performs the PM's active pipeline management tasks:
-// checks for stale work items and follows up, verifies board state.
-// Called once per tick after assignment.
+// drains the situation queue (sensors detect, PM decides), checks
+// for stale work items, and verifies board state.
 func (orch *Orchestrator) RunPMDuties(ctx context.Context) {
+	orch.processSituations(ctx)
 	orch.checkStaleWork(ctx)
+}
+
+// processSituations drains the situation queue and lets the PM make
+// judgment calls in a single batched session. Token-efficient: one
+// Claude session handles all pending situations.
+func (orch *Orchestrator) processSituations(ctx context.Context) {
+	if orch.situations == nil {
+		return
+	}
+
+	situations := orch.situations.Drain()
+	if len(situations) == 0 {
+		return
+	}
+
+	pmAgent, ok := orch.agents[agent.RolePM]
+	if !ok {
+		return
+	}
+
+	log.Printf("pm: processing %d situations", len(situations))
+
+	prompt := FormatForPM(situations)
+	response, err := pmAgent.QuickChat(ctx, prompt)
+	if err != nil {
+		log.Printf("pm: situation processing failed: %v", err)
+		return
+	}
+
+	// Post the PM's actions to the appropriate channels.
+	orch.dispatchPMActions(ctx, situations, response)
+}
+
+// dispatchPMActions posts the PM's response and handles escalation.
+// Critical situations also get flagged in triage.
+func (orch *Orchestrator) dispatchPMActions(ctx context.Context, situations []Situation, response string) {
+	response = filterPassResponse(response)
+	if response == "" {
+		return
+	}
+
+	// Post the PM's management actions to engineering.
+	orch.postAsRole(ctx, "engineering", response, agent.RolePM)
+
+	// Flag warning/critical situations in triage and track for staleness.
+	for _, sit := range situations {
+		orch.escalateSituation(ctx, sit)
+		orch.situations.Resolve(sit.Key())
+	}
+}
+
+func (orch *Orchestrator) escalateSituation(ctx context.Context, sit Situation) {
+	if sit.Severity != SeverityWarning && sit.Severity != SeverityCritical {
+		return
+	}
+
+	orch.announceAsRole(ctx, "triage",
+		fmt.Sprintf("[%s] %s (escalation #%d)", sit.Type, sit.Description, sit.Escalations),
+		agent.RolePM)
+
+	if orch.escalations != nil {
+		orch.escalations.Track(sit)
+	}
 }
 
 // PostDailySummary posts a summary of pipeline state to #feed.

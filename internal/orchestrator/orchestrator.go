@@ -45,6 +45,8 @@ type Orchestrator struct {
 	mergeAnnounceMu     sync.Mutex
 	concerns            *ConcernTracker
 	eventBus            *EventBus
+	situations          *SituationQueue
+	escalations         *EscalationTracker
 	startedAt           time.Time
 }
 
@@ -89,8 +91,7 @@ func (orch *Orchestrator) SetHealthMonitor(monitor *health.Monitor) {
 	orch.monitor = monitor
 }
 
-// Run starts the main orchestration loop. It blocks until the context
-// is cancelled.
+// Run starts the main orchestration loop. Blocks until ctx is cancelled.
 func (orch *Orchestrator) Run(ctx context.Context) error {
 	orch.running = true
 	defer func() { orch.running = false }()
@@ -141,6 +142,7 @@ func (orch *Orchestrator) tick(ctx context.Context) {
 	if !orch.cfg.WorkEnabled {
 		return
 	}
+	orch.RunSensors(ctx)
 	orch.RunWitnessScan(ctx)
 	orch.RunPMDuties(ctx)
 
