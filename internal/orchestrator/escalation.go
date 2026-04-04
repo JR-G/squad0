@@ -146,6 +146,18 @@ func (tracker *EscalationTracker) Len() int {
 	return len(tracker.items)
 }
 
+// BackdateForTest sets the escalation time for a tracked item to simulate staleness.
+func (tracker *EscalationTracker) BackdateForTest(key string, age time.Duration) {
+	tracker.mu.Lock()
+	defer tracker.mu.Unlock()
+
+	item, ok := tracker.items[key]
+	if !ok {
+		return
+	}
+	item.EscalatedAt = time.Now().Add(-age)
+}
+
 // RunEscalationCheckForTest exports RunEscalationCheck for testing.
 func (orch *Orchestrator) RunEscalationCheckForTest(t interface{ Helper() }) {
 	t.Helper()

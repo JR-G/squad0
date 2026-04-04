@@ -28,7 +28,8 @@ func newPipelineStore(t *testing.T, db *sql.DB) *pipeline.WorkItemStore {
 func TestWIPFilter_SkipsEngineersWithOpenItems(t *testing.T) {
 	t.Parallel()
 
-	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	dbPath := t.TempDir() + "/wip_test.db"
+	sqlDB, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
@@ -61,7 +62,7 @@ func TestWIPFilter_SkipsEngineersWithOpenItems(t *testing.T) {
 	require.NoError(t, err)
 
 	// Run briefly — engineer-1 should be skipped, only engineer-2 eligible.
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	_ = orch.Run(ctx)

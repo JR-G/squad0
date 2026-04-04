@@ -31,6 +31,11 @@ func (orch *Orchestrator) RunSensorsForTest(t interface{ Helper() }) {
 	orch.RunSensors(context.Background())
 }
 
+// CheckIns returns the check-in store for testing.
+func (orch *Orchestrator) CheckIns() *coordination.CheckInStore {
+	return orch.checkIns
+}
+
 // SetSituationQueue connects the situation queue for PM management.
 func (orch *Orchestrator) SetSituationQueue(queue *SituationQueue) {
 	orch.situations = queue
