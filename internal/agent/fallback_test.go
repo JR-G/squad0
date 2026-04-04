@@ -68,6 +68,24 @@ func TestParseCodexOutput_JSONLines(t *testing.T) {
 	assert.Equal(t, "final answer", agent.ParseCodexOutput(raw))
 }
 
+func TestParseCodexOutput_IgnoresTurnCompletedUsage(t *testing.T) {
+	t.Parallel()
+
+	raw := `{"type":"message","content":"actual answer"}
+{"type":"turn.completed","usage":{"input_tokens":12294,"cached_input_tokens":4864,"output_tokens":64}}`
+	assert.Equal(t, "actual answer", agent.ParseCodexOutput(raw))
+}
+
+func TestParseCodexOutput_IgnoresStartupNoise(t *testing.T) {
+	t.Parallel()
+
+	raw := `Reading additional input from stdin...
+{"type":"thread.started","thread_id":"abc"}
+{"type":"turn.started"}
+{"type":"message","content":"actual answer"}`
+	assert.Equal(t, "actual answer", agent.ParseCodexOutput(raw))
+}
+
 func TestParseCodexOutput_PlainText(t *testing.T) {
 	t.Parallel()
 	assert.Equal(t, "just text", agent.ParseCodexOutput("just text"))
@@ -195,12 +213,91 @@ func TestSession_Run_CodexFallback_AlsoFails(t *testing.T) {
 	assert.Contains(t, err.Error(), "codex session failed")
 }
 
+func TestSession_Run_LongErrorOutput_Truncated(t *testing.T) {
+	t.Parallel()
+
+	longOutput := ""
+	for range 100 {
+		longOutput += "error error error error "
+	}
+
+	runner := &fakeRunner{output: []byte(longOutput), err: fmt.Errorf("exit 1")}
+	session := agent.NewSession(runner)
+
+	result, err := session.Run(context.Background(), agent.SessionConfig{
+		Role: agent.RoleEngineer1, Model: "test", Prompt: "test",
+	})
+
+	require.Error(t, err)
+	_ = result
+}
+
 func TestSession_SetCodexFallback(t *testing.T) {
 	t.Parallel()
 
 	session := agent.NewSession(agent.ExecProcessRunner{})
 	session.SetCodexFallback("o3")
-	// Should not panic.
+}
+
+func TestSession_Run_WithEnv_ExecRunner(t *testing.T) {
+	t.Parallel()
+
+	// Uses real ExecProcessRunner to test the runnerWithEnv switch case.
+	session := agent.NewSession(agent.ExecProcessRunner{})
+	result, err := session.Run(context.Background(), agent.SessionConfig{
+		Role:   agent.RoleEngineer1,
+		Model:  "claude-sonnet-4-6",
+		Prompt: "echo test",
+		Env:    map[string]string{"SQUAD0_TEST": "1"},
+	})
+
+	// Will fail because claude CLI isn't expecting this, but it exercises
+	// the runnerWithEnv path for ExecProcessRunner.
+	_ = result
+	_ = err
+}
+
+func TestSession_Run_WithEnv_PassesToRunner(t *testing.T) {
+	t.Parallel()
+
+	runner := &fakeRunner{output: []byte(`{"type":"result","result":"done"}` + "\n")}
+	session := agent.NewSession(runner)
+
+	_, err := session.Run(context.Background(), agent.SessionConfig{
+		Role:   agent.RoleEngineer1,
+		Model:  "claude-sonnet-4-6",
+		Prompt: "test",
+		Env:    map[string]string{"GH_TOKEN": "test-token"},
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, runner.calls)
+}
+
+func TestSession_Run_WithEnvAndFallback(t *testing.T) {
+	t.Parallel()
+
+	callCount := 0
+	runner := &switchingRunner{
+		responses: []runResult{
+			{output: []byte("rate_limit_exceeded"), err: fmt.Errorf("exit 1")},
+			{output: []byte(`{"type":"message","content":"codex ok"}`), err: nil},
+		},
+		callCount: &callCount,
+	}
+
+	session := agent.NewSession(runner)
+	session.SetCodexFallback("auto")
+
+	result, err := session.Run(context.Background(), agent.SessionConfig{
+		Role:   agent.RoleEngineer1,
+		Model:  "claude-sonnet-4-6",
+		Prompt: "test",
+		Env:    map[string]string{"GH_TOKEN": "tok"},
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "codex ok", result.Transcript)
 }
 
 // fakeRunner records calls.

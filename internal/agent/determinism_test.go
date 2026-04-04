@@ -115,6 +115,30 @@ func TestExecProcessRunner_Run_WithWorkingDir_RunsInDir(t *testing.T) {
 	assert.Contains(t, string(output), tmpDir)
 }
 
+func TestExecProcessRunner_Run_StderrNotInOutput(t *testing.T) {
+	t.Parallel()
+
+	runner := agent.ExecProcessRunner{}
+	// sh -c writes to both stdout and stderr.
+	output, err := runner.Run(context.Background(), "", "", "sh", "-c", "echo STDOUT; echo STDERR >&2")
+
+	require.NoError(t, err)
+	// Stdout should be captured.
+	assert.Contains(t, string(output), "STDOUT")
+	// Stderr should NOT be in the output.
+	assert.NotContains(t, string(output), "STDERR")
+}
+
+func TestExecProcessRunner_Run_WithExtraEnv(t *testing.T) {
+	t.Parallel()
+
+	runner := agent.ExecProcessRunner{ExtraEnv: map[string]string{"TEST_VAR": "hello"}}
+	output, err := runner.Run(context.Background(), "", "", "sh", "-c", "echo $TEST_VAR")
+
+	require.NoError(t, err)
+	assert.Contains(t, string(output), "hello")
+}
+
 func TestExtractExitError_NonExitError_ReturnsOne(t *testing.T) {
 	t.Parallel()
 

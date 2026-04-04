@@ -400,8 +400,6 @@ func (orch *Orchestrator) postAsRole(ctx context.Context, channel, text string, 
 		return
 	}
 
-	// Post the message and capture its timestamp so conversation
-	// replies can thread under it.
 	ts, err := orch.bot.PostAsRoleWithTS(ctx, channel, text, role)
 	if err != nil {
 		log.Printf("postAsRole failed for %s in %s: %v", role, channel, err)

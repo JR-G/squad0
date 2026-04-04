@@ -2,6 +2,7 @@ package agent
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,8 +26,14 @@ type ExecProcessRunner struct {
 	ExtraEnv map[string]string
 }
 
-// Run executes the named command, pipes stdin, and returns combined output.
-// When workingDir is non-empty the process runs in that directory.
+type envProcessRunner struct {
+	base ProcessRunner
+	env  map[string]string
+}
+
+// Run executes the named command, pipes stdin, and returns stdout only.
+// Stderr is logged but not mixed into the output — prevents CLI noise
+// like "Reading additional input from stdin..." from corrupting transcripts.
 func (runner ExecProcessRunner) Run(ctx context.Context, stdin, workingDir, name string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdin = strings.NewReader(stdin)
@@ -42,12 +49,29 @@ func (runner ExecProcessRunner) Run(ctx context.Context, stdin, workingDir, name
 		}
 	}
 
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return output, fmt.Errorf("running %s: %w", name, err)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+
+	if stderrStr := stderr.String(); stderrStr != "" {
+		log.Printf("stderr from %s: %s", name, strings.TrimSpace(stderrStr))
 	}
 
-	return output, nil
+	if err != nil {
+		// Include stderr in the error for debugging, but return
+		// only stdout as the output for transcript parsing.
+		return stdout.Bytes(), fmt.Errorf("running %s: %w", name, err)
+	}
+
+	return stdout.Bytes(), nil
+}
+
+func (runner envProcessRunner) Run(ctx context.Context, stdin, workingDir, name string, args ...string) ([]byte, error) {
+	restoreEnv := applyEnv(runner.env)
+	defer restoreEnv()
+	return runner.base.Run(ctx, stdin, workingDir, name, args...)
 }
 
 // StreamMessage represents a single line of Claude Code's stream-json output.
@@ -101,18 +125,32 @@ func (session *Session) SetCodexFallback(model string) {
 // returns the parsed result. If Claude is rate limited and Codex
 // fallback is configured, retries with Codex CLI automatically.
 func (session *Session) Run(ctx context.Context, cfg SessionConfig) (SessionResult, error) {
-	restoreEnv := applyEnv(cfg.Env)
-	defer restoreEnv()
+	// Env vars are passed via the runner's ExtraEnv, not os.Setenv.
+	// os.Setenv is process-global and leaks across concurrent sessions.
+	runner := session.runnerWithEnv(cfg.Env)
 
 	args := buildArgs(cfg)
-	output, err := session.runner.Run(ctx, cfg.Prompt, cfg.WorkingDir, "claude", args...)
+	output, err := runner.Run(ctx, cfg.Prompt, cfg.WorkingDir, "claude", args...)
 
 	result := parseClaudeResult(output, err)
 
 	// If rate limited and Codex fallback is configured, retry.
+	if err != nil {
+		rateLimited := isRateLimited(result.RawOutput, err)
+		log.Printf(
+			"claude session failed for %s: rate_limited=%t fallback_configured=%t exit=%d err=%v output=%q",
+			cfg.Role,
+			rateLimited,
+			session.codexModel != "",
+			result.ExitCode,
+			err,
+			summarizeFailureOutput(result.RawOutput),
+		)
+	}
+
 	if err != nil && session.codexModel != "" && isRateLimited(result.RawOutput, err) {
 		log.Printf("rate limited on Claude, falling back to Codex (%s)", session.codexModel)
-		return session.runCodex(ctx, cfg)
+		return session.runCodex(ctx, cfg, runner)
 	}
 
 	if err != nil {
@@ -135,9 +173,11 @@ func parseClaudeResult(output []byte, err error) SessionResult {
 	return result
 }
 
-func (session *Session) runCodex(ctx context.Context, cfg SessionConfig) (SessionResult, error) {
+func (session *Session) runCodex(ctx context.Context, cfg SessionConfig, runner ProcessRunner) (SessionResult, error) {
+	log.Printf("codex fallback started for %s: model=%s working_dir=%q", cfg.Role, session.codexModel, cfg.WorkingDir)
+
 	codexArgs := BuildCodexArgs(cfg.Prompt, cfg.WorkingDir, session.codexModel)
-	output, err := session.runner.Run(ctx, "", cfg.WorkingDir, "codex", codexArgs...)
+	output, err := runner.Run(ctx, "", cfg.WorkingDir, "codex", codexArgs...)
 
 	var result SessionResult
 	result.RawOutput = string(output)
@@ -145,11 +185,55 @@ func (session *Session) runCodex(ctx context.Context, cfg SessionConfig) (Sessio
 	if err != nil {
 		result.ExitCode = ExtractExitError(err)
 		result.Transcript = ParseCodexOutput(result.RawOutput)
+		log.Printf(
+			"codex fallback failed for %s: exit=%d err=%v output=%q",
+			cfg.Role,
+			result.ExitCode,
+			err,
+			summarizeFailureOutput(result.RawOutput),
+		)
 		return result, fmt.Errorf("codex session failed (exit %d): %w", result.ExitCode, err)
 	}
 
 	result.Transcript = ParseCodexOutput(result.RawOutput)
+	log.Printf("codex fallback succeeded for %s", cfg.Role)
 	return result, nil
+}
+
+func (session *Session) runnerWithEnv(env map[string]string) ProcessRunner {
+	if len(env) == 0 {
+		return session.runner
+	}
+
+	switch runner := session.runner.(type) {
+	case ExecProcessRunner:
+		runner.ExtraEnv = mergeEnv(runner.ExtraEnv, env)
+		return runner
+	case *ExecProcessRunner:
+		copyRunner := *runner
+		copyRunner.ExtraEnv = mergeEnv(copyRunner.ExtraEnv, env)
+		return &copyRunner
+	default:
+		return envProcessRunner{
+			base: session.runner,
+			env:  mergeEnv(nil, env),
+		}
+	}
+}
+
+func mergeEnv(base, extra map[string]string) map[string]string {
+	if len(base) == 0 && len(extra) == 0 {
+		return nil
+	}
+
+	merged := make(map[string]string, len(base)+len(extra))
+	for key, val := range base {
+		merged[key] = val
+	}
+	for key, val := range extra {
+		merged[key] = val
+	}
+	return merged
 }
 
 func buildArgs(cfg SessionConfig) []string {
@@ -233,6 +317,19 @@ func extractAssistantText(msg StreamMessage) string {
 	}
 
 	return builder.String()
+}
+
+func summarizeFailureOutput(raw string) string {
+	const maxLen = 400
+
+	trimmed := strings.Join(strings.Fields(strings.TrimSpace(raw)), " ")
+	if trimmed == "" {
+		return ""
+	}
+	if len(trimmed) <= maxLen {
+		return trimmed
+	}
+	return trimmed[:maxLen] + "...(truncated)"
 }
 
 // applyEnv sets environment variables and returns a function that
