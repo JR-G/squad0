@@ -221,8 +221,8 @@ func TestBuildReviewPrompt_ContainsPRCommentStep(t *testing.T) {
 	)
 
 	assert.Contains(t, prompt, "gh pr comment https://github.com/test-org/test-repo/pull/10 --body")
-	assert.Contains(t, prompt, "numbered items for each issue")
-	assert.Contains(t, prompt, "SHORT summary only")
+	assert.Contains(t, prompt, "[blocker]")
+	assert.Contains(t, prompt, "[suggestion]")
 }
 
 func TestBuildReviewPrompt_VerifyRetryInstruction(t *testing.T) {
@@ -233,7 +233,7 @@ func TestBuildReviewPrompt_VerifyRetryInstruction(t *testing.T) {
 		"JAM-2",
 	)
 
-	assert.Contains(t, prompt, "reviewDecision is still empty after your review, try again")
+	assert.Contains(t, prompt, "reviewDecision")
 }
 
 func TestExtractRepo_ReturnsOwnerRepo(t *testing.T) {

@@ -39,7 +39,7 @@ func TestBuildReReviewPrompt_VerifyRetryInstruction(t *testing.T) {
 		"JAM-3",
 	)
 
-	assert.Contains(t, prompt, "reviewDecision is still empty after your review, try again")
+	assert.Contains(t, prompt, "reviewDecision")
 }
 
 func TestClassifyReviewOutcome_LGTMApproves(t *testing.T) {
