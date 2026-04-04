@@ -19,22 +19,25 @@ type ExecTmuxExecutor struct{}
 
 // NewSession creates a detached tmux session.
 func (ExecTmuxExecutor) NewSession(name, workDir, cmd string, args ...string) error {
-	full := cmd + " " + strings.Join(args, " ")
-	out, err := exec.Command("tmux", "new-session", "-d", "-s", name, "-c", workDir, full).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("tmux new-session %s: %s: %w", name, out, err)
-	}
-	return nil
+	return runTmux("new-session", "-d", "-s", name, "-c", workDir, cmd+" "+strings.Join(args, " "))
 }
 
 // HasSession checks if a tmux session exists.
 func (ExecTmuxExecutor) HasSession(name string) bool {
-	return exec.Command("tmux", "has-session", "-t", name).Run() == nil //nolint:gosec // name is internal
+	return runTmux("has-session", "-t", name) == nil
 }
 
 // KillSession destroys a tmux session.
 func (ExecTmuxExecutor) KillSession(name string) error {
-	_ = exec.Command("tmux", "kill-session", "-t", name).Run() //nolint:gosec // name is internal
+	_ = runTmux("kill-session", "-t", name)
+	return nil
+}
+
+func runTmux(args ...string) error {
+	out, err := exec.Command("tmux", args...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("tmux %s: %s: %w", args[0], out, err)
+	}
 	return nil
 }
 

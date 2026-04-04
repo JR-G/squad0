@@ -1,6 +1,7 @@
 package runtime_test
 
 import (
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -153,6 +154,31 @@ func TestInbox_WriteResponse_CreatesFile(t *testing.T) {
 	response, waitErr := inbox.WaitForResponse("test-id", time.Second)
 	require.NoError(t, waitErr)
 	assert.Equal(t, "response text", response)
+}
+
+func TestNewInbox_InvalidPath_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	// /dev/null is a file, not a directory — MkdirAll should fail.
+	_, err := runtime.NewInbox("/dev/null/inbox", "/dev/null/outbox")
+	assert.Error(t, err)
+}
+
+func TestInbox_Enqueue_MultipleMessages_AllDrained(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	inbox, err := runtime.NewInbox(filepath.Join(dir, "in"), filepath.Join(dir, "out"))
+	require.NoError(t, err)
+
+	for idx := range 5 {
+		_, enqErr := inbox.Enqueue(fmt.Sprintf("message %d", idx))
+		require.NoError(t, enqErr)
+	}
+
+	messages, drainErr := inbox.Drain()
+	require.NoError(t, drainErr)
+	assert.Len(t, messages, 5)
 }
 
 func TestFormatDrained_Empty_ReturnsEmpty(t *testing.T) {
