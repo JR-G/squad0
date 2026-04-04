@@ -38,7 +38,7 @@ func (runner *FallbackRunner) Run(ctx context.Context, stdin, workingDir, name s
 		return output, nil
 	}
 
-	if !isRateLimited(string(output), err) {
+	if !IsRateLimited(string(output), err) {
 		return output, err
 	}
 
@@ -47,7 +47,9 @@ func (runner *FallbackRunner) Run(ctx context.Context, stdin, workingDir, name s
 	return runner.primary.Run(ctx, "", workingDir, "codex", codexArgs...)
 }
 
-func isRateLimited(output string, err error) bool {
+// IsRateLimited returns true if the output or error contains signals
+// indicating Claude API rate limiting (429, capacity, overloaded).
+func IsRateLimited(output string, err error) bool {
 	lower := strings.ToLower(output + " " + err.Error())
 	for _, signal := range rateLimitSignals {
 		if strings.Contains(lower, signal) {
@@ -158,7 +160,8 @@ func isCodexPlainMetaLine(line string) bool {
 	}
 }
 
-// IsRateLimitedForTest exports isRateLimited for testing.
+// IsRateLimitedForTest exports IsRateLimited for backwards-compatible
+// test callers.
 func IsRateLimitedForTest(output string, err error) bool {
-	return isRateLimited(output, err)
+	return IsRateLimited(output, err)
 }

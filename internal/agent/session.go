@@ -136,7 +136,7 @@ func (session *Session) Run(ctx context.Context, cfg SessionConfig) (SessionResu
 
 	// If rate limited and Codex fallback is configured, retry.
 	if err != nil {
-		rateLimited := isRateLimited(result.RawOutput, err)
+		rateLimited := IsRateLimited(result.RawOutput, err)
 		log.Printf(
 			"claude session failed for %s: rate_limited=%t fallback_configured=%t exit=%d err=%v output=%q",
 			cfg.Role,
@@ -148,7 +148,7 @@ func (session *Session) Run(ctx context.Context, cfg SessionConfig) (SessionResu
 		)
 	}
 
-	if err != nil && session.codexModel != "" && isRateLimited(result.RawOutput, err) {
+	if err != nil && session.codexModel != "" && IsRateLimited(result.RawOutput, err) {
 		log.Printf("rate limited on Claude, falling back to Codex (%s)", session.codexModel)
 		return session.runCodex(ctx, cfg, runner)
 	}
