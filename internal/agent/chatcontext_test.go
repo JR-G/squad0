@@ -175,6 +175,25 @@ func TestNewChatContext_WithoutVoiceText_OmitsVoiceSection(t *testing.T) {
 	assert.NotContains(t, string(content), "## Your voice")
 }
 
+func TestBuildPersonalityCLAUDEMDForPrime_ReturnsPersonality(t *testing.T) {
+	t.Parallel()
+
+	roster := map[agent.Role]string{agent.RoleEngineer1: "Callum"}
+	output := agent.BuildPersonalityCLAUDEMDForPrime(agent.RoleEngineer1, roster, nil, "dry and understated")
+
+	assert.Contains(t, output, "# You are Callum")
+	assert.Contains(t, output, "dry and understated")
+}
+
+func TestBuildPersonalityCLAUDEMDForPrime_FallbackName(t *testing.T) {
+	t.Parallel()
+
+	roster := map[agent.Role]string{}
+	output := agent.BuildPersonalityCLAUDEMDForPrime(agent.RolePM, roster, nil, "")
+
+	assert.Contains(t, output, "# You are pm")
+}
+
 func TestNewChatContext_AllRoles_HaveAntiPatterns(t *testing.T) {
 	t.Parallel()
 

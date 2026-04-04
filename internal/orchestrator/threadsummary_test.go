@@ -88,6 +88,25 @@ func TestSummariseThread_NoUnansweredQuestion_NotFlagged(t *testing.T) {
 		"last line has no question mark so no unanswered question")
 }
 
+func TestSummariseThread_ExactlyAtThreshold_ReturnsEmpty(t *testing.T) {
+	t.Parallel()
+
+	lines := make([]string, 5)
+	for idx := range lines {
+		lines[idx] = "Agent: message"
+	}
+
+	result := orchestrator.SummariseThread(lines, 5)
+	assert.Empty(t, result, "thread at exactly threshold should return empty")
+}
+
+func TestSummariseThread_EmptyThread_ReturnsEmpty(t *testing.T) {
+	t.Parallel()
+
+	result := orchestrator.SummariseThread(nil, 5)
+	assert.Empty(t, result)
+}
+
 func TestBuildChatPromptWithSummary_NoSummary_ReturnsBase(t *testing.T) {
 	t.Parallel()
 

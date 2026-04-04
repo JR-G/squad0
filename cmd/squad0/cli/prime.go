@@ -77,7 +77,10 @@ func loadRosterFromDB(currentRole string) map[agent.Role]string {
 // loadBeliefsFromDB attempts to load top beliefs for the agent.
 // Returns empty if DBs are unavailable.
 func loadBeliefsFromDB(roleStr string) []string {
-	dbPath := fmt.Sprintf("data/agents/%s.db", roleStr)
+	return loadBeliefsFromPath(fmt.Sprintf("data/agents/%s.db", roleStr))
+}
+
+func loadBeliefsFromPath(dbPath string) []string {
 	if _, err := os.Stat(dbPath); err != nil {
 		return nil
 	}

@@ -66,7 +66,7 @@ func createBridgeForRole(
 func buildRuntime(
 	name string,
 	role agent.Role,
-	runner agent.ProcessRunner,
+	runner agent.ProcessRunner, //nolint:unparam // varies in production via createBridgeForRole
 	codexModel string,
 	inboxDir, outboxDir string,
 ) runtime.Runtime {
