@@ -19,8 +19,9 @@ type PauseChecker func(ctx context.Context, role agent.Role) bool
 
 // ConversationEngine manages organic agent conversations in Slack.
 // Event-driven — triggered by incoming messages, not polling.
-// Uses time-based decay: conversations stay alive while messages
-// are recent, and die naturally when the thread goes quiet.
+// Uses time-based decay combined with thread-state awareness: the
+// bar for contributing rises as conversations mature from exploring
+// through debating to converging and decided.
 type ConversationEngine struct {
 	agents           map[agent.Role]*agent.Agent
 	factStores       map[agent.Role]*memory.FactStore
@@ -33,6 +34,7 @@ type ConversationEngine struct {
 	pauseChecker     PauseChecker
 	concerns         *ConcernTracker
 	outputPipeline   *OutputPipeline
+	threadTracker    *ThreadTracker
 }
 
 type channelState struct {
@@ -56,6 +58,7 @@ func NewConversationEngine(
 		roster:         roster,
 		voices:         make(map[agent.Role]string),
 		outputPipeline: NewOutputPipeline(),
+		threadTracker:  NewThreadTracker(),
 	}
 }
 
@@ -117,29 +120,33 @@ func (engine *ConversationEngine) OnThreadMessage(ctx context.Context, channel, 
 	copy(recentCopy, state.recentLines)
 	engine.mu.Unlock()
 
+	// Update thread state — tracks phase (exploring → decided).
+	senderRole := engine.senderToRole(sender)
+	engine.threadTracker.Update(channel, senderRole, text)
+
 	// Mentioned agents always respond, regardless of decay.
 	mentioned := engine.findMentionedRoles(recentCopy, sender)
 
 	// Time-based decay: respond if conversation is alive.
-	// When conversation is stale, clear the thread so the next burst
-	// starts a fresh thread instead of replying to an old one.
+	// When conversation is stale, clear the thread and reset
+	// thread state so the next burst starts fresh.
 	baseCount := decideBaseResponders(timeSinceLast, isHumanMessage(sender))
 	if baseCount == 0 && timeSinceLast > 5*time.Minute {
 		engine.mu.Lock()
 		state.threadTS = ""
 		engine.mu.Unlock()
 		activeThread = ""
+		engine.threadTracker.Reset(channel)
 	}
 
-	// Chitchat is low-priority — max 1 responder so it doesn't
-	// dominate agent time or compete with work channels.
-	if channel == "chitchat" && baseCount > 1 {
-		baseCount = 1
-	}
+	// Thread-state-aware responder count. As the conversation matures,
+	// fewer agents jump in — the bar for contributing rises.
+	threadState := engine.threadTracker.Get(channel)
+	baseCount = adjustForPhase(baseCount, threadState.Phase, isHumanMessage(sender))
 
-	// Questions always get at least one response.
-	if baseCount == 0 && containsQuestion(text) {
-		baseCount = 1
+	// Chitchat allows more responders to keep conversations alive.
+	if channel == "chitchat" && baseCount > 3 {
+		baseCount = 3
 	}
 
 	// Mentioned agents bypass decay entirely.
@@ -147,8 +154,8 @@ func (engine *ConversationEngine) OnThreadMessage(ctx context.Context, channel, 
 		baseCount = len(mentioned)
 	}
 
-	log.Printf("chat: channel=%s sender=%s timeSince=%s responders=%d mentioned=%v thread=%s",
-		channel, sender, timeSinceLast.Round(time.Second), baseCount, mentioned, activeThread)
+	log.Printf("chat: channel=%s sender=%s phase=%s turns=%d responders=%d mentioned=%v thread=%s",
+		channel, sender, threadState.Phase, threadState.TurnCount, baseCount, mentioned, activeThread)
 
 	if baseCount == 0 && len(mentioned) == 0 {
 		return
@@ -157,44 +164,50 @@ func (engine *ConversationEngine) OnThreadMessage(ctx context.Context, channel, 
 	candidates := engine.pickCandidates(sender, baseCount, recentCopy, mentioned)
 	log.Printf("chat: picked %v to respond", candidates)
 
-	var lastResponder string
 	for _, role := range candidates {
 		log.Printf("chat: %s responding...", role)
 		freshLines := engine.RecentMessages(channel)
 		engine.tryRespondInThread(ctx, channel, role, freshLines, activeThread)
-		lastResponder = string(role)
 		log.Printf("chat: %s finished", role)
 	}
-
-	// If any response ended with a question, trigger a follow-up round
-	// so the question doesn't die unanswered.
-	engine.followUpIfQuestion(ctx, channel, lastResponder, activeThread)
 }
 
-// followUpIfQuestion checks the most recent message in the channel.
-// If an agent just asked a question, pick one responder to answer it.
-func (engine *ConversationEngine) followUpIfQuestion(ctx context.Context, channel, lastResponder, threadTS string) {
-	recent := engine.RecentMessages(channel)
-	if len(recent) == 0 {
-		return
+// senderToRole maps a sender name back to an agent.Role. Returns an
+// empty role for human senders.
+func (engine *ConversationEngine) senderToRole(sender string) agent.Role {
+	for _, role := range agent.AllRoles() {
+		if string(role) == sender {
+			return role
+		}
 	}
+	return ""
+}
 
-	lastLine := recent[len(recent)-1]
-	if !containsQuestion(lastLine) {
-		return
+// adjustForPhase reduces responder count as the thread matures.
+// Exploring: full engagement. Debating: tighter. Converging: minimal.
+// Decided: only if directly mentioned. Human messages always get at
+// least 1 responder regardless of phase.
+func adjustForPhase(baseCount int, phase ThreadPhase, isHuman bool) int {
+	switch phase {
+	case PhaseExploring:
+		return baseCount
+	case PhaseDebating:
+		if baseCount > 1 {
+			return 1
+		}
+		return baseCount
+	case PhaseConverging:
+		if isHuman {
+			return 1
+		}
+		return 0
+	case PhaseDecided:
+		if isHuman {
+			return 1
+		}
+		return 0
 	}
-
-	log.Printf("chat: last response was a question, triggering follow-up")
-
-	mentioned := engine.findMentionedRoles(recent, lastResponder)
-	candidates := engine.pickCandidates(lastResponder, 1, recent, mentioned)
-	if len(candidates) == 0 {
-		return
-	}
-
-	role := candidates[0]
-	freshLines := engine.RecentMessages(channel)
-	engine.tryRespondInThread(ctx, channel, role, freshLines, threadTS)
+	return baseCount
 }
 
 // IsQuiet returns true if the channel has had no messages for at least
@@ -215,11 +228,9 @@ func (engine *ConversationEngine) IsQuiet(channel string, threshold time.Duratio
 // conversation when channels have been quiet.
 func (engine *ConversationEngine) BreakSilence(ctx context.Context) {
 	engine.breakSilenceIn(ctx, "engineering", 10*time.Minute)
-	// Chitchat only breaks silence when work channels are quiet too —
-	// prevents agents chatting when they should be working.
-	if engine.IsQuiet("engineering", 5*time.Minute) && engine.IsQuiet("reviews", 5*time.Minute) {
-		engine.breakSilenceIn(ctx, "chitchat", 15*time.Minute)
-	}
+	// Chitchat runs on its own timer — agents should socialise
+	// independently of whether work is happening.
+	engine.breakSilenceIn(ctx, "chitchat", 10*time.Minute)
 }
 
 func (engine *ConversationEngine) breakSilenceIn(ctx context.Context, channel string, threshold time.Duration) {
@@ -306,12 +317,19 @@ func (engine *ConversationEngine) tryRespondInThread(ctx context.Context, channe
 	voiceText := engine.voices[role]
 	engine.mu.Unlock()
 
-	// Feed beliefs + roster into the agent so its CLAUDE.md reflects
-	// accumulated experience. Beliefs grow over time from the memory DB.
-	agentInstance.SetChatContext(engine.roster, engine.topBeliefs(ctx, role))
+	// Feed beliefs, roster, and voice into the agent so its CLAUDE.md
+	// reflects personality and accumulated experience.
+	agentInstance.SetChatContext(engine.roster, engine.topBeliefs(ctx, role), voiceText)
+
+	// Build prompt with thread-state awareness.
+	threadState := engine.threadTracker.Get(channel)
+	phasePrompt := PromptForPhase(threadState.Phase, threadState)
 
 	summary := SummariseThread(recentLines, summariseThreshold)
 	prompt := BuildChatPromptWithSummary(role, channel, recentLines, nil, engine.roster, voiceText, summary)
+	if phasePrompt != "" {
+		prompt = phasePrompt + "\n\n" + prompt
+	}
 
 	text := engine.generateValidResponse(ctx, agentInstance, role, prompt, recentLines)
 	if text == "" {
@@ -411,6 +429,16 @@ func DecideBaseRespondersForTest(timeSinceNanos int64, isHuman bool) int {
 	return decideBaseResponders(time.Duration(timeSinceNanos), isHuman)
 }
 
+// AdjustForPhaseForTest exports adjustForPhase for testing.
+func AdjustForPhaseForTest(baseCount int, phase ThreadPhase, isHuman bool) int {
+	return adjustForPhase(baseCount, phase, isHuman)
+}
+
+// ThreadTrackerForTest returns the engine's thread tracker for testing.
+func (engine *ConversationEngine) ThreadTrackerForTest() *ThreadTracker {
+	return engine.threadTracker
+}
+
 // FactStores returns the per-agent fact stores for cross-agent queries
 // such as the seance.
 func (engine *ConversationEngine) FactStores() map[agent.Role]*memory.FactStore {
@@ -432,22 +460,16 @@ func (engine *ConversationEngine) SetVoicesMap(voices map[agent.Role]string) {
 	engine.voices = voices
 }
 
-// decideBaseResponders uses time-based decay. Recent messages get full
-// engagement, older messages get less, and quiet channels get none.
-// Human messages always reset to full engagement.
+// decideBaseResponders uses time-based decay. Human messages get 2
+// responders. Agent messages get 1 if the thread is alive (<5 min).
 func decideBaseResponders(timeSinceLast time.Duration, isHuman bool) int {
 	if isHuman {
 		return 2
 	}
-
-	switch {
-	case timeSinceLast < 2*time.Minute:
-		return 2
-	case timeSinceLast < 5*time.Minute:
+	if timeSinceLast < 5*time.Minute {
 		return 1
-	default:
-		return 0
 	}
+	return 0
 }
 
 func isHumanMessage(sender string) bool {

@@ -9,7 +9,7 @@ import (
 
 const chitchatChannel = "chitchat"
 
-func buildChatPrompt(role agent.Role, channel string, recentLines, _ []string, roster map[agent.Role]string, _ string) string {
+func buildChatPrompt(role agent.Role, channel string, recentLines, _ []string, roster map[agent.Role]string, voiceText string) string {
 	var builder strings.Builder
 
 	name := roster[role]
@@ -17,8 +17,6 @@ func buildChatPrompt(role agent.Role, channel string, recentLines, _ []string, r
 		name = string(role)
 	}
 
-	// Minimal prompt — identity is in CLAUDE.md, not here.
-	// The user message is just context + instruction.
 	fmt.Fprintf(&builder, "#%s:\n", channel)
 
 	for _, line := range recentLines {
@@ -30,6 +28,12 @@ func buildChatPrompt(role agent.Role, channel string, recentLines, _ []string, r
 	}
 
 	builder.WriteString("\n")
+
+	// Voice reinforcement — the CLAUDE.md has the full voice description
+	// but repeating key instructions in the prompt keeps it front of mind.
+	if voiceText != "" {
+		fmt.Fprintf(&builder, "Voice reminder: %s\n\n", voiceText)
+	}
 
 	builder.WriteString(replyInstruction(name, channel))
 	return builder.String()
@@ -64,7 +68,7 @@ func ReplyInstructionForTest(name, channel string) string {
 
 func replyInstruction(name, channel string) string {
 	if channel == chitchatChannel {
-		return fmt.Sprintf("Reply as %s — casual, not about work. Or PASS.", name)
+		return fmt.Sprintf("You're %s, hanging out with your team. Say whatever's on your mind — an opinion, a reaction, something funny, a rant, a random thought. Talk like a real person on Slack with colleagues you like. 1-3 sentences.", name)
 	}
 	return fmt.Sprintf("Reply as %s (1-3 sentences, Slack formatting, or PASS):", name)
 }

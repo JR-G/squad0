@@ -31,6 +31,7 @@ type Agent struct {
 	chatMu         sync.Mutex
 	chatRoster     map[Role]string
 	chatBeliefs    []string
+	chatVoice      string
 }
 
 // NewAgent creates an Agent with all dependencies injected.
@@ -140,9 +141,10 @@ func (agent *Agent) QuickChat(ctx context.Context, prompt string) (string, error
 	agent.chatMu.Lock()
 	roster := agent.chatRoster
 	beliefs := agent.chatBeliefs
+	voice := agent.chatVoice
 	agent.chatMu.Unlock()
 
-	chatCtx, err := NewChatContext(agent.role, roster, beliefs)
+	chatCtx, err := NewChatContext(agent.role, roster, beliefs, voice)
 	if err != nil {
 		log.Printf("quick chat context failed for %s: %v", agent.role, err)
 		return "", err
@@ -165,13 +167,14 @@ func (agent *Agent) QuickChat(ctx context.Context, prompt string) (string, error
 	return result.Transcript, nil
 }
 
-// SetChatContext provides the roster and beliefs for CLAUDE.md
-// generation during QuickChat sessions. Thread-safe.
-func (agent *Agent) SetChatContext(roster map[Role]string, beliefs []string) {
+// SetChatContext provides the roster, beliefs, and voice text for
+// CLAUDE.md generation during QuickChat sessions. Thread-safe.
+func (agent *Agent) SetChatContext(roster map[Role]string, beliefs []string, voiceText string) {
 	agent.chatMu.Lock()
 	defer agent.chatMu.Unlock()
 	agent.chatRoster = roster
 	agent.chatBeliefs = beliefs
+	agent.chatVoice = voiceText
 }
 
 // SetGHToken sets a custom GitHub token for this agent's sessions.

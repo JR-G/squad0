@@ -31,8 +31,8 @@ func TestDecideBaseResponders_AllBranches(t *testing.T) {
 	}{
 		{"human always 2", 0, true, 2},
 		{"human even if stale", 10 * 60 * 1e9, true, 2},
-		{"agent recent", 0, false, 2},
-		{"agent 1min", 1 * 60 * 1e9, false, 2},
+		{"agent recent", 0, false, 1},
+		{"agent 1min", 1 * 60 * 1e9, false, 1},
 		{"agent 3min", 3 * 60 * 1e9, false, 1},
 		{"agent 4min", 4 * 60 * 1e9, false, 1},
 		{"agent 5min", 5 * 60 * 1e9, false, 0},

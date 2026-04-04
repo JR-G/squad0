@@ -98,9 +98,10 @@ func TestDecideBaseResponders_HumanMessage_AlwaysTwo(t *testing.T) {
 	assert.Equal(t, 2, orchestrator.DecideBaseRespondersForTest(0, true))
 }
 
-func TestDecideBaseResponders_RecentAgentMessage_Two(t *testing.T) {
+func TestDecideBaseResponders_RecentAgentMessage_One(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, 2, orchestrator.DecideBaseRespondersForTest(0, false))
+	// Agent messages get 1 responder — dialogues, not pile-ons.
+	assert.Equal(t, 1, orchestrator.DecideBaseRespondersForTest(0, false))
 }
 
 func TestDecideBaseResponders_OlderAgentMessage_One(t *testing.T) {

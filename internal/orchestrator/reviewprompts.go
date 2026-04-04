@@ -15,34 +15,29 @@ const reviewPromptTemplate = `You are reviewing pull request #%s for ticket %s.
    - Correctness: does the code do what the ticket asks?
    - Bugs: off-by-one errors, nil pointer dereferences, race conditions
    - Tests: are the changes adequately tested?
-   - Style: does it follow the project's conventions?
    - Security: any injection, XSS, or auth issues?
 
-5. Post your detailed findings as a PR comment so the engineer can see them inline:
-   gh pr comment %s --body 'your full review with numbered items for each issue'
-   Each issue should be a numbered item. Be specific about file, line, and what to fix.
+5. Post your findings as a PR comment. BUDGET: maximum 5 items. Prioritise ruthlessly.
+   Label each item as [blocker] or [suggestion]:
+   - [blocker]: bugs, security issues, missing error handling, broken tests. These PREVENT approval.
+   - [suggestion]: style, naming, minor improvements. These do NOT prevent approval.
+   gh pr comment %s --body 'your review with labelled items'
 
-6. You MUST submit your review using one of these gh commands — this is MANDATORY:
-   To approve: gh pr review %s --approve --body "short summary of your review"
-   To request changes: gh pr review %s --request-changes --body "short summary of issues"
+6. Make your decision:
+   - If there are ZERO blockers: approve, even if you have suggestions.
+   - If there are blockers: request changes.
+   gh pr review %s --approve --body "summary" OR gh pr review %s --request-changes --body "summary"
 
-   The --body here is a SHORT summary only — the detail is in the PR comment above.
+   IMPORTANT: Do NOT request changes for suggestions only. Approve with suggestions noted.
+   You MUST actually run the gh pr review command.
 
-   IMPORTANT RULES:
-   - Do NOT say "approved with comments" — that is NOT an approval.
-   - If you have ANY concerns, use --request-changes. Don't be afraid to request changes.
-   - The pipeline handles the fix-up loop automatically — requesting changes is normal.
-   - Either fully approve or request changes. No middle ground.
-   - You MUST actually run the gh pr review command, not just say "approved".
-
-7. After submitting the review, verify it worked: gh pr view %s --json reviewDecision
-   If the reviewDecision is still empty after your review, try again.
+7. Verify: gh pr view %s --json reviewDecision
 
 End your response with either APPROVED or CHANGES_REQUESTED on its own line.
 `
 
 const reReviewPromptTemplate = `You previously reviewed PR #%s for ticket %s and requested changes.
-The engineer has pushed fixes. Check that your specific concerns were addressed.
+The engineer has pushed fixes.
 
 ## PR
 %s
@@ -50,22 +45,22 @@ The engineer has pushed fixes. Check that your specific concerns were addressed.
 ## Instructions
 1. Read your previous review comments: gh pr view %s --comments
 2. Read the latest diff: gh pr diff %s
-3. For EACH concern you raised previously, verify it was addressed:
-   - Was the fix correct?
-   - Were tests added or updated?
-   - Did the fix introduce new issues?
+3. ONLY check your previous [blocker] items. For each one:
+   - Was the blocker resolved?
+   - Did the fix introduce a NEW bug? (only flag if it's a genuine bug, not a style preference)
+   Ignore suggestions and style — those are non-blocking.
 
-4. Post your findings as a PR comment with numbered items:
-   gh pr comment %s --body 'your re-review findings'
+4. Post a brief update: gh pr comment %s --body 'Re-review: [status of each blocker]'
 
-5. Submit your review:
-   If ALL concerns were addressed: gh pr review %s --approve --body "All feedback addressed"
-   If concerns remain: gh pr review %s --request-changes --body "short summary of remaining issues"
+5. Decision:
+   - If all blockers are resolved: approve. Do not find new issues on re-review.
+   - If a blocker is still broken: request changes for that specific item only.
+   gh pr review %s --approve --body "Blockers addressed" OR gh pr review %s --request-changes --body "remaining blocker"
 
-6. Verify the review: gh pr view %s --json reviewDecision
-   If the reviewDecision is still empty after your review, try again.
+6. Verify: gh pr view %s --json reviewDecision
 
-Focus on YOUR previous comments specifically — don't re-review the entire diff.
+IMPORTANT: This is a re-review. Your job is to verify previous blockers are fixed.
+Do NOT raise new issues. Do NOT re-review the entire diff. Keep it focused.
 End with APPROVED or CHANGES_REQUESTED.
 `
 
