@@ -1,0 +1,44 @@
+package orchestrator
+
+import (
+	"github.com/JR-G/squad0/internal/agent"
+	"github.com/JR-G/squad0/internal/routing"
+)
+
+// NameForRole returns the agent's chosen name, falling back to the
+// role ID if no name is known.
+func (orch *Orchestrator) NameForRole(role agent.Role) string {
+	if orch.roster == nil {
+		return string(role)
+	}
+
+	name, ok := orch.roster[role]
+	if !ok || name == string(role) {
+		return string(role)
+	}
+
+	return name
+}
+
+// SetSpecialisationStore connects the specialisation tracker for
+// intelligent assignment based on agent success rates.
+func (orch *Orchestrator) SetSpecialisationStore(store *routing.SpecialisationStore) {
+	orch.specStore = store
+}
+
+// SetOpinionStore connects the inter-agent opinion tracker for
+// review scrutiny adjustment.
+func (orch *Orchestrator) SetOpinionStore(store *routing.OpinionStore) {
+	orch.opinionStore = store
+}
+
+// SetTokenLedger connects the token budget tracker for cost control.
+func (orch *Orchestrator) SetTokenLedger(ledger *routing.TokenLedger) {
+	orch.tokenLedger = ledger
+}
+
+// SetComplexityClassifier connects the task complexity classifier
+// for semantic model routing.
+func (orch *Orchestrator) SetComplexityClassifier(classifier *routing.ComplexityClassifier) {
+	orch.complexityClassifier = classifier
+}

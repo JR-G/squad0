@@ -13,6 +13,7 @@ import (
 	slack "github.com/JR-G/squad0/internal/integrations/slack"
 	"github.com/JR-G/squad0/internal/memory"
 	"github.com/JR-G/squad0/internal/pipeline"
+	"github.com/JR-G/squad0/internal/routing"
 )
 
 // Orchestrator coordinates the squad0 agent team: polls for work via
@@ -31,23 +32,25 @@ type Orchestrator struct {
 	assigning    bool
 	assigningMu  sync.Mutex
 
-	// Per-agent session cancellation. When pause is called, the cancel
-	// function fires and the running Claude Code process is killed.
-	sessionCancels      map[agent.Role]context.CancelFunc
-	cancelsMu           sync.Mutex
-	roster              map[agent.Role]string
-	pipelineStore       *pipeline.WorkItemStore
-	handoffStore        *pipeline.HandoffStore
-	projectEpisodeStore *memory.EpisodeStore
-	projectFactStore    *memory.FactStore
-	followedUp          map[int64]bool
-	mergeAnnounced      map[string]bool
-	mergeAnnounceMu     sync.Mutex
-	concerns            *ConcernTracker
-	eventBus            *EventBus
-	situations          *SituationQueue
-	escalations         *EscalationTracker
-	startedAt           time.Time
+	sessionCancels       map[agent.Role]context.CancelFunc // pause → cancel
+	cancelsMu            sync.Mutex
+	roster               map[agent.Role]string
+	pipelineStore        *pipeline.WorkItemStore
+	handoffStore         *pipeline.HandoffStore
+	projectEpisodeStore  *memory.EpisodeStore
+	projectFactStore     *memory.FactStore
+	followedUp           map[int64]bool
+	mergeAnnounced       map[string]bool
+	mergeAnnounceMu      sync.Mutex
+	concerns             *ConcernTracker
+	eventBus             *EventBus
+	situations           *SituationQueue
+	escalations          *EscalationTracker
+	specStore            *routing.SpecialisationStore
+	opinionStore         *routing.OpinionStore
+	tokenLedger          *routing.TokenLedger
+	complexityClassifier *routing.ComplexityClassifier
+	startedAt            time.Time
 }
 
 // Config holds orchestrator-level settings.
@@ -85,8 +88,7 @@ func NewOrchestrator(
 	}
 }
 
-// SetHealthMonitor connects the health monitor for health-aware
-// assignment and session tracking.
+// SetHealthMonitor connects the health monitor.
 func (orch *Orchestrator) SetHealthMonitor(monitor *health.Monitor) {
 	orch.monitor = monitor
 }
@@ -256,21 +258,6 @@ func (orch *Orchestrator) SetProjectFactStore(store *memory.FactStore) {
 // chosen names instead of role IDs.
 func (orch *Orchestrator) SetRoster(roster map[agent.Role]string) {
 	orch.roster = roster
-}
-
-// NameForRole returns the agent's chosen name, falling back to the
-// role ID if no name is known.
-func (orch *Orchestrator) NameForRole(role agent.Role) string {
-	if orch.roster == nil {
-		return string(role)
-	}
-
-	name, ok := orch.roster[role]
-	if !ok || name == string(role) {
-		return string(role)
-	}
-
-	return name
 }
 
 func (orch *Orchestrator) startWork(ctx context.Context, assignment Assignment) {

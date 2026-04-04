@@ -110,6 +110,9 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	}
 	_, _ = fmt.Fprint(out, tui.StepDone(fmt.Sprintf("%d agents created", len(agents))))
 
+	// Wire runtime bridges — persistent sessions for Claude, fresh for Codex.
+	wireBridges(agents, cfg.Agents.Runtime, cfg.Agents.CodexFallbackModel, deps.DataDir)
+
 	personaStore := createPersonaStore(agentDBs)
 	bot := createSlackBot(ctx, cfg, slackSecrets, personaStore)
 	_, _ = fmt.Fprint(out, tui.StepDone("Slack bot connected"))
@@ -180,6 +183,17 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	concerns := orchestrator.NewConcernTracker()
 	orch.SetConcernTracker(concerns)
 
+	// Situation queue + escalation for PM management.
+	situations, escalations := wireSituations()
+	orch.SetSituationQueue(situations)
+	orch.SetEscalationTracker(escalations)
+
+	// Specialisation tracking for intelligent assignment.
+	specStore := wireSpecialisation(ctx, coordDB)
+	if specStore != nil {
+		orch.SetSpecialisationStore(specStore)
+	}
+
 	// Smart dispatch: direct Linear queries + dependency/priority/skill filtering.
 	if slackSecrets.LinearAPIKey != "" {
 		assigner.SetLinearAPIKey(slackSecrets.LinearAPIKey)
@@ -199,6 +213,11 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	for role, db := range agentDBs {
 		agentFactStores[role] = memory.NewFactStore(db)
 	}
+
+	// Wire intelligent routing, opinions, and budget.
+	orch.SetComplexityClassifier(wireRouting(cfg))
+	orch.SetOpinionStore(wireOpinions(agentFactStores))
+	orch.SetTokenLedger(wireBudget(cfg.Agents.Budget))
 
 	personas := personaStore.LoadAllPersonas(ctx)
 	roster := make(map[agent.Role]string, len(personas))
@@ -461,31 +480,4 @@ func resolveTargetRepo(targetRepo string) string {
 
 	repoName := filepath.Base(targetRepo)
 	return filepath.Join(home, "repos", repoName)
-}
-
-func buildLinkConfig(cfg config.Config) slack.LinkConfig {
-	repo := ""
-	if cfg.Project.TargetRepo != "" {
-		repo = filepath.Base(cfg.Project.TargetRepo)
-	}
-
-	return slack.LinkConfig{
-		LinearWorkspace: cfg.Linear.Workspace,
-		GitHubOwner:     cfg.GitHub.Owner,
-		GitHubRepo:      repo,
-	}
-}
-
-func resolveMemoryBinaryPath() string {
-	exe, err := os.Executable()
-	if err != nil {
-		return ""
-	}
-
-	candidate := filepath.Join(filepath.Dir(exe), "squad0-memory-mcp")
-	if _, statErr := os.Stat(candidate); statErr == nil {
-		return candidate
-	}
-
-	return ""
 }
