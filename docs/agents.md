@@ -102,3 +102,19 @@ Agents can create Linear tickets during sessions when they discover:
 - **Scope overflow**: ticket is bigger than expected — create child tickets, do not expand scope
 
 All agent-created tickets go to backlog for CEO triage via `#triage`.
+
+## Emergent Specialisation
+
+Agents develop specialisations from actual outcomes, not from their personality files. The `SpecialisationStore` tracks success/failure rates per ticket category. Over time, the PM routes work to agents who've historically succeeded on similar tickets.
+
+This means Engineer-1's personality says "leans backend" but the data might show they're actually best at auth tickets specifically. The specialisation is earned, not assigned.
+
+## Inter-Agent Opinions
+
+Agents form beliefs about each other's work quality based on review outcomes. A reviewer who consistently approves an engineer's PRs with zero fix cycles develops a "clean PRs" belief. An engineer whose PRs frequently need revision gets a "needs review" belief.
+
+These opinions influence review scrutiny — clean PR engineers get lighter reviews focused on architecture, while revision-heavy engineers get closer inspection. Opinions use the existing belief system with confidence scores and natural decay.
+
+## Runtime-Agnostic Personality
+
+Agent personality works identically regardless of which runtime is active. The voice, anti-patterns, beliefs, and communication style are injected into every session — whether it's a persistent Claude tmux session or a fresh Codex process. Swapping runtimes mid-conversation preserves personality because it's in the prompt, not in the session state.

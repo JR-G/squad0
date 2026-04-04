@@ -183,6 +183,31 @@ internal/
   worktree/            Git worktree creation and cleanup
 ```
 
+## Runtime Bridge
+
+Agent sessions run through a runtime-agnostic bridge that supports Claude Code and Codex as equal peers. See [docs/runtime.md](runtime.md) for full details.
+
+```
+Orchestrator
+    ↓
+SessionBridge (per agent)
+├── Chat()    → persistent tmux session (Claude) or fresh process (Codex)
+├── Execute() → always fresh process (worktree isolation)
+└── rate-limit swap → transparent fallback to other runtime
+```
+
+Chat sessions use persistent tmux sessions when the runtime supports hooks — personality loaded once, context cached between interactions. Implementation sessions always use fresh processes for worktree isolation.
+
+## Intelligent Routing
+
+Task routing matches model power to complexity and adjusts discussion depth. See [docs/routing.md](routing.md) for full details.
+
+- **Semantic model routing**: Trivial tickets → Haiku, Standard → Sonnet, Complex → Opus
+- **Adaptive discussion depth**: Trivial skips discussion, Standard gets tech lead only, Complex gets full ritual
+- **Emergent specialisation**: agent success rates per category feed into PM assignment
+- **Inter-agent opinions**: review outcomes form beliefs that adjust review scrutiny
+- **Cost budgeting**: per-ticket and per-agent daily token limits with circuit breakers
+
 ## Concurrency Model
 
 - Each agent session runs in its own goroutine with a cancellable context

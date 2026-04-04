@@ -83,6 +83,31 @@ Embeddings run locally via Ollama — free, offline, no API costs.
 | `reviewer` | `"claude-opus-4-6"` | Reviewer model |
 | `designer` | `"claude-sonnet-4-6"` | Designer model |
 
+#### [agents.runtime]
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `default` | string | `"claude"` | Primary runtime: `"claude"` or `"codex"` |
+| `fallback` | string | `"codex"` | Fallback on rate limits: `"claude"`, `"codex"`, or `""` |
+
+Per-role overrides via `[agents.runtime.overrides]`:
+
+```toml
+[agents.runtime.overrides]
+engineer-1 = "codex"    # This engineer uses Codex as primary
+```
+
+Both runtimes are equal peers. Swap default and fallback to make Codex primary.
+
+#### [agents.budget]
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_tokens_per_ticket` | int64 | `0` | Max tokens per ticket (0 = no limit) |
+| `max_tokens_per_agent_daily` | int64 | `0` | Max tokens per agent per day (0 = no limit) |
+
+When a ticket exceeds its budget, the PM is notified via the situation queue and can decide to continue, block, or reassign.
+
 ### [quality]
 
 | Field | Type | Default | Description |
