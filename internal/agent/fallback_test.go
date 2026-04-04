@@ -300,6 +300,127 @@ func TestSession_Run_WithEnvAndFallback(t *testing.T) {
 	assert.Equal(t, "codex ok", result.Transcript)
 }
 
+func TestExtractCodexContent_ContentField_ReturnsContent(t *testing.T) {
+	t.Parallel()
+
+	raw := `{"type":"message","content":"hello world"}`
+	result := agent.ParseCodexOutput(raw)
+	assert.Equal(t, "hello world", result)
+}
+
+func TestExtractCodexContent_MessageField_ReturnsMessage(t *testing.T) {
+	t.Parallel()
+
+	raw := `{"type":"response","message":"task complete"}`
+	result := agent.ParseCodexOutput(raw)
+	assert.Equal(t, "task complete", result)
+}
+
+func TestExtractCodexContent_ResultField_ReturnsResult(t *testing.T) {
+	t.Parallel()
+
+	raw := `{"type":"output","result":"final output"}`
+	result := agent.ParseCodexOutput(raw)
+	assert.Equal(t, "final output", result)
+}
+
+func TestExtractCodexContent_MetaEvent_Skipped(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		line string
+	}{
+		{"turn.completed", `{"type":"turn.completed","usage":{"input_tokens":100}}`},
+		{"response.completed", `{"type":"response.completed"}`},
+		{"thread.started", `{"type":"thread.started","thread_id":"abc"}`},
+		{"turn.started", `{"type":"turn.started"}`},
+		{"turn.updated", `{"type":"turn.updated"}`},
+		{"item.started", `{"type":"item.started"}`},
+		{"item.updated", `{"type":"item.updated"}`},
+		{"token.count", `{"type":"token.count","count":42}`},
+		{"usage", `{"type":"usage","total":100}`},
+		{"event", `{"type":"event","name":"test"}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Meta event followed by real content — only content returned.
+			raw := tt.line + "\n" + `{"type":"message","content":"actual answer"}`
+			result := agent.ParseCodexOutput(raw)
+			assert.Equal(t, "actual answer", result)
+		})
+	}
+}
+
+func TestExtractCodexContent_EmptyJSON_ReturnsEmpty(t *testing.T) {
+	t.Parallel()
+
+	// Valid JSON with no content/message/result fields.
+	raw := `{"type":"unknown","data":"stuff"}`
+	result := agent.ParseCodexOutput(raw)
+	assert.Empty(t, result, "JSON with no content fields should return empty")
+}
+
+func TestExtractCodexContent_InvalidJSON_FallsBackToPlainText(t *testing.T) {
+	t.Parallel()
+
+	raw := "this is not json at all"
+	result := agent.ParseCodexOutput(raw)
+	assert.Equal(t, "this is not json at all", result)
+}
+
+func TestExtractCodexContent_MixedMetaAndContent(t *testing.T) {
+	t.Parallel()
+
+	raw := `{"type":"turn.started"}
+{"type":"item.started"}
+{"type":"message","content":"first answer"}
+{"type":"message","content":"second answer"}
+{"type":"turn.completed","usage":{"tokens":50}}`
+	result := agent.ParseCodexOutput(raw)
+	assert.Equal(t, "second answer", result, "should return last content line")
+}
+
+func TestExtractCodexContent_OnlyMetaEvents_ReturnsEmpty(t *testing.T) {
+	t.Parallel()
+
+	raw := `{"type":"turn.started"}
+{"type":"turn.completed"}`
+	result := agent.ParseCodexOutput(raw)
+	assert.Empty(t, result)
+}
+
+func TestExtractCodexContent_ContentThenPlainText_PrefersContent(t *testing.T) {
+	t.Parallel()
+
+	// Content field present, then a non-JSON line. Content should win.
+	raw := `{"type":"message","content":"structured answer"}
+not json here`
+	result := agent.ParseCodexOutput(raw)
+	assert.Equal(t, "structured answer", result)
+}
+
+func TestExtractCodexContent_PlainMetaLine_Skipped(t *testing.T) {
+	t.Parallel()
+
+	raw := "Reading additional input from stdin...\n" +
+		`{"type":"message","content":"real content"}`
+	result := agent.ParseCodexOutput(raw)
+	assert.Equal(t, "real content", result)
+}
+
+func TestBuildCodexArgs_AutoModel_OmitsModelFlag(t *testing.T) {
+	t.Parallel()
+
+	args := agent.BuildCodexArgs("prompt", "/tmp", "auto")
+	assert.NotContains(t, args, "-m")
+	assert.Contains(t, args, "exec")
+	assert.Contains(t, args, "prompt")
+}
+
 // fakeRunner records calls.
 type fakeRunner struct {
 	output []byte

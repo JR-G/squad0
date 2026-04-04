@@ -33,6 +33,7 @@ max_parallel = 3
 cooldown_seconds = 30
 ticket_batch_size = 3
 personality_regen_every = 20
+codex_fallback_model = "gpt-5-codex"
 
 [agents.models]
 pm = "claude-sonnet-4-6"

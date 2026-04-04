@@ -80,6 +80,7 @@ func BuildCodexArgs(prompt, workingDir, model string) []string {
 // ParseCodexOutput extracts a transcript from Codex CLI's JSONL output.
 func ParseCodexOutput(raw string) string {
 	var lastContent string
+	var lastPlain string
 
 	for _, line := range strings.Split(raw, "\n") {
 		line = strings.TrimSpace(line)
@@ -87,33 +88,74 @@ func ParseCodexOutput(raw string) string {
 			continue
 		}
 
-		content := extractCodexContent(line)
+		if isCodexPlainMetaLine(line) {
+			continue
+		}
+
+		content, ok := extractCodexContent(line)
 		if content != "" {
 			lastContent = content
 			continue
 		}
 
-		lastContent = line
+		if !ok {
+			lastPlain = line
+		}
 	}
 
-	return lastContent
+	if lastContent != "" {
+		return lastContent
+	}
+	return lastPlain
 }
 
-func extractCodexContent(line string) string {
+func extractCodexContent(line string) (string, bool) {
 	var msg struct {
 		Type    string `json:"type"`
 		Content string `json:"content"`
 		Message string `json:"message"`
+		Result  string `json:"result"`
 	}
 
 	if json.Unmarshal([]byte(line), &msg) != nil {
-		return ""
+		return "", false
+	}
+
+	if isCodexMetaEvent(msg.Type) {
+		return "", true
 	}
 
 	if msg.Content != "" {
-		return msg.Content
+		return msg.Content, true
 	}
-	return msg.Message
+	if msg.Message != "" {
+		return msg.Message, true
+	}
+	if msg.Result != "" {
+		return msg.Result, true
+	}
+	return "", true
+}
+
+func isCodexMetaEvent(eventType string) bool {
+	switch eventType {
+	case "turn.completed", "response.completed", "thread.started", "turn.started", "turn.updated", "item.started", "item.updated", "token.count", "usage", "event":
+		return true
+	default:
+		return false
+	}
+}
+
+func isCodexPlainMetaLine(line string) bool {
+	lower := strings.ToLower(strings.TrimSpace(line))
+	switch {
+	case lower == "":
+		return true
+	case strings.HasPrefix(lower, "reading additional input from stdin"):
+		return true
+	default:
+		return false
+	}
 }
 
 // IsRateLimitedForTest exports isRateLimited for testing.
