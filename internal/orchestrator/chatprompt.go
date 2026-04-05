@@ -92,9 +92,14 @@ func containsQuestion(text string) bool {
 
 func containsPass(text string) bool {
 	trimmed := strings.TrimSpace(strings.ToUpper(text))
-	// Only match "PASS" as a standalone response, not as part of
-	// words like "next pass", "passing", "bypass", "password".
-	return trimmed == "PASS" || trimmed == "PASS."
+	// Match standalone "PASS" or responses that start with "PASS —"
+	// (agent explicitly passing then explaining why).
+	if trimmed == "PASS" || trimmed == "PASS." {
+		return true
+	}
+	return strings.HasPrefix(trimmed, "PASS —") ||
+		strings.HasPrefix(trimmed, "PASS -") ||
+		strings.HasPrefix(trimmed, "PASS\n")
 }
 
 // ChannelInstructionForTest exports channelInstruction for testing.
