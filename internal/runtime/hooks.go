@@ -16,6 +16,7 @@ type hookSettings struct {
 type hookConfig struct {
 	SessionStart     []hookEntry `json:"SessionStart"`
 	UserPromptSubmit []hookEntry `json:"UserPromptSubmit"`
+	Stop             []hookEntry `json:"Stop"`
 }
 
 type hookEntry struct {
@@ -47,6 +48,12 @@ func WriteHookSettings(workDir, role string) error {
 				{
 					Matcher: "",
 					Hooks: []hookCmd{{Type: "command", Command: fmt.Sprintf("%s inbox drain --role %s", squad0Bin, role)}},
+				},
+			},
+			Stop: []hookEntry{
+				{
+					Matcher: "",
+					Hooks: []hookCmd{{Type: "command", Command: fmt.Sprintf("%s session capture --role %s", squad0Bin, role)}},
 				},
 			},
 		},

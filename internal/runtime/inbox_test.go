@@ -1,7 +1,9 @@
 package runtime_test
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -179,6 +181,44 @@ func TestInbox_Enqueue_MultipleMessages_AllDrained(t *testing.T) {
 	messages, drainErr := inbox.Drain()
 	require.NoError(t, drainErr)
 	assert.Len(t, messages, 5)
+}
+
+func TestInbox_WaitForSignal_ReturnsWhenFileAppears(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	inbox, err := runtime.NewInbox(filepath.Join(dir, "in"), filepath.Join(dir, "out"))
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// Write the signal file after a short delay.
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		signalPath := filepath.Join(dir, "out", "latest-response.json")
+		data := []byte(`{"response":"event-driven response"}`)
+		_ = os.WriteFile(signalPath, data, 0o644)
+	}()
+
+	response, waitErr := inbox.WaitForSignal(ctx)
+	require.NoError(t, waitErr)
+	assert.Equal(t, "event-driven response", response)
+}
+
+func TestInbox_WaitForSignal_ContextCancelled_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	inbox, err := runtime.NewInbox(filepath.Join(dir, "in"), filepath.Join(dir, "out"))
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	// No signal file written — context should cancel.
+	_, waitErr := inbox.WaitForSignal(ctx)
+	assert.Error(t, waitErr)
 }
 
 func TestFormatDrained_Empty_ReturnsEmpty(t *testing.T) {

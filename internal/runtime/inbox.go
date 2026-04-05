@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -190,6 +191,42 @@ func FormatDrained(messages []InboxMessage) string {
 		builder.WriteString("\n</system-reminder>\n")
 	}
 	return builder.String()
+}
+
+// WaitForSignal watches for the latest-response.json signal file
+// in the outbox. Uses a fast poll (50ms) since the Stop hook writes
+// the file immediately after Claude responds — the wait is typically
+// <100ms, not seconds.
+func (inbox *Inbox) WaitForSignal(ctx context.Context) (string, error) {
+	signalPath := filepath.Join(inbox.outboxDir, "latest-response.json")
+
+	// Remove any stale signal from a previous turn.
+	_ = os.Remove(signalPath)
+
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-ticker.C:
+			data, err := os.ReadFile(signalPath)
+			if err != nil {
+				continue
+			}
+
+			_ = os.Remove(signalPath)
+
+			var parsed struct {
+				Response string `json:"response"`
+			}
+			if jsonErr := json.Unmarshal(data, &parsed); jsonErr != nil {
+				return "", fmt.Errorf("parsing signal response: %w", jsonErr)
+			}
+			return parsed.Response, nil
+		}
+	}
 }
 
 // InboxDir returns the inbox directory path.

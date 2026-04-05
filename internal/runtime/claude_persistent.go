@@ -28,7 +28,6 @@ type ClaudePersistentRuntime struct {
 	session string // tmux session name
 	started bool
 	timeout time.Duration
-	seq     int64
 }
 
 // NewClaudePersistentRuntime creates a runtime that maintains a
@@ -100,50 +99,45 @@ func (rt *ClaudePersistentRuntime) Start(_ context.Context, cfg StartConfig) err
 }
 
 // Send delivers the prompt to the persistent Claude session via tmux
-// send-keys and waits for the response in the outbox. The prompt is
-// sent as a user message which triggers the UserPromptSubmit hook
-// (injecting any queued context). The prompt itself instructs Claude
-// to write the response to the outbox file.
+// send-keys. The Stop hook captures Claude's response from the
+// transcript and writes it to the outbox signal file. Send watches
+// for the signal and returns immediately — no polling timeouts.
+//
+// Flow:
+//  1. send-keys delivers prompt → triggers UserPromptSubmit hook
+//  2. Claude processes and responds
+//  3. Stop hook fires → reads transcript → writes latest-response.json
+//  4. WaitForSignal detects the file → returns response
 //
 // If the session is dead, Start is called automatically (self-heal).
 func (rt *ClaudePersistentRuntime) Send(ctx context.Context, prompt string) (string, error) {
-	rt.mu.Lock()
-	timeout := rt.timeout
-	rt.mu.Unlock()
-
 	if healErr := rt.selfHeal(ctx); healErr != nil {
 		return "", healErr
 	}
 
-	id := fmt.Sprintf("%d-%d", time.Now().UnixNano(), rt.sendSeq())
-	outboxPath := rt.inbox.OutboxDir() + "/" + id + "-response.json"
+	// Create a deadline context so we don't wait forever if something
+	// goes wrong. The Stop hook should fire within seconds of Claude
+	// finishing — this deadline is a safety net, not a design choice.
+	rt.mu.Lock()
+	deadline := rt.timeout
+	rt.mu.Unlock()
 
-	// Build the message: the actual prompt + an instruction to write
-	// the response to the outbox file so we can collect it.
-	wrappedPrompt := prompt + fmt.Sprintf(
-		"\n\nAfter responding, write ONLY your response text to this file (no explanation, just the response): %s",
-		outboxPath,
-	)
+	sendCtx, cancel := context.WithTimeout(ctx, deadline)
+	defer cancel()
 
-	// Send via tmux — this triggers the UserPromptSubmit hook and
-	// delivers the prompt as a user message to Claude Code.
-	if err := rt.tmux.SendKeys(rt.session, wrappedPrompt); err != nil {
+	// Send the prompt via tmux send-keys. This triggers a new turn
+	// in the Claude Code session, firing the UserPromptSubmit hook.
+	if err := rt.tmux.SendKeys(rt.session, prompt); err != nil {
 		return "", fmt.Errorf("sending to persistent session %s: %w", rt.role, err)
 	}
 
-	response, waitErr := rt.inbox.WaitForResponse(id, timeout)
+	// Wait for the Stop hook to write the response signal.
+	response, waitErr := rt.inbox.WaitForSignal(sendCtx)
 	if waitErr != nil {
 		return "", fmt.Errorf("waiting for response from %s: %w", rt.role, waitErr)
 	}
 
 	return response, nil
-}
-
-func (rt *ClaudePersistentRuntime) sendSeq() int64 {
-	rt.mu.Lock()
-	defer rt.mu.Unlock()
-	rt.seq++
-	return rt.seq
 }
 
 func (rt *ClaudePersistentRuntime) selfHeal(ctx context.Context) error {

@@ -30,6 +30,7 @@ func NewRootCommand() *cobra.Command {
 		newVersionCommand(),
 		newPrimeCommand(),
 		newInboxCommand(),
+		newSessionCommand(),
 	)
 
 	return rootCmd
