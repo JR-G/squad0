@@ -91,8 +91,10 @@ func containsQuestion(text string) bool {
 }
 
 func containsPass(text string) bool {
-	upper := strings.ToUpper(text)
-	return strings.Contains(upper, "PASS")
+	trimmed := strings.TrimSpace(strings.ToUpper(text))
+	// Only match "PASS" as a standalone response, not as part of
+	// words like "next pass", "passing", "bypass", "password".
+	return trimmed == "PASS" || trimmed == "PASS."
 }
 
 // ChannelInstructionForTest exports channelInstruction for testing.
