@@ -276,7 +276,7 @@ func TestFilterPassResponse(t *testing.T) {
 	}{
 		{"empty", "", ""},
 		{"pass", "PASS", ""},
-		{"contains pass", "I'll PASS on this", ""},
+		{"contains pass in sentence", "I'll PASS on this", "I'll PASS on this"},
 		{"real content", "I'll create auth/middleware.go", "I'll create auth/middleware.go"},
 		{"whitespace", "  ", ""},
 	}

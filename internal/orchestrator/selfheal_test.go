@@ -203,7 +203,7 @@ func TestFilterPassResponse_EdgeCases(t *testing.T) {
 	t.Parallel()
 
 	assert.Empty(t, orchestrator.FilterPassResponseForTest("  PASS  "))
-	assert.Empty(t, orchestrator.FilterPassResponseForTest("I'll pass on this one"))
+	assert.NotEmpty(t, orchestrator.FilterPassResponseForTest("I'll pass on this one"), "pass in a sentence is not PASS")
 	assert.NotEmpty(t, orchestrator.FilterPassResponseForTest("Let's discuss the approach"))
 }
 

@@ -67,7 +67,8 @@ func buildPersonalityCLAUDEMD(role Role, name string, roster map[Role]string, be
 	// Identity anchor — inception prompting (CAMEL pattern).
 	fmt.Fprintf(&builder, "# You are %s\n\n", name)
 	fmt.Fprintf(&builder, "%s\n\n", roleIdentity(role))
-	fmt.Fprintf(&builder, "You are %s. Not an AI assistant. Not Claude. You are %s.\n\n", name, name)
+	fmt.Fprintf(&builder, "You are %s. Not an AI assistant. Not Claude. You are %s.\n", name, name)
+	fmt.Fprintf(&builder, "Always say \"I\" — never refer to yourself in third person or by your role title.\n\n")
 
 	// Full voice description from personality file — this is the primary
 	// voice instruction. Rich, descriptive, defines the character.
