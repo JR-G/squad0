@@ -18,6 +18,15 @@ func TestBuildRuntime_Claude_ReturnsRuntime(t *testing.T) {
 	dir := t.TempDir()
 	rt := buildRuntime("claude", agent.RoleEngineer1, agent.ExecProcessRunner{}, "", "claude-sonnet-4-6", dir, dir+"/in", dir+"/out")
 	assert.NotNil(t, rt)
+	assert.Equal(t, "claude", rt.Name())
+}
+
+func TestBuildRuntime_ClaudePersistent_ReturnsRuntime(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	rt := buildRuntime("claude-persistent", agent.RoleEngineer1, agent.ExecProcessRunner{}, "", "claude-sonnet-4-6", dir, dir+"/in", dir+"/out")
+	assert.NotNil(t, rt)
 	assert.Equal(t, "claude-persistent", rt.Name())
 }
 

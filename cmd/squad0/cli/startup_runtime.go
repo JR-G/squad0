@@ -74,6 +74,14 @@ func buildRuntime(
 ) runtime.Runtime {
 	switch name {
 	case "claude":
+		// Default: fresh process per interaction (proven, stable).
+		session := agent.NewSession(runner)
+		if codexModel != "" {
+			session.SetCodexFallback(codexModel)
+		}
+		return runtime.NewClaudeProcessRuntime(session, claudeModel, workDir)
+	case "claude-persistent":
+		// Opt-in: persistent tmux session with hooks.
 		inbox, err := runtime.NewInbox(inboxDir, outboxDir)
 		if err != nil {
 			log.Printf("runtime: failed to create inbox for %s: %v", role, err)
