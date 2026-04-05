@@ -103,6 +103,12 @@ func TestManager_Create_Success_RecordsGitCall(t *testing.T) {
 	mgr := worktree.NewManager(git, t.TempDir())
 	expectedPath := mgr.PathForRole(agent.RoleEngineer3)
 
+	// First call tries without -b (existing branch) — fails.
+	git.On(
+		fmt.Sprintf("worktree add %s fix/sq-99", expectedPath),
+		[]byte("fatal: invalid reference\n"), fmt.Errorf("exit 128"),
+	)
+	// Second call creates with -b — succeeds.
 	git.On(
 		fmt.Sprintf("worktree add -b fix/sq-99 %s", expectedPath),
 		[]byte("Preparing worktree\n"), nil,
@@ -112,8 +118,8 @@ func TestManager_Create_Success_RecordsGitCall(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, expectedPath, path)
-	require.Len(t, git.calls, 1)
-	assert.Contains(t, git.calls[0], "worktree add")
+	require.Len(t, git.calls, 2)
+	assert.Contains(t, git.calls[1], "worktree add -b")
 }
 
 func TestManager_Remove_GitError_IncludesOutput(t *testing.T) {

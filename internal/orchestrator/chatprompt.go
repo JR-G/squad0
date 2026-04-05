@@ -102,6 +102,11 @@ func containsPass(text string) bool {
 		strings.HasPrefix(trimmed, "PASS\n")
 }
 
+// ContainsPassForTest exports containsPass for testing.
+func ContainsPassForTest(text string) bool {
+	return containsPass(text)
+}
+
 // ChannelInstructionForTest exports channelInstruction for testing.
 func ChannelInstructionForTest(channel string) string {
 	return channelInstruction(channel)

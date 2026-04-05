@@ -110,6 +110,37 @@ func TestDecideBaseResponders_OlderAgentMessage_One(t *testing.T) {
 	assert.Equal(t, 1, orchestrator.DecideBaseRespondersForTest(3*60*1e9, false))
 }
 
+func TestContainsPass_Variants(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		text     string
+		expected bool
+	}{
+		{"standalone PASS", "PASS", true},
+		{"PASS with period", "PASS.", true},
+		{"PASS with dash explanation", "PASS — already covered", true},
+		{"PASS with hyphen", "PASS - not relevant", true},
+		{"PASS with newline", "PASS\nsome reason", true},
+		{"lowercase pass", "pass", true},
+		{"pass in sentence", "I'll pass on this one", false},
+		{"next pass", "we'll catch those in the next pass", false},
+		{"passing", "all tests passing", false},
+		{"bypass", "bypass the cache", false},
+		{"password", "update the password", false},
+		{"real content", "I think we should refactor", false},
+		{"empty", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.expected, orchestrator.ContainsPassForTest(tt.text))
+		})
+	}
+}
+
 func TestDecideBaseResponders_StaleMessage_Zero(t *testing.T) {
 	t.Parallel()
 	// 6 minutes = past 5 min threshold.

@@ -58,7 +58,12 @@ func (mgr *Manager) Create(ctx context.Context, role agent.Role, branchName stri
 		return "", fmt.Errorf("creating worktree parent dir: %w", err)
 	}
 
-	output, err := mgr.git.Run(ctx, "worktree", "add", "-b", branchName, worktreeDir)
+	// Try creating with existing branch first. If the branch doesn't
+	// exist, fall back to creating a new one with -b.
+	output, err := mgr.git.Run(ctx, "worktree", "add", worktreeDir, branchName)
+	if err != nil {
+		output, err = mgr.git.Run(ctx, "worktree", "add", "-b", branchName, worktreeDir)
+	}
 	if err != nil {
 		return "", fmt.Errorf("creating worktree for %s: %s: %w", role, string(output), err)
 	}
