@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -59,6 +60,51 @@ func TestExtractLastResponse_MissingFile(t *testing.T) {
 	assert.Empty(t, response)
 }
 
+func TestRunSessionCapture_StopHookActive_ReturnsNil(t *testing.T) {
+	// Not parallel — modifies os.Stdin.
+	input := `{"session_id":"abc","transcript_path":"","stop_hook_active":true}`
+	r, w, _ := os.Pipe()
+	_, _ = w.WriteString(input)
+	_ = w.Close()
+	old := os.Stdin
+	os.Stdin = r
+	err := runSessionCapture("engineer-1", t.TempDir())
+	os.Stdin = old
+	assert.NoError(t, err)
+}
+
+func TestRunSessionCapture_EmptyTranscript_ReturnsNil(t *testing.T) {
+	input := `{"session_id":"abc","transcript_path":"","stop_hook_active":false}`
+	r, w, _ := os.Pipe()
+	_, _ = w.WriteString(input)
+	_ = w.Close()
+	old := os.Stdin
+	os.Stdin = r
+	err := runSessionCapture("engineer-1", t.TempDir())
+	os.Stdin = old
+	assert.NoError(t, err)
+}
+
+func TestRunSessionCapture_WithTranscript_WritesOutbox(t *testing.T) {
+	dir := t.TempDir()
+	transcriptPath := filepath.Join(dir, "transcript.jsonl")
+	_ = os.WriteFile(transcriptPath, []byte(`{"type":"result","result":"the response"}`+"\n"), 0o644)
+
+	input := `{"session_id":"abc","transcript_path":` + fmt.Sprintf("%q", transcriptPath) + `,"stop_hook_active":false}`
+	r, w, _ := os.Pipe()
+	_, _ = w.WriteString(input)
+	_ = w.Close()
+	old := os.Stdin
+	os.Stdin = r
+	err := runSessionCapture("engineer-1", dir)
+	os.Stdin = old
+	assert.NoError(t, err)
+
+	data, readErr := os.ReadFile(filepath.Join(dir, "outbox", "engineer-1", "latest-response.json"))
+	require.NoError(t, readErr)
+	assert.Contains(t, string(data), "the response")
+}
+
 func TestWriteToOutbox_CreatesFile(t *testing.T) {
 	t.Parallel()
 
@@ -84,6 +130,13 @@ func TestParseTranscriptLine_InvalidJSON(t *testing.T) {
 	t.Parallel()
 
 	assert.Empty(t, parseTranscriptLine("not json"))
+}
+
+func TestWriteToOutbox_InvalidPath_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	err := writeToOutbox("test", "/dev/null", "response")
+	assert.Error(t, err)
 }
 
 func TestParseTranscriptLine_NoContent(t *testing.T) {

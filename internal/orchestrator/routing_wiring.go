@@ -1,9 +1,27 @@
 package orchestrator
 
 import (
+	"context"
+
 	"github.com/JR-G/squad0/internal/agent"
+	"github.com/JR-G/squad0/internal/pipeline"
 	"github.com/JR-G/squad0/internal/routing"
 )
+
+// AdvancePipelineForTest exports advancePipeline for testing.
+func (orch *Orchestrator) AdvancePipelineForTest(ctx context.Context, itemID int64, stage pipeline.Stage) {
+	orch.advancePipeline(ctx, itemID, stage)
+}
+
+// ShouldEscalateForTest exports shouldEscalate for testing.
+func (orch *Orchestrator) ShouldEscalateForTest(ctx context.Context, workItemID int64, ticket string) bool {
+	return orch.shouldEscalate(ctx, workItemID, ticket)
+}
+
+// CancelSessionForTest exports cancelSession for testing.
+func (orch *Orchestrator) CancelSessionForTest(role agent.Role) {
+	orch.cancelSession(role)
+}
 
 // NameForRole returns the agent's chosen name, falling back to the
 // role ID if no name is known.

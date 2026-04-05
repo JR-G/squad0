@@ -14,7 +14,8 @@ func isTimeout(err error) bool {
 	if err == nil {
 		return false
 	}
-	return strings.Contains(err.Error(), "timeout")
+	msg := err.Error()
+	return strings.Contains(msg, "timeout") || strings.Contains(msg, "deadline exceeded")
 }
 
 // SessionBridge wraps the active runtime for a single agent. Handles

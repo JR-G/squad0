@@ -413,3 +413,67 @@ func TestReviewWithChangesRequested_TriggersFixUp(t *testing.T) {
 	// the item should be at approved or have review cycles > 0.
 	assert.Greater(t, item.ReviewCycles, 0)
 }
+
+func TestAdvancePipeline_NilStore_DoesNotPanic(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{},
+		map[agent.Role]*agent.Agent{},
+		checkIns, nil, nil,
+	)
+
+	// No pipeline store — should not panic.
+	orch.AdvancePipelineForTest(ctx, 0, "working")
+}
+
+func TestAdvancePipeline_ZeroItemID_DoesNotPanic(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	pipeStore := newPipelineStore(t, sqlDB)
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{},
+		map[agent.Role]*agent.Agent{},
+		checkIns, nil, nil,
+	)
+	orch.SetPipeline(pipeStore)
+
+	// Zero ID — should return early.
+	orch.AdvancePipelineForTest(ctx, 0, "working")
+}
+
+func TestShouldEscalate_NilStore_ReturnsFalse(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{},
+		map[agent.Role]*agent.Agent{},
+		checkIns, nil, nil,
+	)
+
+	assert.False(t, orch.ShouldEscalateForTest(ctx, 0, "JAM-1"))
+}

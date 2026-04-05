@@ -169,6 +169,43 @@ func TestBridge_Stop_ActiveError_ReturnsError(t *testing.T) {
 	assert.Error(t, bridge.Stop())
 }
 
+func TestBridge_Chat_Timeout_FallsBack(t *testing.T) {
+	t.Parallel()
+
+	active := &fakeRuntime{
+		name:    "claude",
+		sendErr: fmt.Errorf("waiting for response: timeout waiting for response"),
+	}
+	fallback := &fakeRuntime{
+		name:         "codex",
+		sendResponse: "fallback after timeout",
+	}
+	bridge := runtime.NewSessionBridge(agent.RoleEngineer1, active, fallback)
+
+	response, err := bridge.Chat(context.Background(), "hi")
+	require.NoError(t, err)
+	assert.Equal(t, "fallback after timeout", response)
+	assert.True(t, bridge.IsSwapped())
+}
+
+func TestBridge_Chat_ContextDeadline_FallsBack(t *testing.T) {
+	t.Parallel()
+
+	active := &fakeRuntime{
+		name:    "claude",
+		sendErr: fmt.Errorf("context deadline exceeded"),
+	}
+	fallback := &fakeRuntime{
+		name:         "codex",
+		sendResponse: "fallback after deadline",
+	}
+	bridge := runtime.NewSessionBridge(agent.RoleEngineer1, active, fallback)
+
+	response, err := bridge.Chat(context.Background(), "hi")
+	require.NoError(t, err)
+	assert.Equal(t, "fallback after deadline", response)
+}
+
 func TestBridge_Stop_NilFallback_NoError(t *testing.T) {
 	t.Parallel()
 

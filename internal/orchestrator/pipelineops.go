@@ -101,14 +101,21 @@ func (orch *Orchestrator) shouldEscalate(ctx context.Context, workItemID int64, 
 		return false
 	}
 
-	// After max cycles, force-approve with a note rather than
-	// dead-ending in triage. Remaining issues are non-blocking.
+	// After max cycles, block the ticket and surface to triage.
+	// Never force-approve — buggy code must not be merged. The PM
+	// can reassign to a different engineer for a fresh perspective.
 	orch.announceAsRole(ctx, "reviews",
-		fmt.Sprintf("%s has had %d review cycles — approving with remaining notes. Any outstanding issues are non-blocking.", ticket, item.ReviewCycles),
+		fmt.Sprintf("%s has had %d review cycles without resolution — blocking for reassignment.", ticket, item.ReviewCycles),
 		agent.RolePM)
 	orch.announceAsRole(ctx, "triage",
-		fmt.Sprintf("%s force-approved after %d review cycles — check remaining comments post-merge", ticket, item.ReviewCycles),
+		fmt.Sprintf("%s blocked after %d review cycles — needs reassignment or human review", ticket, item.ReviewCycles),
 		agent.RolePM)
+	orch.advancePipeline(ctx, workItemID, pipeline.StageFailed)
+
+	pmAgent := orch.agents[agent.RolePM]
+	if pmAgent != nil {
+		go MoveTicketState(ctx, pmAgent, ticket, "Todo")
+	}
 
 	return true
 }

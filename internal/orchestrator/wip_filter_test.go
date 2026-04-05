@@ -372,6 +372,51 @@ func TestSetIdleIfStillWorking_NoCheckIn_DoesNotPanic(t *testing.T) {
 	orch.SetIdleIfStillWorkingForTest(ctx, agent.RoleEngineer1)
 }
 
+func TestCancelSession_UnregisteredRole_DoesNotPanic(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{},
+		map[agent.Role]*agent.Agent{},
+		checkIns, nil, nil,
+	)
+
+	// No session registered — cancel should not panic.
+	orch.CancelSessionForTest(agent.RoleEngineer1)
+}
+
+func TestCancelSession_WithSession_Cancels(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{},
+		map[agent.Role]*agent.Agent{},
+		checkIns, nil, nil,
+	)
+
+	cancelled := false
+	orch.RegisterCancelForTest(agent.RoleEngineer1, func() { cancelled = true })
+
+	orch.CancelSessionForTest(agent.RoleEngineer1)
+	assert.True(t, cancelled)
+}
+
 func TestClearStaleWork_ItemWithPR_ResumesInsteadOfFailing(t *testing.T) {
 	t.Parallel()
 

@@ -221,6 +221,46 @@ func TestInbox_WaitForSignal_ContextCancelled_ReturnsError(t *testing.T) {
 	assert.Error(t, waitErr)
 }
 
+func TestInbox_Enqueue_InvalidDir_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	// Create inbox pointing to a non-writable location.
+	dir := t.TempDir()
+	inbox, err := runtime.NewInbox(filepath.Join(dir, "in"), filepath.Join(dir, "out"))
+	require.NoError(t, err)
+
+	// Remove the inbox dir to force write failure.
+	require.NoError(t, os.RemoveAll(filepath.Join(dir, "in")))
+
+	_, enqErr := inbox.Enqueue("should fail")
+	assert.Error(t, enqErr)
+}
+
+func TestInbox_WaitForSignal_CleansUpStaleSignal(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	inbox, err := runtime.NewInbox(filepath.Join(dir, "in"), filepath.Join(dir, "out"))
+	require.NoError(t, err)
+
+	// Write a stale signal before calling WaitForSignal.
+	signalPath := filepath.Join(dir, "out", "latest-response.json")
+	require.NoError(t, os.WriteFile(signalPath, []byte(`{"response":"stale"}`), 0o644))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// WaitForSignal should clean the stale signal, then wait for a fresh one.
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		_ = os.WriteFile(signalPath, []byte(`{"response":"fresh"}`), 0o644)
+	}()
+
+	response, waitErr := inbox.WaitForSignal(ctx)
+	require.NoError(t, waitErr)
+	assert.Equal(t, "fresh", response)
+}
+
 func TestFormatDrained_Empty_ReturnsEmpty(t *testing.T) {
 	t.Parallel()
 

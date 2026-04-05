@@ -106,9 +106,9 @@ func extractLastResponse(transcriptPath string) string {
 
 func parseTranscriptLine(line string) string {
 	var entry struct {
-		Type    string `json:"type"`
-		Role    string `json:"role"`
-		Result  string `json:"result"`
+		Type    string          `json:"type"`
+		Role    string          `json:"role"`
+		Result  string          `json:"result"`
 		Message json.RawMessage `json:"message"`
 	}
 
