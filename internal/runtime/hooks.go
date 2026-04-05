@@ -19,7 +19,12 @@ type hookConfig struct {
 }
 
 type hookEntry struct {
-	Matcher string `json:"matcher"`
+	Matcher string     `json:"matcher"`
+	Hooks   []hookCmd  `json:"hooks"`
+}
+
+type hookCmd struct {
+	Type    string `json:"type"`
 	Command string `json:"command"`
 }
 
@@ -35,13 +40,13 @@ func WriteHookSettings(workDir, role string) error {
 			SessionStart: []hookEntry{
 				{
 					Matcher: "",
-					Command: fmt.Sprintf("%s prime --role %s", squad0Bin, role),
+					Hooks: []hookCmd{{Type: "command", Command: fmt.Sprintf("%s prime --role %s", squad0Bin, role)}},
 				},
 			},
 			UserPromptSubmit: []hookEntry{
 				{
 					Matcher: "",
-					Command: fmt.Sprintf("%s inbox drain --role %s", squad0Bin, role),
+					Hooks: []hookCmd{{Type: "command", Command: fmt.Sprintf("%s inbox drain --role %s", squad0Bin, role)}},
 				},
 			},
 		},

@@ -113,8 +113,16 @@ func TestWriteHookSettings_ValidJSON(t *testing.T) {
 
 	entry, ok := sessionStart[0].(map[string]interface{})
 	require.True(t, ok)
-	assert.Contains(t, entry["command"], "prime --role reviewer")
 	assert.Equal(t, "", entry["matcher"])
+
+	innerHooks, ok := entry["hooks"].([]interface{})
+	require.True(t, ok)
+	require.Len(t, innerHooks, 1)
+
+	hookCmd, ok := innerHooks[0].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "command", hookCmd["type"])
+	assert.Contains(t, hookCmd["command"], "prime --role reviewer")
 }
 
 func TestWriteHookSettings_PreexistingClaudeDir(t *testing.T) {

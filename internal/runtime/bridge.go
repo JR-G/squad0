@@ -4,10 +4,18 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 
 	"github.com/JR-G/squad0/internal/agent"
 )
+
+func isTimeout(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "timeout")
+}
 
 // SessionBridge wraps the active runtime for a single agent. Handles
 // transparent fallback on rate limits. The orchestrator calls Chat()
@@ -44,16 +52,18 @@ func (bridge *SessionBridge) Chat(ctx context.Context, prompt string) (string, e
 		return response, nil
 	}
 
-	// Check if rate limited — swap to fallback if available.
-	if !agent.IsRateLimited(response, err) {
+	// Fall back on rate limits OR timeouts. Persistent sessions can
+	// timeout if hooks aren't configured or the tmux session is stuck.
+	shouldFallback := agent.IsRateLimited(response, err) || isTimeout(err)
+	if !shouldFallback {
 		return response, fmt.Errorf("chat via %s: %w", active.Name(), err)
 	}
 
 	if fallback == nil {
-		return response, fmt.Errorf("rate limited on %s with no fallback: %w", active.Name(), err)
+		return response, fmt.Errorf("%s failed with no fallback: %w", active.Name(), err)
 	}
 
-	log.Printf("bridge: %s rate limited on %s, swapping to %s", bridge.role, active.Name(), fallback.Name())
+	log.Printf("bridge: %s failed on %s, falling back to %s: %v", bridge.role, active.Name(), fallback.Name(), err)
 	bridge.markSwapped()
 
 	fallbackResponse, fallbackErr := fallback.Send(ctx, prompt)
