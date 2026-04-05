@@ -39,8 +39,8 @@ func (engine *ConversationEngine) attemptChat(ctx context.Context, agentInstance
 	text := strings.TrimSpace(transcript)
 	log.Printf("chat: %s said: %q", role, text)
 
-	if text == "" || containsPass(text) {
-		log.Printf("chat: %s passed or empty", role)
+	if text == "" {
+		log.Printf("chat: %s empty response", role)
 		return "", false
 	}
 

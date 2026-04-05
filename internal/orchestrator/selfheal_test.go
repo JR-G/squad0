@@ -202,9 +202,12 @@ func TestSetRoster_And_NameForRole(t *testing.T) {
 func TestFilterPassResponse_EdgeCases(t *testing.T) {
 	t.Parallel()
 
-	assert.Empty(t, orchestrator.FilterPassResponseForTest("  PASS  "))
-	assert.NotEmpty(t, orchestrator.FilterPassResponseForTest("I'll pass on this one"), "pass in a sentence is not PASS")
+	// PASS is no longer filtered — it's just a word.
+	assert.NotEmpty(t, orchestrator.FilterPassResponseForTest("  PASS  "))
+	assert.NotEmpty(t, orchestrator.FilterPassResponseForTest("I'll pass on this one"))
 	assert.NotEmpty(t, orchestrator.FilterPassResponseForTest("Let's discuss the approach"))
+	assert.Empty(t, orchestrator.FilterPassResponseForTest(""))
+	assert.Empty(t, orchestrator.FilterPassResponseForTest("   "))
 }
 
 func TestCancelAllSessions_CancelsRegisteredContexts(t *testing.T) {

@@ -29,7 +29,7 @@ func FilterPassResponseForTest(text string) string {
 
 func filterPassResponse(text string) string {
 	trimmed := strings.TrimSpace(text)
-	if trimmed == "" || containsPass(trimmed) {
+	if trimmed == "" {
 		return ""
 	}
 	return trimmed

@@ -72,7 +72,7 @@ func RunConversationRound(ctx context.Context, agents map[agent.Role]*agent.Agen
 		}
 
 		text := strings.TrimSpace(result.Transcript)
-		if text == "" || strings.EqualFold(text, "PASS") {
+		if text == "" {
 			responded[role] = true
 			continue
 		}
@@ -154,7 +154,7 @@ func filterChattyRoles(roles []agent.Role) []agent.Role {
 func postToEngineering(ctx context.Context, bot *slack.Bot, transcript string, role agent.Role) bool {
 	text := strings.TrimSpace(transcript)
 
-	if text == "" || strings.EqualFold(text, "PASS") {
+	if text == "" {
 		return false
 	}
 

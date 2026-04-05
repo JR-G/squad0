@@ -179,7 +179,7 @@ func TestBreakDiscussionTie_PMError_ReturnsEmpty(t *testing.T) {
 	assert.Empty(t, result)
 }
 
-func TestBreakDiscussionTie_PASSResponse_ReturnsEmpty(t *testing.T) {
+func TestBreakDiscussionTie_EmptyResponse_ReturnsEmpty(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -188,7 +188,7 @@ func TestBreakDiscussionTie_PASSResponse_ReturnsEmpty(t *testing.T) {
 	t.Cleanup(func() { _ = memDB.Close() })
 
 	pmRunner := &fakeProcessRunner{
-		output: []byte(`{"type":"result","result":"PASS"}` + "\n"),
+		output: []byte(`{"type":"result","result":""}` + "\n"),
 	}
 	pmAgent := setupPMAgent(t, pmRunner)
 
@@ -205,7 +205,7 @@ func TestBreakDiscussionTie_PASSResponse_ReturnsEmpty(t *testing.T) {
 	agents[agent.RolePM] = pmAgent
 	factStores[agent.RolePM] = memory.NewFactStore(memDB)
 
-	chatRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"PASS"}` + "\n")}
+	chatRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":""}` + "\n")}
 	for _, role := range allRoles {
 		if role == agent.RolePM {
 			continue

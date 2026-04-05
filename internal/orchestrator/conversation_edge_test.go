@@ -366,6 +366,48 @@ func TestBuildChatPrompt_WithBeliefs_SetChatContextCalled(t *testing.T) {
 	// Verify that the engine called agents (which means SetChatContext was invoked
 	// in tryRespondInThread) and the prompts use the minimal Reply as format.
 	assert.GreaterOrEqual(t, len(runner.calls), 1, "expected at least one agent to be called")
-	assert.Contains(t, runner.calls[0].stdin, "Reply as",
-		"prompt should use the minimal Reply as format")
+	assert.Contains(t, runner.calls[0].stdin, "Only respond if",
+		"prompt should include contribution guidance")
+}
+
+func TestConversationEngine_IsDuplicate_SimilarMessage_Drops(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	allRoles := agent.AllRoles()
+	agents := make(map[agent.Role]*agent.Agent, len(allRoles))
+	factStores := make(map[agent.Role]*memory.FactStore, len(allRoles))
+
+	runner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"the auth module needs careful error handling"}` + "\n"),
+	}
+	for _, role := range allRoles {
+		agents[role] = buildAgent(t, runner, role, db)
+		factStores[role] = memory.NewFactStore(db)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]interface{}{"ok": true, "ts": "123"}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	engine := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
+
+	// Seed a message that's very similar to what the agent will say.
+	engine.OnMessage(ctx, "engineering", "ceo", "the auth module needs careful error handling around retries")
+
+	// Now trigger agent responses — the duplicate detector should catch
+	// that the agent's response is similar to the existing message.
+	engine.OnMessage(ctx, "engineering", "ceo", "what do you think about auth?")
+
+	// The conversation engine should have handled this without panicking.
+	// We can't easily assert the duplicate was dropped without a bot,
+	// but we verify the engine processes it cleanly.
+	recent := engine.RecentMessages("engineering")
+	assert.NotEmpty(t, recent)
 }

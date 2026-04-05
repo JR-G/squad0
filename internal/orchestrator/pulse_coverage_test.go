@@ -164,11 +164,11 @@ func TestRunIdlePulse_WithIdleAgent_PostsMessage(t *testing.T) {
 	assert.True(t, result)
 }
 
-func TestRunIdlePulse_PASSResponse_ReturnsFalse(t *testing.T) {
+func TestRunIdlePulse_EmptyResponse_ReturnsFalse(t *testing.T) {
 	t.Parallel()
 
 	runner := &fakeProcessRunner{
-		output: []byte(`{"type":"result","result":"PASS"}` + "\n"),
+		output: []byte(`{"type":"result","result":""}` + "\n"),
 	}
 	agents := buildAgentsForPulse(t, runner)
 	bot := newPulseSlackBot(t)
@@ -283,20 +283,6 @@ func TestPostToEngineering_EmptyTranscript_ReturnsFalse(t *testing.T) {
 	// RunIdlePulse with empty result exercises postToEngineering empty check
 	idleRoles := []agent.Role{agent.RoleEngineer1}
 	result := orchestrator.RunIdlePulse(context.Background(), agents, idleRoles, nil, nil)
-	assert.False(t, result)
-}
-
-func TestPostToEngineering_PASSTranscript_ReturnsFalse(t *testing.T) {
-	t.Parallel()
-
-	runner := &fakeProcessRunner{
-		output: []byte(`{"type":"result","result":"pass"}` + "\n"),
-	}
-	agents := buildAgentsForPulse(t, runner)
-	bot := newPulseSlackBot(t)
-
-	idleRoles := []agent.Role{agent.RoleEngineer1}
-	result := orchestrator.RunIdlePulse(context.Background(), agents, idleRoles, bot, nil)
 	assert.False(t, result)
 }
 

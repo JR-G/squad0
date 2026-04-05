@@ -70,7 +70,7 @@ func replyInstruction(name, channel string) string {
 	if channel == chitchatChannel {
 		return fmt.Sprintf("You're %s, hanging out with your team. Say whatever's on your mind — an opinion, a reaction, something funny, a rant, a random thought. Talk like a real person on Slack with colleagues you like. 1-3 sentences.", name)
 	}
-	return fmt.Sprintf("Reply as %s (1-3 sentences, Slack formatting, or PASS):", name)
+	return fmt.Sprintf("Reply as %s. 1-3 sentences, Slack formatting. Only respond if you have something to add.", name)
 }
 
 func channelInstruction(channel string) string {
@@ -88,23 +88,6 @@ func ContainsQuestionForTest(text string) bool {
 // containsQuestion returns true if the text contains a question mark.
 func containsQuestion(text string) bool {
 	return strings.Contains(text, "?")
-}
-
-func containsPass(text string) bool {
-	trimmed := strings.TrimSpace(strings.ToUpper(text))
-	// Match standalone "PASS" or responses that start with "PASS —"
-	// (agent explicitly passing then explaining why).
-	if trimmed == "PASS" || trimmed == "PASS." {
-		return true
-	}
-	return strings.HasPrefix(trimmed, "PASS —") ||
-		strings.HasPrefix(trimmed, "PASS -") ||
-		strings.HasPrefix(trimmed, "PASS\n")
-}
-
-// ContainsPassForTest exports containsPass for testing.
-func ContainsPassForTest(text string) bool {
-	return containsPass(text)
 }
 
 // ChannelInstructionForTest exports channelInstruction for testing.

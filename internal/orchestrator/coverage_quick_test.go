@@ -19,16 +19,14 @@ import (
 func TestReplyInstruction_Engineering(t *testing.T) {
 	t.Parallel()
 	result := orchestrator.ReplyInstructionForTest("Mara", "engineering")
-	assert.Contains(t, result, "Reply as Mara")
-	assert.Contains(t, result, "PASS")
+	assert.Contains(t, result, "Mara")
+	assert.Contains(t, result, "Only respond if you have something to add")
 }
 
 func TestReplyInstruction_Chitchat(t *testing.T) {
 	t.Parallel()
 	result := orchestrator.ReplyInstructionForTest("Mara", "chitchat")
 	assert.Contains(t, result, "Mara")
-	// Chitchat is open-ended — no PASS option.
-	assert.NotContains(t, result, "PASS")
 }
 
 func TestCheckCircuitBreaker_NilAssigner_DoesNotPanic(t *testing.T) {

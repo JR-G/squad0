@@ -246,9 +246,9 @@ func PromptForPhase(phase ThreadPhase, state ThreadState) string {
 		if pointsSummary != "" {
 			return "The thread is weighing options. Points raised so far: " +
 				pointsSummary +
-				"\nIf you have a *new* angle or a strong opinion, weigh in. If you'd just be echoing what's been said, PASS."
+				"\nIf you have a *new* angle or a strong opinion, weigh in. If you'd just be echoing what's been said, don't respond."
 		}
-		return "The thread is weighing options. If you have a *new* angle or a strong opinion, weigh in. If you'd just be echoing what's been said, PASS."
+		return "The thread is weighing options. If you have a *new* angle or a strong opinion, weigh in. If you'd just be echoing what's been said, don't respond."
 
 	case PhaseConverging:
 		return "The team is aligning. Only respond if you see a specific problem that hasn't been raised. Agreement doesn't need restating."

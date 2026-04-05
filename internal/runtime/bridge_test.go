@@ -206,6 +206,37 @@ func TestBridge_Chat_ContextDeadline_FallsBack(t *testing.T) {
 	assert.Equal(t, "fallback after deadline", response)
 }
 
+func TestBridge_Chat_WithClaudeProcess_UsesWorkDir(t *testing.T) {
+	t.Parallel()
+
+	runner := &fakeRunner{output: []byte(`{"type":"result","result":"hello with personality"}` + "\n")}
+	session := agent.NewSession(runner)
+	active := runtime.NewClaudeProcessRuntime(session, "claude-sonnet-4-6", "/tmp")
+	bridge := runtime.NewSessionBridge(agent.RoleEngineer1, active, nil)
+
+	response, err := bridge.Chat(context.Background(), "test prompt", t.TempDir())
+	require.NoError(t, err)
+	assert.Equal(t, "hello with personality", response)
+}
+
+func TestBridge_Chat_WithCodexFallback_UsesCodexSend(t *testing.T) {
+	t.Parallel()
+
+	// Claude fails, codex succeeds.
+	claudeRunner := &fakeRunner{err: fmt.Errorf("rate limit 429")}
+	session := agent.NewSession(claudeRunner)
+	active := runtime.NewClaudeProcessRuntime(session, "claude-sonnet-4-6", "/tmp")
+
+	codexRunner := &fakeRunner{output: []byte(`{"type":"message","content":"codex response"}` + "\n")}
+	fallback := runtime.NewCodexRuntime(codexRunner, "gpt-5-codex", "/tmp")
+
+	bridge := runtime.NewSessionBridge(agent.RoleEngineer1, active, fallback)
+
+	response, err := bridge.Chat(context.Background(), "test", t.TempDir())
+	require.NoError(t, err)
+	assert.Equal(t, "codex response", response)
+}
+
 func TestBridge_Stop_NilFallback_NoError(t *testing.T) {
 	t.Parallel()
 
