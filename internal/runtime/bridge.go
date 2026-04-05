@@ -39,20 +39,18 @@ func NewSessionBridge(role agent.Role, active, fallback Runtime) *SessionBridge 
 	}
 }
 
-// Chat sends a prompt via the active runtime and returns the response.
-// If the active runtime hits a rate limit or timeout, swaps to the
-// fallback transparently.
-//
-// NOTE: The caller (agent.QuickChat) handles personality injection
-// (CLAUDE.md, voice, beliefs) BEFORE calling Chat. The bridge only
-// handles runtime selection and fallback.
-func (bridge *SessionBridge) Chat(ctx context.Context, prompt string) (string, error) {
+const chatModel = "claude-haiku-4-5-20251001"
+
+// Chat runs a chat prompt with personality context. workDir is the
+// temp directory containing the personality CLAUDE.md. Uses Haiku
+// for chat. Falls back on rate limits or timeouts.
+func (bridge *SessionBridge) Chat(ctx context.Context, prompt, workDir string) (string, error) {
 	bridge.mu.Lock()
 	active := bridge.active
 	fallback := bridge.fallback
 	bridge.mu.Unlock()
 
-	response, err := active.Send(ctx, prompt)
+	response, err := runChat(ctx, active, prompt, workDir)
 	if err == nil {
 		return response, nil
 	}
@@ -69,12 +67,32 @@ func (bridge *SessionBridge) Chat(ctx context.Context, prompt string) (string, e
 	log.Printf("bridge: %s failed on %s, falling back to %s: %v", bridge.role, active.Name(), fallback.Name(), err)
 	bridge.markSwapped()
 
-	fallbackResponse, fallbackErr := fallback.Send(ctx, prompt)
+	fallbackResponse, fallbackErr := runChat(ctx, fallback, prompt, workDir)
 	if fallbackErr != nil {
 		return fallbackResponse, fmt.Errorf("fallback %s also failed: %w", fallback.Name(), fallbackErr)
 	}
 
 	return fallbackResponse, nil
+}
+
+// runChat executes a chat prompt with the correct model and workdir.
+func runChat(ctx context.Context, rt Runtime, prompt, workDir string) (string, error) {
+	cpr, ok := rt.(*ClaudeProcessRuntime)
+	if !ok {
+		return rt.Send(ctx, prompt)
+	}
+
+	cfg := agent.SessionConfig{
+		Model:      chatModel,
+		Prompt:     prompt,
+		WorkingDir: workDir,
+	}
+
+	result, err := cpr.session.Run(ctx, cfg)
+	if err != nil {
+		return result.Transcript, err
+	}
+	return result.Transcript, nil
 }
 
 // IsSwapped returns true if the bridge has swapped to the fallback

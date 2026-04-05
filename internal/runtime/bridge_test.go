@@ -40,7 +40,7 @@ func TestBridge_Chat_HappyPath(t *testing.T) {
 	active := &fakeRuntime{name: "claude", sendResponse: "hello"}
 	bridge := runtime.NewSessionBridge(agent.RoleEngineer1, active, nil)
 
-	response, err := bridge.Chat(context.Background(), "hi")
+	response, err := bridge.Chat(context.Background(), "hi", "")
 	require.NoError(t, err)
 	assert.Equal(t, "hello", response)
 	assert.Equal(t, 1, active.sendCalls)
@@ -59,7 +59,7 @@ func TestBridge_Chat_RateLimit_SwapsToFallback(t *testing.T) {
 	}
 	bridge := runtime.NewSessionBridge(agent.RoleEngineer2, active, fallback)
 
-	response, err := bridge.Chat(context.Background(), "hi")
+	response, err := bridge.Chat(context.Background(), "hi", "")
 	require.NoError(t, err)
 	assert.Equal(t, "fallback response", response)
 	assert.True(t, bridge.IsSwapped())
@@ -74,7 +74,7 @@ func TestBridge_Chat_RateLimit_NoFallback_ReturnsError(t *testing.T) {
 	}
 	bridge := runtime.NewSessionBridge(agent.RoleEngineer1, active, nil)
 
-	_, err := bridge.Chat(context.Background(), "hi")
+	_, err := bridge.Chat(context.Background(), "hi", "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no fallback")
 }
@@ -92,7 +92,7 @@ func TestBridge_Chat_NonRateError_DoesNotSwap(t *testing.T) {
 	}
 	bridge := runtime.NewSessionBridge(agent.RoleEngineer1, active, fallback)
 
-	_, err := bridge.Chat(context.Background(), "hi")
+	_, err := bridge.Chat(context.Background(), "hi", "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "chat via claude")
 	assert.False(t, bridge.IsSwapped())
@@ -112,7 +112,7 @@ func TestBridge_Chat_FallbackAlsoFails_ReturnsError(t *testing.T) {
 	}
 	bridge := runtime.NewSessionBridge(agent.RoleEngineer3, active, fallback)
 
-	_, err := bridge.Chat(context.Background(), "hi")
+	_, err := bridge.Chat(context.Background(), "hi", "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "fallback codex also failed")
 }
@@ -127,7 +127,7 @@ func TestBridge_ResetSwap(t *testing.T) {
 	fallback := &fakeRuntime{name: "codex", sendResponse: "ok"}
 	bridge := runtime.NewSessionBridge(agent.RoleEngineer1, active, fallback)
 
-	_, _ = bridge.Chat(context.Background(), "hi")
+	_, _ = bridge.Chat(context.Background(), "hi", "")
 	assert.True(t, bridge.IsSwapped())
 
 	bridge.ResetSwap()
@@ -182,7 +182,7 @@ func TestBridge_Chat_Timeout_FallsBack(t *testing.T) {
 	}
 	bridge := runtime.NewSessionBridge(agent.RoleEngineer1, active, fallback)
 
-	response, err := bridge.Chat(context.Background(), "hi")
+	response, err := bridge.Chat(context.Background(), "hi", "")
 	require.NoError(t, err)
 	assert.Equal(t, "fallback after timeout", response)
 	assert.True(t, bridge.IsSwapped())
@@ -201,7 +201,7 @@ func TestBridge_Chat_ContextDeadline_FallsBack(t *testing.T) {
 	}
 	bridge := runtime.NewSessionBridge(agent.RoleEngineer1, active, fallback)
 
-	response, err := bridge.Chat(context.Background(), "hi")
+	response, err := bridge.Chat(context.Background(), "hi", "")
 	require.NoError(t, err)
 	assert.Equal(t, "fallback after deadline", response)
 }
