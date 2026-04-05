@@ -16,7 +16,7 @@ func TestBuildRuntime_Claude_ReturnsRuntime(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	rt := buildRuntime("claude", agent.RoleEngineer1, agent.ExecProcessRunner{}, "", dir+"/in", dir+"/out")
+	rt := buildRuntime("claude", agent.RoleEngineer1, agent.ExecProcessRunner{}, "", "claude-sonnet-4-6", dir, dir+"/in", dir+"/out")
 	assert.NotNil(t, rt)
 	assert.Equal(t, "claude-persistent", rt.Name())
 }
@@ -24,7 +24,7 @@ func TestBuildRuntime_Claude_ReturnsRuntime(t *testing.T) {
 func TestBuildRuntime_Codex_ReturnsRuntime(t *testing.T) {
 	t.Parallel()
 
-	rt := buildRuntime("codex", agent.RoleEngineer1, agent.ExecProcessRunner{}, "gpt-5-codex", "", "")
+	rt := buildRuntime("codex", agent.RoleEngineer1, agent.ExecProcessRunner{}, "gpt-5-codex", "", "/tmp", "", "")
 	assert.NotNil(t, rt)
 	assert.Equal(t, "codex", rt.Name())
 }
@@ -32,7 +32,7 @@ func TestBuildRuntime_Codex_ReturnsRuntime(t *testing.T) {
 func TestBuildRuntime_Unknown_ReturnsNil(t *testing.T) {
 	t.Parallel()
 
-	rt := buildRuntime("gemini", agent.RolePM, agent.ExecProcessRunner{}, "model", "", "")
+	rt := buildRuntime("gemini", agent.RolePM, agent.ExecProcessRunner{}, "model", "", "/tmp", "", "")
 	assert.Nil(t, rt)
 }
 
@@ -41,7 +41,7 @@ func TestCreateBridgeForRole_DefaultClaude(t *testing.T) {
 
 	dir := t.TempDir()
 	cfg := config.RuntimeConfig{Default: "claude", Fallback: "codex"}
-	bridge := createBridgeForRole(agent.RoleEngineer1, cfg, "gpt-5-codex", dir)
+	bridge := createBridgeForRole(agent.RoleEngineer1, cfg, "gpt-5-codex", "claude-sonnet-4-6", dir, dir)
 	assert.NotNil(t, bridge)
 }
 
@@ -54,7 +54,7 @@ func TestCreateBridgeForRole_WithOverride(t *testing.T) {
 		Fallback:  "codex",
 		Overrides: map[string]string{"engineer-1": "codex"},
 	}
-	bridge := createBridgeForRole(agent.RoleEngineer1, cfg, "gpt-5-codex", dir)
+	bridge := createBridgeForRole(agent.RoleEngineer1, cfg, "gpt-5-codex", "claude-sonnet-4-6", dir, dir)
 	assert.NotNil(t, bridge)
 	assert.Equal(t, "codex", bridge.Active().Name())
 }
@@ -63,7 +63,7 @@ func TestCreateBridgeForRole_UnknownDefault_ReturnsNil(t *testing.T) {
 	t.Parallel()
 
 	cfg := config.RuntimeConfig{Default: "invalid"}
-	bridge := createBridgeForRole(agent.RolePM, cfg, "", "")
+	bridge := createBridgeForRole(agent.RolePM, cfg, "", "", "", "")
 	assert.Nil(t, bridge)
 }
 
@@ -72,7 +72,7 @@ func TestCreateBridgeForRole_SameFallbackAsActive_NilFallback(t *testing.T) {
 
 	dir := t.TempDir()
 	cfg := config.RuntimeConfig{Default: "codex", Fallback: "codex"}
-	bridge := createBridgeForRole(agent.RoleEngineer2, cfg, "gpt-5-codex", dir)
+	bridge := createBridgeForRole(agent.RoleEngineer2, cfg, "gpt-5-codex", "claude-sonnet-4-6", dir, dir)
 	assert.NotNil(t, bridge)
 }
 

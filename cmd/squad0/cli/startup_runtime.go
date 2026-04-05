@@ -23,23 +23,25 @@ func wireBridges(
 	agents map[agent.Role]*agent.Agent,
 	cfg config.RuntimeConfig,
 	codexModel string,
+	modelMap map[agent.Role]string,
+	targetRepoDir string,
 	dataDir string,
 ) {
 	for role, agentInstance := range agents {
-		bridge := createBridgeForRole(role, cfg, codexModel, dataDir)
+		model := modelMap[role]
+		bridge := createBridgeForRole(role, cfg, codexModel, model, targetRepoDir, dataDir)
 		if bridge == nil {
 			continue
 		}
 		agentInstance.SetBridge(bridge)
-		log.Printf("runtime: %s using %s (fallback: %s)", role, bridge.Active().Name(), cfg.Fallback)
+		log.Printf("runtime: %s using %s (model=%s, fallback=%s)", role, bridge.Active().Name(), model, cfg.Fallback)
 	}
 }
 
 func createBridgeForRole(
 	role agent.Role,
 	cfg config.RuntimeConfig,
-	codexModel string,
-	dataDir string,
+	codexModel, claudeModel, workDir, dataDir string,
 ) *runtime.SessionBridge {
 	activeName := cfg.Default
 	if override, ok := cfg.Overrides[string(role)]; ok {
@@ -50,14 +52,14 @@ func createBridgeForRole(
 	inboxDir := filepath.Join(dataDir, "inbox", string(role))
 	outboxDir := filepath.Join(dataDir, "outbox", string(role))
 
-	active := buildRuntime(activeName, role, runner, codexModel, inboxDir, outboxDir)
+	active := buildRuntime(activeName, role, runner, codexModel, claudeModel, workDir, inboxDir, outboxDir)
 	if active == nil {
 		return nil
 	}
 
 	var fallback runtime.Runtime
 	if cfg.Fallback != "" && cfg.Fallback != activeName {
-		fallback = buildRuntime(cfg.Fallback, role, runner, codexModel, inboxDir, outboxDir)
+		fallback = buildRuntime(cfg.Fallback, role, runner, codexModel, claudeModel, workDir, inboxDir, outboxDir)
 	}
 
 	return runtime.NewSessionBridge(role, active, fallback)
@@ -67,7 +69,7 @@ func buildRuntime(
 	name string,
 	role agent.Role,
 	runner agent.ProcessRunner, //nolint:unparam // varies in production via createBridgeForRole
-	codexModel string,
+	codexModel, claudeModel, workDir string,
 	inboxDir, outboxDir string,
 ) runtime.Runtime {
 	switch name {
@@ -81,11 +83,11 @@ func buildRuntime(
 			runtime.ExecTmuxExecutor{},
 			inbox,
 			string(role),
-			"", // model comes from agent config
-			"", // workdir comes from session
+			claudeModel,
+			workDir,
 		)
 	case "codex":
-		return runtime.NewCodexRuntime(runner, codexModel, "")
+		return runtime.NewCodexRuntime(runner, codexModel, workDir)
 	default:
 		log.Printf("runtime: unknown runtime %q for %s", name, role)
 		return nil

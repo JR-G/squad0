@@ -111,7 +111,7 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	_, _ = fmt.Fprint(out, tui.StepDone(fmt.Sprintf("%d agents created", len(agents))))
 
 	// Wire runtime bridges — persistent sessions for Claude, fresh for Codex.
-	wireBridges(agents, cfg.Agents.Runtime, cfg.Agents.CodexFallbackModel, deps.DataDir)
+	wireBridges(agents, cfg.Agents.Runtime, cfg.Agents.CodexFallbackModel, modelMap, targetRepoDir, deps.DataDir)
 
 	personaStore := createPersonaStore(agentDBs)
 	bot := createSlackBot(ctx, cfg, slackSecrets, personaStore)
