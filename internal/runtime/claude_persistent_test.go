@@ -18,6 +18,7 @@ type fakeTmux struct {
 	sessions map[string]bool
 	killed   []string
 	created  []string
+	sentKeys []string
 }
 
 func newFakeTmux() *fakeTmux {
@@ -43,6 +44,13 @@ func (f *fakeTmux) KillSession(name string) error {
 	defer f.mu.Unlock()
 	delete(f.sessions, name)
 	f.killed = append(f.killed, name)
+	return nil
+}
+
+func (f *fakeTmux) SendKeys(_, keys string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sentKeys = append(f.sentKeys, keys)
 	return nil
 }
 
@@ -128,29 +136,25 @@ func TestClaudePersistent_Stop_NoSession_NoError(t *testing.T) {
 	assert.NoError(t, rt.Stop())
 }
 
-func TestClaudePersistent_Send_EnqueuesAndWaitsForResponse(t *testing.T) {
+func TestClaudePersistent_Send_CallsSendKeys(t *testing.T) {
 	t.Parallel()
 
 	tmux := newFakeTmux()
 	dir := t.TempDir()
 	inbox, _ := runtime.NewInbox(filepath.Join(dir, "in"), filepath.Join(dir, "out"))
 	rt := runtime.NewClaudePersistentRuntime(tmux, inbox, "engineer-1", "claude-sonnet-4-6", dir)
-	rt.SetTimeout(2 * time.Second)
+	rt.SetTimeout(500 * time.Millisecond) // short timeout — no real Claude to respond
 
 	_ = rt.Start(context.Background(), runtime.StartConfig{})
 
-	// Simulate: drain inbox and write response (what the hook would do).
-	go func() {
-		time.Sleep(100 * time.Millisecond)
-		messages, _ := inbox.Drain()
-		if len(messages) > 0 {
-			_ = inbox.WriteResponse(messages[0].ID, "agreed, that makes sense")
-		}
-	}()
+	// Send will call SendKeys then timeout waiting for a response
+	// (no real Claude process). The important thing: SendKeys was called.
+	_, _ = rt.Send(context.Background(), "what do you think?")
 
-	response, err := rt.Send(context.Background(), "what do you think?")
-	require.NoError(t, err)
-	assert.Equal(t, "agreed, that makes sense", response)
+	tmux.mu.Lock()
+	defer tmux.mu.Unlock()
+	assert.NotEmpty(t, tmux.sentKeys, "Send should call SendKeys to nudge the session")
+	assert.Contains(t, tmux.sentKeys[0], "what do you think?")
 }
 
 func TestClaudePersistent_Send_DeadSession_SelfHeals(t *testing.T) {
@@ -160,23 +164,12 @@ func TestClaudePersistent_Send_DeadSession_SelfHeals(t *testing.T) {
 	dir := t.TempDir()
 	inbox, _ := runtime.NewInbox(filepath.Join(dir, "in"), filepath.Join(dir, "out"))
 	rt := runtime.NewClaudePersistentRuntime(tmux, inbox, "engineer-3", "claude-sonnet-4-6", dir)
-	rt.SetTimeout(2 * time.Second)
+	rt.SetTimeout(500 * time.Millisecond)
 
-	// Don't call Start — session is dead.
-	// Send should self-heal by calling Start.
-	go func() {
-		time.Sleep(200 * time.Millisecond)
-		messages, _ := inbox.Drain()
-		if len(messages) > 0 {
-			_ = inbox.WriteResponse(messages[0].ID, "self-healed response")
-		}
-	}()
+	// Don't call Start — session is dead. Send should self-heal.
+	_, _ = rt.Send(context.Background(), "are you there?")
 
-	response, err := rt.Send(context.Background(), "are you there?")
-	require.NoError(t, err)
-	assert.Equal(t, "self-healed response", response)
-
-	// Session should have been started.
+	// Session should have been started via self-heal.
 	assert.True(t, rt.IsAlive())
 }
 

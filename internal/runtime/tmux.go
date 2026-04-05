@@ -12,6 +12,7 @@ type TmuxExecutor interface {
 	NewSession(name, workDir, cmd string, args ...string) error
 	HasSession(name string) bool
 	KillSession(name string) error
+	SendKeys(name, keys string) error
 }
 
 // ExecTmuxExecutor implements TmuxExecutor via real tmux commands.
@@ -31,6 +32,16 @@ func (ExecTmuxExecutor) HasSession(name string) bool {
 func (ExecTmuxExecutor) KillSession(name string) error {
 	_ = runTmux("kill-session", "-t", name)
 	return nil
+}
+
+// SendKeys types text into a tmux session, followed by Enter.
+// Used to wake an idle Claude Code session so the UserPromptSubmit
+// hook fires and drains the inbox.
+func (ExecTmuxExecutor) SendKeys(name, keys string) error {
+	if err := runTmux("send-keys", "-t", name, "-l", keys); err != nil {
+		return err
+	}
+	return runTmux("send-keys", "-t", name, "Enter")
 }
 
 func runTmux(args ...string) error {

@@ -28,6 +28,7 @@ type ClaudePersistentRuntime struct {
 	session string // tmux session name
 	started bool
 	timeout time.Duration
+	seq     int64
 }
 
 // NewClaudePersistentRuntime creates a runtime that maintains a
@@ -98,26 +99,36 @@ func (rt *ClaudePersistentRuntime) Start(_ context.Context, cfg StartConfig) err
 	return nil
 }
 
-// Send writes a prompt to the inbox and waits for a response in the
-// outbox. The UserPromptSubmit hook drains the inbox and injects
-// messages into the running Claude session.
+// Send delivers the prompt to the persistent Claude session via tmux
+// send-keys and waits for the response in the outbox. The prompt is
+// sent as a user message which triggers the UserPromptSubmit hook
+// (injecting any queued context). The prompt itself instructs Claude
+// to write the response to the outbox file.
 //
 // If the session is dead, Start is called automatically (self-heal).
-// If the response times out, returns an error — the bridge should
-// fall back to a fresh process.
 func (rt *ClaudePersistentRuntime) Send(ctx context.Context, prompt string) (string, error) {
 	rt.mu.Lock()
 	timeout := rt.timeout
 	rt.mu.Unlock()
 
-	// Self-heal: restart if the session died.
 	if healErr := rt.selfHeal(ctx); healErr != nil {
 		return "", healErr
 	}
 
-	id, err := rt.inbox.Enqueue(prompt)
-	if err != nil {
-		return "", fmt.Errorf("enqueueing prompt for %s: %w", rt.role, err)
+	id := fmt.Sprintf("%d-%d", time.Now().UnixNano(), rt.sendSeq())
+	outboxPath := rt.inbox.OutboxDir() + "/" + id + "-response.json"
+
+	// Build the message: the actual prompt + an instruction to write
+	// the response to the outbox file so we can collect it.
+	wrappedPrompt := prompt + fmt.Sprintf(
+		"\n\nAfter responding, write ONLY your response text to this file (no explanation, just the response): %s",
+		outboxPath,
+	)
+
+	// Send via tmux — this triggers the UserPromptSubmit hook and
+	// delivers the prompt as a user message to Claude Code.
+	if err := rt.tmux.SendKeys(rt.session, wrappedPrompt); err != nil {
+		return "", fmt.Errorf("sending to persistent session %s: %w", rt.role, err)
 	}
 
 	response, waitErr := rt.inbox.WaitForResponse(id, timeout)
@@ -126,6 +137,13 @@ func (rt *ClaudePersistentRuntime) Send(ctx context.Context, prompt string) (str
 	}
 
 	return response, nil
+}
+
+func (rt *ClaudePersistentRuntime) sendSeq() int64 {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	rt.seq++
+	return rt.seq
 }
 
 func (rt *ClaudePersistentRuntime) selfHeal(ctx context.Context) error {
