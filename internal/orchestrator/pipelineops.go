@@ -133,8 +133,10 @@ func (orch *Orchestrator) resumePendingWork(ctx context.Context) {
 			continue
 		}
 
-		for _, item := range openItems {
-			orch.resumeWorkItem(ctx, item)
+		// Resume only the most recent item per role — don't launch
+		// all reviews simultaneously on startup.
+		if len(openItems) > 0 {
+			orch.resumeWorkItem(ctx, openItems[0])
 		}
 	}
 }

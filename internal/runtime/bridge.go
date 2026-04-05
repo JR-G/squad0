@@ -40,8 +40,12 @@ func NewSessionBridge(role agent.Role, active, fallback Runtime) *SessionBridge 
 }
 
 // Chat sends a prompt via the active runtime and returns the response.
-// If the active runtime hits a rate limit, swaps to the fallback
-// transparently. If fallback is nil, returns the error.
+// If the active runtime hits a rate limit or timeout, swaps to the
+// fallback transparently.
+//
+// NOTE: The caller (agent.QuickChat) handles personality injection
+// (CLAUDE.md, voice, beliefs) BEFORE calling Chat. The bridge only
+// handles runtime selection and fallback.
 func (bridge *SessionBridge) Chat(ctx context.Context, prompt string) (string, error) {
 	bridge.mu.Lock()
 	active := bridge.active
@@ -53,8 +57,6 @@ func (bridge *SessionBridge) Chat(ctx context.Context, prompt string) (string, e
 		return response, nil
 	}
 
-	// Fall back on rate limits OR timeouts. Persistent sessions can
-	// timeout if hooks aren't configured or the tmux session is stuck.
 	shouldFallback := agent.IsRateLimited(response, err) || isTimeout(err)
 	if !shouldFallback {
 		return response, fmt.Errorf("chat via %s: %w", active.Name(), err)

@@ -141,19 +141,11 @@ func (agent *Agent) ExecuteTask(ctx context.Context, taskDescription string, fil
 	return result, nil
 }
 
-// QuickChat runs a lightweight conversation session. When a ChatBridge
-// is set, routes through it (persistent session or alternative runtime).
-// Otherwise creates a temp CLAUDE.md and spawns a fresh process.
+// QuickChat runs a lightweight conversation session. Creates a temp
+// directory with a CLAUDE.md containing the agent's personality.
+// Uses session.Run directly — the bridge is for implementation
+// sessions (Execute), not chat.
 func (agent *Agent) QuickChat(ctx context.Context, prompt string) (string, error) {
-	// Bridge path — persistent session or alternative runtime.
-	if agent.chatBridge != nil {
-		return agent.chatBridge.Chat(ctx, prompt)
-	}
-
-	return agent.quickChatFresh(ctx, prompt)
-}
-
-func (agent *Agent) quickChatFresh(ctx context.Context, prompt string) (string, error) {
 	agent.chatMu.Lock()
 	roster := agent.chatRoster
 	beliefs := agent.chatBeliefs
