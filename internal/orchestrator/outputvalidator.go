@@ -28,10 +28,6 @@ func ValidateResponse(text string, rules VoiceRules, recentMessages []string) Va
 		return result
 	}
 
-	if result := checkBannedPhrases(text, rules.BannedPhrases); !result.OK {
-		return result
-	}
-
 	if result := checkSimilarity(text, recentMessages, rules.RejectIfSimilar); !result.OK {
 		return result
 	}
@@ -87,17 +83,6 @@ func countSentences(text string) int {
 	}
 
 	return count
-}
-
-func checkBannedPhrases(text string, banned []string) ValidationResult {
-	lower := strings.ToLower(text)
-	for _, phrase := range banned {
-		if strings.Contains(lower, phrase) {
-			return validationFail("banned phrase: " + phrase)
-		}
-	}
-
-	return validationOK()
 }
 
 func checkSimilarity(text string, recentMessages []string, threshold float64) ValidationResult {

@@ -37,16 +37,3 @@ func TestDefaultVoiceRules_Engineer3_IsLaconic(t *testing.T) {
 		"engineer-3 MaxChars (%d) should be less than tech-lead MaxChars (%d)",
 		eng3Rules.MaxChars, tlRules.MaxChars)
 }
-
-func TestDefaultVoiceRules_AllRoles_HaveBannedPhrases(t *testing.T) {
-	t.Parallel()
-
-	for _, role := range agent.AllRoles() {
-		t.Run(string(role), func(t *testing.T) {
-			t.Parallel()
-
-			rules := orchestrator.DefaultVoiceRules(role)
-			assert.NotEmpty(t, rules.BannedPhrases, "BannedPhrases must not be empty for %s", role)
-		})
-	}
-}

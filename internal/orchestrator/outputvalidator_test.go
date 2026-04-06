@@ -14,7 +14,6 @@ func TestValidateResponse_Clean_Passes(t *testing.T) {
 	rules := orchestrator.VoiceRules{
 		MaxChars:        100,
 		MaxSentences:    3,
-		BannedPhrases:   []string{"forbidden"},
 		RejectIfSimilar: 0.75,
 	}
 
@@ -72,51 +71,6 @@ func TestCheckSentenceCount_WithinLimit_Passes(t *testing.T) {
 	text := "First sentence. Second sentence."
 
 	result := orchestrator.ValidateResponse(text, rules, nil)
-
-	assert.True(t, result.OK)
-}
-
-func TestCheckBannedPhrases_MatchFound_Rejects(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name   string
-		phrase string
-		text   string
-	}{
-		{"exact match", "as an ai", "As an AI, I cannot do that."},
-		{"mid sentence", "i can help with", "Sure, I can help with that task."},
-		{"lowercase already", "on it!", "On it!"},
-		{"partial sentence", "i'll go ahead", "I'll go ahead and fix it."},
-		{"capability phrase", "my capabilities", "That's outside my capabilities right now."},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			rules := orchestrator.VoiceRules{
-				MaxChars:      500,
-				BannedPhrases: []string{tt.phrase},
-			}
-
-			result := orchestrator.ValidateResponse(tt.text, rules, nil)
-
-			assert.False(t, result.OK)
-			assert.Contains(t, result.Reason, "banned phrase")
-		})
-	}
-}
-
-func TestCheckBannedPhrases_Clean_Passes(t *testing.T) {
-	t.Parallel()
-
-	rules := orchestrator.VoiceRules{
-		MaxChars:      500,
-		BannedPhrases: []string{"forbidden", "not allowed"},
-	}
-
-	result := orchestrator.ValidateResponse("Perfectly normal response.", rules, nil)
 
 	assert.True(t, result.OK)
 }
@@ -291,9 +245,8 @@ func TestValidateResponse_MultipleViolations_ReportsFirst(t *testing.T) {
 	t.Parallel()
 
 	rules := orchestrator.VoiceRules{
-		MaxChars:      10,
-		MaxSentences:  1,
-		BannedPhrases: []string{"forbidden"},
+		MaxChars:     10,
+		MaxSentences: 1,
 	}
 	text := strings.Repeat("x", 20) + " forbidden. Another sentence."
 
@@ -301,4 +254,48 @@ func TestValidateResponse_MultipleViolations_ReportsFirst(t *testing.T) {
 
 	assert.False(t, result.OK)
 	assert.Equal(t, "too long", result.Reason, "length check should fire first")
+}
+
+func TestValidateResponse_ZeroLimits_Passes(t *testing.T) {
+	t.Parallel()
+
+	rules := orchestrator.VoiceRules{MaxChars: 0, MaxSentences: 0}
+	result := orchestrator.ValidateResponse("anything goes", rules, nil)
+	assert.True(t, result.OK)
+}
+
+func TestValidateResponse_ExactlyAtCharLimit_Passes(t *testing.T) {
+	t.Parallel()
+
+	text := strings.Repeat("x", 100)
+	rules := orchestrator.VoiceRules{MaxChars: 100}
+	result := orchestrator.ValidateResponse(text, rules, nil)
+	assert.True(t, result.OK)
+}
+
+func TestValidateResponse_OneSentence_Passes(t *testing.T) {
+	t.Parallel()
+
+	rules := orchestrator.VoiceRules{MaxSentences: 1, MaxChars: 500}
+	result := orchestrator.ValidateResponse("Just one sentence.", rules, nil)
+	assert.True(t, result.OK)
+}
+
+func TestValidateResponse_SimilarToRecent_Rejects(t *testing.T) {
+	t.Parallel()
+
+	rules := orchestrator.VoiceRules{MaxChars: 500, RejectIfSimilar: 0.75}
+	recent := []string{"agent: the auth module needs better error handling"}
+	result := orchestrator.ValidateResponse("the auth module needs better error handling", rules, recent)
+	assert.False(t, result.OK)
+	assert.Contains(t, result.Reason, "similar")
+}
+
+func TestValidateResponse_DifferentFromRecent_Passes(t *testing.T) {
+	t.Parallel()
+
+	rules := orchestrator.VoiceRules{MaxChars: 500, RejectIfSimilar: 0.75}
+	recent := []string{"agent: the auth module needs better error handling"}
+	result := orchestrator.ValidateResponse("completely different topic about CI pipelines", rules, recent)
+	assert.True(t, result.OK)
 }

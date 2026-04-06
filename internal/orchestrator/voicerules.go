@@ -7,39 +7,7 @@ import "github.com/JR-G/squad0/internal/agent"
 type VoiceRules struct {
 	MaxChars        int
 	MaxSentences    int
-	BannedPhrases   []string
 	RejectIfSimilar float64 // Jaccard bigram threshold (0.0–1.0).
-}
-
-// sharedBannedPhrases are filtered from ALL agent responses.
-var sharedBannedPhrases = []string{
-	// Capability listing.
-	"i can help with",
-	"my capabilities",
-	"i'm able to",
-	"i'm ready to work with you",
-	"i understand. i'm ready",
-	"i'll adopt this approach",
-	"key things i'm holding",
-	"i understand the project",
-	"ready to ship",
-	"what are you working on",
-	// Asking what to do.
-	"what would you like",
-	"what should i",
-	"what do you need",
-	"what's the task",
-	"what do you want me to",
-	// Claiming actions from chat.
-	"i'll go ahead",
-	"i'm merging",
-	"i'll fix that",
-	"i'll deploy",
-	"on it!",
-	// AI identity leak.
-	"i've read the claude",
-	"as an ai",
-	"i don't have the ability",
 }
 
 // DefaultVoiceRules returns per-role output constraints derived from
@@ -49,7 +17,6 @@ func DefaultVoiceRules(role agent.Role) VoiceRules {
 	base := VoiceRules{
 		MaxChars:        300,
 		MaxSentences:    3,
-		BannedPhrases:   sharedBannedPhrases,
 		RejectIfSimilar: 0.75,
 	}
 

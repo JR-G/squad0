@@ -102,6 +102,58 @@ func TestSpecialisationStore_StatsForRole_MultipleCategories(t *testing.T) {
 	assert.Len(t, stats, 2)
 }
 
+func TestSpecialisationStore_Record_ClosedDB_ReturnsError(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	db, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	store := routing.NewSpecialisationStore(db)
+	require.NoError(t, store.InitSchema(ctx))
+	_ = db.Close()
+
+	assert.Error(t, store.Record(ctx, agent.RoleEngineer1, "test", true))
+}
+
+func TestSpecialisationStore_BestForCategory_ClosedDB_ReturnsError(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	db, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	store := routing.NewSpecialisationStore(db)
+	require.NoError(t, store.InitSchema(ctx))
+	_ = db.Close()
+
+	_, qErr := store.BestForCategory(ctx, "test")
+	assert.Error(t, qErr)
+}
+
+func TestSpecialisationStore_StatsForRole_ClosedDB_ReturnsError(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	db, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	store := routing.NewSpecialisationStore(db)
+	require.NoError(t, store.InitSchema(ctx))
+	_ = db.Close()
+
+	_, qErr := store.StatsForRole(ctx, agent.RoleEngineer1)
+	assert.Error(t, qErr)
+}
+
+func TestSpecialisationStore_InitSchema_ClosedDB_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	db, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	_ = db.Close()
+
+	store := routing.NewSpecialisationStore(db)
+	assert.Error(t, store.InitSchema(context.Background()))
+}
+
 func TestSpecialisationStore_EmptyCategory_ReturnsEmpty(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

@@ -20,19 +20,6 @@ func TestOutputPipeline_Process_Valid_Passes(t *testing.T) {
 	assert.Equal(t, text, out)
 }
 
-func TestOutputPipeline_Process_BannedPhrase_Rejects(t *testing.T) {
-	t.Parallel()
-
-	pipe := orchestrator.NewOutputPipeline()
-	text := "As an AI, I think this is fine."
-
-	out, result := pipe.Process(text, agent.RoleEngineer1, nil)
-
-	assert.False(t, result.OK)
-	assert.Empty(t, out)
-	assert.Contains(t, result.Reason, "banned phrase")
-}
-
 func TestOutputPipeline_Process_TooLong_Rejects(t *testing.T) {
 	t.Parallel()
 
@@ -65,7 +52,6 @@ func TestOutputPipeline_RulesForRole_KnownRole(t *testing.T) {
 
 			assert.Greater(t, rules.MaxChars, 0)
 			assert.Greater(t, rules.MaxSentences, 0)
-			assert.NotEmpty(t, rules.BannedPhrases)
 		})
 	}
 }
@@ -80,5 +66,4 @@ func TestOutputPipeline_RulesForRole_UnknownRole(t *testing.T) {
 	// the base defaults (300 chars, 3 sentences).
 	assert.Greater(t, rules.MaxChars, 0)
 	assert.Greater(t, rules.MaxSentences, 0)
-	assert.NotEmpty(t, rules.BannedPhrases)
 }
