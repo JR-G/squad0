@@ -3,6 +3,7 @@ package runtime_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"testing"
 
@@ -12,15 +13,19 @@ import (
 )
 
 type fakeRunner struct {
-	mu     sync.Mutex
-	output []byte
-	err    error
-	calls  []string
+	mu      sync.Mutex
+	output  []byte
+	err     error
+	calls   []string
+	runHook func(name string, args []string)
 }
 
 func (r *fakeRunner) Run(_ context.Context, stdin, _, name string, args ...string) ([]byte, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.runHook != nil {
+		r.runHook(name, args)
+	}
 	r.calls = append(r.calls, name+" "+fmt.Sprintf("%v", args))
 	return r.output, r.err
 }
@@ -97,4 +102,25 @@ func TestCodexRuntime_Send_EmptyOutput_ReturnsError(t *testing.T) {
 	_, err := rt.Send(context.Background(), "empty")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "empty response")
+}
+
+func TestCodexRuntime_Send_UsesLastMessageFileWhenStdoutEmpty(t *testing.T) {
+	t.Parallel()
+
+	runner := &fakeRunner{
+		output: []byte(`{"type":"thread.started"}` + "\n"),
+		runHook: func(_ string, args []string) {
+			for i := 0; i < len(args)-1; i++ {
+				if args[i] == "-o" {
+					_ = os.WriteFile(args[i+1], []byte("hello from last-message file"), 0o600)
+					return
+				}
+			}
+		},
+	}
+	rt := runtime.NewCodexRuntime(runner, "gpt-5-codex", "/tmp")
+
+	result, err := rt.Send(context.Background(), "say hello")
+	require.NoError(t, err)
+	assert.Equal(t, "hello from last-message file", result)
 }

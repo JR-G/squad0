@@ -63,6 +63,7 @@ func TestBridge_Chat_RateLimit_SwapsToFallback(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "fallback response", response)
 	assert.True(t, bridge.IsSwapped())
+	assert.Equal(t, "codex", bridge.Active().Name())
 }
 
 func TestBridge_Chat_RateLimit_NoFallback_ReturnsError(t *testing.T) {
@@ -129,9 +130,11 @@ func TestBridge_ResetSwap(t *testing.T) {
 
 	_, _ = bridge.Chat(context.Background(), "hi", "")
 	assert.True(t, bridge.IsSwapped())
+	assert.Equal(t, "codex", bridge.Active().Name())
 
 	bridge.ResetSwap()
 	assert.False(t, bridge.IsSwapped())
+	assert.Equal(t, "claude", bridge.Active().Name())
 }
 
 func TestBridge_Active_ReturnsActiveRuntime(t *testing.T) {
@@ -186,6 +189,7 @@ func TestBridge_Chat_Timeout_FallsBack(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "fallback after timeout", response)
 	assert.True(t, bridge.IsSwapped())
+	assert.Equal(t, "codex", bridge.Active().Name())
 }
 
 func TestBridge_Chat_ContextDeadline_FallsBack(t *testing.T) {
@@ -235,6 +239,33 @@ func TestBridge_Chat_WithCodexFallback_UsesCodexSend(t *testing.T) {
 	response, err := bridge.Chat(context.Background(), "test", t.TempDir())
 	require.NoError(t, err)
 	assert.Equal(t, "codex response", response)
+	assert.Equal(t, "codex", bridge.Active().Name())
+}
+
+func TestBridge_Chat_AfterSwap_UsesFallbackDirectly(t *testing.T) {
+	t.Parallel()
+
+	active := &fakeRuntime{
+		name:    "claude",
+		sendErr: fmt.Errorf("rate limit exceeded (429)"),
+	}
+	fallback := &fakeRuntime{
+		name:         "codex",
+		sendResponse: "fallback response",
+	}
+	bridge := runtime.NewSessionBridge(agent.RoleEngineer1, active, fallback)
+
+	first, err := bridge.Chat(context.Background(), "hi", "")
+	require.NoError(t, err)
+	assert.Equal(t, "fallback response", first)
+	assert.Equal(t, 1, active.sendCalls)
+	assert.Equal(t, 1, fallback.sendCalls)
+
+	second, err := bridge.Chat(context.Background(), "again", "")
+	require.NoError(t, err)
+	assert.Equal(t, "fallback response", second)
+	assert.Equal(t, 1, active.sendCalls, "claude should not be retried after a successful swap")
+	assert.Equal(t, 2, fallback.sendCalls)
 }
 
 func TestBridge_Stop_NilFallback_NoError(t *testing.T) {

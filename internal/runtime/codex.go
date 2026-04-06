@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/JR-G/squad0/internal/agent"
 )
@@ -35,13 +36,26 @@ func (rt *CodexRuntime) Start(_ context.Context, _ StartConfig) error {
 // parsed response. Uses the existing BuildCodexArgs/ParseCodexOutput
 // from the agent package.
 func (rt *CodexRuntime) Send(ctx context.Context, prompt string) (string, error) {
-	args := agent.BuildCodexArgs(prompt, rt.workDir, rt.model)
+	lastMessageFile, err := os.CreateTemp("", "squad0-codex-last-message-*.txt")
+	if err != nil {
+		return "", fmt.Errorf("create codex last-message file: %w", err)
+	}
+	lastMessagePath := lastMessageFile.Name()
+	if closeErr := lastMessageFile.Close(); closeErr != nil {
+		_ = os.Remove(lastMessagePath)
+		return "", fmt.Errorf("close codex last-message file: %w", closeErr)
+	}
+	defer func() {
+		_ = os.Remove(lastMessagePath)
+	}()
+
+	args := agent.BuildCodexArgs(prompt, rt.workDir, rt.model, lastMessagePath)
 	output, err := rt.runner.Run(ctx, "", rt.workDir, "codex", args...)
 	if err != nil {
-		return agent.ParseCodexOutput(string(output)), fmt.Errorf("codex send: %w", err)
+		return agent.ResolveCodexTranscript(string(output), lastMessagePath), fmt.Errorf("codex send: %w", err)
 	}
 
-	transcript := agent.ParseCodexOutput(string(output))
+	transcript := agent.ResolveCodexTranscript(string(output), lastMessagePath)
 	if transcript == "" {
 		return "", fmt.Errorf("codex returned empty response")
 	}

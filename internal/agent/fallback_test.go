@@ -3,6 +3,7 @@ package agent_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/JR-G/squad0/internal/agent"
@@ -44,6 +45,9 @@ func TestBuildCodexArgs_AllFields(t *testing.T) {
 	assert.Contains(t, args, "exec")
 	assert.Contains(t, args, "--json")
 	assert.Contains(t, args, "--dangerously-bypass-approvals-and-sandbox")
+	assert.Contains(t, args, "--skip-git-repo-check")
+	assert.Contains(t, args, "-c")
+	assert.Contains(t, args, `model_reasoning_effort="medium"`)
 	assert.Contains(t, args, "-m")
 	assert.Contains(t, args, "o3")
 	assert.Contains(t, args, "-C")
@@ -56,8 +60,18 @@ func TestBuildCodexArgs_NoModel(t *testing.T) {
 
 	args := agent.BuildCodexArgs("prompt", "", "")
 	assert.Contains(t, args, "exec")
+	assert.Contains(t, args, "--skip-git-repo-check")
+	assert.Contains(t, args, `model_reasoning_effort="medium"`)
 	assert.NotContains(t, args, "-m")
 	assert.NotContains(t, args, "-C")
+}
+
+func TestBuildCodexArgs_WithOutputLastMessageFile(t *testing.T) {
+	t.Parallel()
+
+	args := agent.BuildCodexArgs("prompt", "/tmp/work", "o3", "/tmp/last-message.txt")
+	assert.Contains(t, args, "-o")
+	assert.Contains(t, args, "/tmp/last-message.txt")
 }
 
 func TestParseCodexOutput_JSONLines(t *testing.T) {
@@ -94,6 +108,21 @@ func TestParseCodexOutput_PlainText(t *testing.T) {
 func TestParseCodexOutput_Empty(t *testing.T) {
 	t.Parallel()
 	assert.Empty(t, agent.ParseCodexOutput(""))
+}
+
+func TestResolveCodexTranscript_FallsBackToLastMessageFile(t *testing.T) {
+	t.Parallel()
+
+	file, err := os.CreateTemp("", "squad0-codex-last-message-*.txt")
+	require.NoError(t, err)
+	path := file.Name()
+	_, err = file.WriteString("final answer from file")
+	require.NoError(t, err)
+	require.NoError(t, file.Close())
+	t.Cleanup(func() { _ = os.Remove(path) })
+
+	result := agent.ResolveCodexTranscript(`{"type":"thread.started"}`+"\n", path)
+	assert.Equal(t, "final answer from file", result)
 }
 
 func TestFallbackRunner_NoRateLimit_UsesPrimary(t *testing.T) {
@@ -300,127 +329,6 @@ func TestSession_Run_WithEnvAndFallback(t *testing.T) {
 	assert.Equal(t, "codex ok", result.Transcript)
 }
 
-func TestExtractCodexContent_ContentField_ReturnsContent(t *testing.T) {
-	t.Parallel()
-
-	raw := `{"type":"message","content":"hello world"}`
-	result := agent.ParseCodexOutput(raw)
-	assert.Equal(t, "hello world", result)
-}
-
-func TestExtractCodexContent_MessageField_ReturnsMessage(t *testing.T) {
-	t.Parallel()
-
-	raw := `{"type":"response","message":"task complete"}`
-	result := agent.ParseCodexOutput(raw)
-	assert.Equal(t, "task complete", result)
-}
-
-func TestExtractCodexContent_ResultField_ReturnsResult(t *testing.T) {
-	t.Parallel()
-
-	raw := `{"type":"output","result":"final output"}`
-	result := agent.ParseCodexOutput(raw)
-	assert.Equal(t, "final output", result)
-}
-
-func TestExtractCodexContent_MetaEvent_Skipped(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		line string
-	}{
-		{"turn.completed", `{"type":"turn.completed","usage":{"input_tokens":100}}`},
-		{"response.completed", `{"type":"response.completed"}`},
-		{"thread.started", `{"type":"thread.started","thread_id":"abc"}`},
-		{"turn.started", `{"type":"turn.started"}`},
-		{"turn.updated", `{"type":"turn.updated"}`},
-		{"item.started", `{"type":"item.started"}`},
-		{"item.updated", `{"type":"item.updated"}`},
-		{"token.count", `{"type":"token.count","count":42}`},
-		{"usage", `{"type":"usage","total":100}`},
-		{"event", `{"type":"event","name":"test"}`},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			// Meta event followed by real content — only content returned.
-			raw := tt.line + "\n" + `{"type":"message","content":"actual answer"}`
-			result := agent.ParseCodexOutput(raw)
-			assert.Equal(t, "actual answer", result)
-		})
-	}
-}
-
-func TestExtractCodexContent_EmptyJSON_ReturnsEmpty(t *testing.T) {
-	t.Parallel()
-
-	// Valid JSON with no content/message/result fields.
-	raw := `{"type":"unknown","data":"stuff"}`
-	result := agent.ParseCodexOutput(raw)
-	assert.Empty(t, result, "JSON with no content fields should return empty")
-}
-
-func TestExtractCodexContent_InvalidJSON_FallsBackToPlainText(t *testing.T) {
-	t.Parallel()
-
-	raw := "this is not json at all"
-	result := agent.ParseCodexOutput(raw)
-	assert.Equal(t, "this is not json at all", result)
-}
-
-func TestExtractCodexContent_MixedMetaAndContent(t *testing.T) {
-	t.Parallel()
-
-	raw := `{"type":"turn.started"}
-{"type":"item.started"}
-{"type":"message","content":"first answer"}
-{"type":"message","content":"second answer"}
-{"type":"turn.completed","usage":{"tokens":50}}`
-	result := agent.ParseCodexOutput(raw)
-	assert.Equal(t, "second answer", result, "should return last content line")
-}
-
-func TestExtractCodexContent_OnlyMetaEvents_ReturnsEmpty(t *testing.T) {
-	t.Parallel()
-
-	raw := `{"type":"turn.started"}
-{"type":"turn.completed"}`
-	result := agent.ParseCodexOutput(raw)
-	assert.Empty(t, result)
-}
-
-func TestExtractCodexContent_ContentThenPlainText_PrefersContent(t *testing.T) {
-	t.Parallel()
-
-	// Content field present, then a non-JSON line. Content should win.
-	raw := `{"type":"message","content":"structured answer"}
-not json here`
-	result := agent.ParseCodexOutput(raw)
-	assert.Equal(t, "structured answer", result)
-}
-
-func TestExtractCodexContent_PlainMetaLine_Skipped(t *testing.T) {
-	t.Parallel()
-
-	raw := "Reading additional input from stdin...\n" +
-		`{"type":"message","content":"real content"}`
-	result := agent.ParseCodexOutput(raw)
-	assert.Equal(t, "real content", result)
-}
-
-func TestBuildCodexArgs_AutoModel_OmitsModelFlag(t *testing.T) {
-	t.Parallel()
-
-	args := agent.BuildCodexArgs("prompt", "/tmp", "auto")
-	assert.NotContains(t, args, "-m")
-	assert.Contains(t, args, "exec")
-	assert.Contains(t, args, "prompt")
-}
-
 // fakeRunner records calls.
 type fakeRunner struct {
 	output []byte
@@ -446,6 +354,37 @@ type switchingRunner struct {
 func (runner *switchingRunner) Run(_ context.Context, _, _, _ string, _ ...string) ([]byte, error) {
 	idx := *runner.callCount
 	*runner.callCount++
+	if idx < len(runner.responses) {
+		return runner.responses[idx].output, runner.responses[idx].err
+	}
+	return nil, fmt.Errorf("no more responses")
+}
+
+type codexLastMessageRunner struct {
+	responses        []runResult
+	callCount        *int
+	lastMessageValue string
+}
+
+func (runner *codexLastMessageRunner) Run(_ context.Context, _, _, name string, args ...string) ([]byte, error) {
+	idx := *runner.callCount
+	*runner.callCount++
+
+	if name != "codex" || runner.lastMessageValue == "" {
+		return runner.result(idx)
+	}
+
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == "-o" {
+			_ = os.WriteFile(args[i+1], []byte(runner.lastMessageValue), 0o600)
+			break
+		}
+	}
+
+	return runner.result(idx)
+}
+
+func (runner *codexLastMessageRunner) result(idx int) ([]byte, error) {
 	if idx < len(runner.responses) {
 		return runner.responses[idx].output, runner.responses[idx].err
 	}

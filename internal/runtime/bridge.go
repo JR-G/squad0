@@ -65,13 +65,12 @@ func (bridge *SessionBridge) Chat(ctx context.Context, prompt, workDir string) (
 	}
 
 	log.Printf("bridge: %s failed on %s, falling back to %s: %v", bridge.role, active.Name(), fallback.Name(), err)
-	bridge.markSwapped()
-
 	fallbackResponse, fallbackErr := runChat(ctx, fallback, prompt, workDir)
 	if fallbackErr != nil {
 		return fallbackResponse, fmt.Errorf("fallback %s also failed: %w", fallback.Name(), fallbackErr)
 	}
 
+	bridge.promoteFallback()
 	return fallbackResponse, nil
 }
 
@@ -108,12 +107,19 @@ func (bridge *SessionBridge) IsSwapped() bool {
 func (bridge *SessionBridge) ResetSwap() {
 	bridge.mu.Lock()
 	defer bridge.mu.Unlock()
+	if bridge.swapped && bridge.fallback != nil {
+		bridge.active, bridge.fallback = bridge.fallback, bridge.active
+	}
 	bridge.swapped = false
 }
 
-func (bridge *SessionBridge) markSwapped() {
+func (bridge *SessionBridge) promoteFallback() {
 	bridge.mu.Lock()
 	defer bridge.mu.Unlock()
+	if bridge.swapped || bridge.fallback == nil {
+		return
+	}
+	bridge.active, bridge.fallback = bridge.fallback, bridge.active
 	bridge.swapped = true
 }
 

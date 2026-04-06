@@ -176,7 +176,13 @@ func parseClaudeResult(output []byte, err error) SessionResult {
 func (session *Session) runCodex(ctx context.Context, cfg SessionConfig, runner ProcessRunner) (SessionResult, error) {
 	log.Printf("codex fallback started for %s: model=%s working_dir=%q", cfg.Role, session.codexModel, cfg.WorkingDir)
 
-	codexArgs := BuildCodexArgs(cfg.Prompt, cfg.WorkingDir, session.codexModel)
+	lastMessageFile, cleanup, err := createCodexLastMessageFile()
+	if err != nil {
+		return SessionResult{}, fmt.Errorf("create codex last-message file: %w", err)
+	}
+	defer cleanup()
+
+	codexArgs := BuildCodexArgs(cfg.Prompt, cfg.WorkingDir, session.codexModel, lastMessageFile)
 	output, err := runner.Run(ctx, "", cfg.WorkingDir, "codex", codexArgs...)
 
 	var result SessionResult
@@ -184,7 +190,7 @@ func (session *Session) runCodex(ctx context.Context, cfg SessionConfig, runner 
 
 	if err != nil {
 		result.ExitCode = ExtractExitError(err)
-		result.Transcript = ParseCodexOutput(result.RawOutput)
+		result.Transcript = ResolveCodexTranscript(result.RawOutput, lastMessageFile)
 		log.Printf(
 			"codex fallback failed for %s: exit=%d err=%v output=%q",
 			cfg.Role,
@@ -195,9 +201,28 @@ func (session *Session) runCodex(ctx context.Context, cfg SessionConfig, runner 
 		return result, fmt.Errorf("codex session failed (exit %d): %w", result.ExitCode, err)
 	}
 
-	result.Transcript = ParseCodexOutput(result.RawOutput)
+	result.Transcript = ResolveCodexTranscript(result.RawOutput, lastMessageFile)
+	if result.Transcript == "" {
+		return result, fmt.Errorf("codex returned empty response")
+	}
 	log.Printf("codex fallback succeeded for %s", cfg.Role)
 	return result, nil
+}
+
+func createCodexLastMessageFile() (path string, cleanup func(), err error) {
+	file, err := os.CreateTemp("", "squad0-codex-last-message-*.txt")
+	if err != nil {
+		return "", nil, err
+	}
+	path = file.Name()
+	if closeErr := file.Close(); closeErr != nil {
+		_ = os.Remove(path)
+		return "", nil, closeErr
+	}
+	cleanup = func() {
+		_ = os.Remove(path)
+	}
+	return path, cleanup, nil
 }
 
 func (session *Session) runnerWithEnv(env map[string]string) ProcessRunner {

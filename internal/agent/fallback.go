@@ -1,9 +1,11 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"log"
+	"os"
 	"strings"
 )
 
@@ -60,11 +62,19 @@ func IsRateLimited(output string, err error) bool {
 }
 
 // BuildCodexArgs constructs the argument list for `codex exec`.
-func BuildCodexArgs(prompt, workingDir, model string) []string {
+// When outputLastMessagePath is provided, Codex also writes the final
+// assistant message to that file so callers can recover it even when
+// the JSONL stream omits the final text.
+func BuildCodexArgs(prompt, workingDir, model string, outputLastMessagePath ...string) []string {
+	// Override interactive Codex defaults that break unattended fallback:
+	// some sessions run outside git repos, and squad0 should keep fallback
+	// reasoning effort at a moderate cost level.
 	args := []string{
 		"exec",
 		"--json",
 		"--dangerously-bypass-approvals-and-sandbox",
+		"--skip-git-repo-check",
+		"-c", `model_reasoning_effort="medium"`,
 	}
 
 	if model != "" && model != "auto" {
@@ -75,8 +85,30 @@ func BuildCodexArgs(prompt, workingDir, model string) []string {
 		args = append(args, "-C", workingDir)
 	}
 
+	if len(outputLastMessagePath) > 0 && outputLastMessagePath[0] != "" {
+		args = append(args, "-o", outputLastMessagePath[0])
+	}
+
 	args = append(args, prompt)
 	return args
+}
+
+// ResolveCodexTranscript returns the best transcript available from Codex.
+// It prefers the JSONL stdout stream and falls back to the explicit
+// last-message file when stdout does not include the final assistant text.
+func ResolveCodexTranscript(rawOutput, outputLastMessagePath string) string {
+	if transcript := ParseCodexOutput(rawOutput); transcript != "" {
+		return transcript
+	}
+	if outputLastMessagePath == "" {
+		return ""
+	}
+
+	data, err := os.ReadFile(outputLastMessagePath)
+	if err != nil {
+		return ""
+	}
+	return ParseCodexOutput(string(data))
 }
 
 // ParseCodexOutput extracts a transcript from Codex CLI's JSONL output.
@@ -95,47 +127,63 @@ func ParseCodexOutput(raw string) string {
 		}
 
 		content, ok := extractCodexContent(line)
-		if content != "" {
-			lastContent = content
+		if transcript := normalizeCodexTranscript(content); transcript != "" {
+			lastContent = transcript
 			continue
 		}
 
 		if !ok {
-			lastPlain = line
+			lastPlain = normalizeCodexTranscript(line)
 		}
 	}
 
 	if lastContent != "" {
 		return lastContent
 	}
-	return lastPlain
+	return normalizeCodexTranscript(lastPlain)
 }
 
 func extractCodexContent(line string) (string, bool) {
+	return extractCodexContentBytes([]byte(line))
+}
+
+func extractCodexContentBytes(data []byte) (string, bool) {
 	var msg struct {
-		Type    string `json:"type"`
-		Content string `json:"content"`
-		Message string `json:"message"`
-		Result  string `json:"result"`
+		Type             string          `json:"type"`
+		Role             string          `json:"role"`
+		Content          json.RawMessage `json:"content"`
+		Message          json.RawMessage `json:"message"`
+		Result           json.RawMessage `json:"result"`
+		Payload          json.RawMessage `json:"payload"`
+		LastAgentMessage string          `json:"last_agent_message"`
 	}
 
-	if json.Unmarshal([]byte(line), &msg) != nil {
+	if json.Unmarshal(data, &msg) != nil {
 		return "", false
+	}
+
+	if content := normalizeCodexTranscript(msg.LastAgentMessage); content != "" {
+		return content, true
+	}
+
+	if content, ok := extractCodexContentBytes(msg.Payload); ok {
+		return content, true
 	}
 
 	if isCodexMetaEvent(msg.Type) {
 		return "", true
 	}
 
-	if msg.Content != "" {
-		return msg.Content, true
+	if msg.Role != "" && msg.Role != "assistant" {
+		return "", true
 	}
-	if msg.Message != "" {
-		return msg.Message, true
+
+	for _, field := range []json.RawMessage{msg.Content, msg.Message, msg.Result} {
+		if content, ok := extractCodexText(field); ok {
+			return content, true
+		}
 	}
-	if msg.Result != "" {
-		return msg.Result, true
-	}
+
 	return "", true
 }
 
@@ -146,6 +194,65 @@ func isCodexMetaEvent(eventType string) bool {
 	default:
 		return false
 	}
+}
+
+func extractCodexText(raw json.RawMessage) (string, bool) {
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return "", false
+	}
+
+	var text string
+	if json.Unmarshal(raw, &text) == nil {
+		return text, true
+	}
+
+	var items []struct {
+		Text    string `json:"text"`
+		Content string `json:"content"`
+		Message string `json:"message"`
+		Result  string `json:"result"`
+	}
+	if json.Unmarshal(raw, &items) == nil {
+		parts := make([]string, 0, len(items))
+		for _, item := range items {
+			switch {
+			case normalizeCodexTranscript(item.Text) != "":
+				parts = append(parts, normalizeCodexTranscript(item.Text))
+			case normalizeCodexTranscript(item.Content) != "":
+				parts = append(parts, normalizeCodexTranscript(item.Content))
+			case normalizeCodexTranscript(item.Message) != "":
+				parts = append(parts, normalizeCodexTranscript(item.Message))
+			case normalizeCodexTranscript(item.Result) != "":
+				parts = append(parts, normalizeCodexTranscript(item.Result))
+			}
+		}
+		return strings.Join(parts, "\n"), true
+	}
+
+	var obj map[string]json.RawMessage
+	if json.Unmarshal(raw, &obj) != nil {
+		return "", false
+	}
+
+	for _, key := range []string{"last_agent_message", "text", "content", "message", "result", "payload"} {
+		value, ok := obj[key]
+		if !ok {
+			continue
+		}
+		if text, ok := extractCodexText(value); ok {
+			return text, true
+		}
+	}
+
+	return "", true
+}
+
+func normalizeCodexTranscript(text string) string {
+	trimmed := strings.TrimSpace(text)
+	if strings.EqualFold(trimmed, "null") {
+		return ""
+	}
+	return trimmed
 }
 
 func isCodexPlainMetaLine(line string) bool {
