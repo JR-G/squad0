@@ -374,6 +374,51 @@ func TestHandleMessageEvent_BotSubtype_Ignored(t *testing.T) {
 	assert.Empty(t, collector.get())
 }
 
+func TestHandleMessageEvent_NonBotSubtype_Ignored(t *testing.T) {
+	t.Parallel()
+
+	bot, collector := newListenerTestBot(t)
+
+	bot.HandleMessageEvent(context.Background(), &slackevents.MessageEvent{
+		Channel: "C002",
+		User:    "",
+		Text:    "",
+		SubType: "message_changed",
+	})
+
+	assert.Empty(t, collector.get())
+}
+
+func TestHandleMessageEvent_EmptyText_Ignored(t *testing.T) {
+	t.Parallel()
+
+	bot, collector := newListenerTestBot(t)
+
+	bot.HandleMessageEvent(context.Background(), &slackevents.MessageEvent{
+		Channel:     "C002",
+		User:        "U001",
+		Text:        "   ",
+		ChannelType: "channel",
+	})
+
+	assert.Empty(t, collector.get())
+}
+
+func TestHandleMessageEvent_EmptyUser_Ignored(t *testing.T) {
+	t.Parallel()
+
+	bot, collector := newListenerTestBot(t)
+
+	bot.HandleMessageEvent(context.Background(), &slackevents.MessageEvent{
+		Channel:     "C002",
+		User:        "",
+		Text:        "hello",
+		ChannelType: "channel",
+	})
+
+	assert.Empty(t, collector.get())
+}
+
 func TestAckRequest_NilRequest_DoesNotPanic(t *testing.T) {
 	t.Parallel()
 

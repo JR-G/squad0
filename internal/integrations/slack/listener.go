@@ -3,6 +3,7 @@ package slack
 import (
 	"context"
 	"log"
+	"strings"
 
 	slackapi "github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
@@ -78,7 +79,15 @@ func (bot *Bot) HandleMessageEvent(ctx context.Context, event *slackevents.Messa
 		return
 	}
 
-	if event.BotID != "" || event.SubType == "bot_message" {
+	// Only route real user-authored messages into squad0's command and
+	// conversation pipeline. Slack emits many message subtypes
+	// (message_changed, channel_join, thread_broadcast, etc.) that can
+	// arrive with empty text/user fields and should not trigger agents.
+	if event.BotID != "" || event.SubType != "" {
+		return
+	}
+
+	if event.User == "" || strings.TrimSpace(event.Text) == "" {
 		return
 	}
 
