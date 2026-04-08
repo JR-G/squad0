@@ -56,12 +56,17 @@ func (orch *Orchestrator) processSituations(ctx context.Context) {
 }
 
 // dispatchPMActions posts the PM's response and handles escalation.
-// Critical situations also get flagged in triage.
+// Critical situations also get flagged in triage. Extracts deferral
+// signals so the assigner skips tickets the PM wants held.
 func (orch *Orchestrator) dispatchPMActions(ctx context.Context, situations []Situation, response string) {
 	response = filterPassResponse(response)
 	if response == "" {
 		return
 	}
+
+	// Extract deferrals before posting — the assigner needs to know
+	// before the next tick's tryAssignWork runs.
+	orch.extractDeferrals(situations, response)
 
 	// Post the PM's management actions to engineering.
 	orch.postAsRole(ctx, "engineering", response, agent.RolePM)
@@ -70,6 +75,30 @@ func (orch *Orchestrator) dispatchPMActions(ctx context.Context, situations []Si
 	for _, sit := range situations {
 		orch.escalateSituation(ctx, sit)
 		orch.situations.Resolve(sit.Key())
+	}
+}
+
+// extractDeferrals scans the PM's response for deferral signals and
+// marks mentioned tickets as deferred in the assigner. Deferral lasts
+// 24 hours — the PM can re-evaluate next cycle.
+func (orch *Orchestrator) extractDeferrals(situations []Situation, response string) {
+	if orch.assigner == nil {
+		return
+	}
+
+	if !containsDeferralSignal(response) {
+		return
+	}
+
+	// Check each situation's ticket — if the PM's response mentions
+	// deferral and the ticket appears near a deferral word, hold it.
+	for _, sit := range situations {
+		if sit.Ticket == "" {
+			continue
+		}
+		if ticketMentionedNearDeferral(response, sit.Ticket) {
+			orch.assigner.DeferTicket(sit.Ticket, 24*time.Hour)
+		}
 	}
 }
 
@@ -85,6 +114,11 @@ func (orch *Orchestrator) escalateSituation(ctx context.Context, sit Situation) 
 	if orch.escalations != nil {
 		orch.escalations.Track(sit)
 	}
+}
+
+// ExtractDeferralsForTest exports extractDeferrals for testing.
+func (orch *Orchestrator) ExtractDeferralsForTest(situations []Situation, response string) {
+	orch.extractDeferrals(situations, response)
 }
 
 // PostDailySummary posts a summary of pipeline state to #feed.

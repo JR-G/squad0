@@ -321,10 +321,10 @@ func TestUpdateRoster_RefreshesConversationNames(t *testing.T) {
 	engine.OnMessage(ctx, "engineering", "ceo", "hello")
 
 	// After roster update, any prompt for engineer-1 or engineer-2
-	// should contain their updated name in the "Reply as" instruction.
+	// should contain their updated name in the "You are" instruction.
 	foundRoster := false
 	for _, call := range runner.calls {
-		if strings.Contains(call.stdin, "Reply as Spark") || strings.Contains(call.stdin, "Reply as Nova") {
+		if strings.Contains(call.stdin, "You are Spark") || strings.Contains(call.stdin, "You are Nova") {
 			foundRoster = true
 			break
 		}

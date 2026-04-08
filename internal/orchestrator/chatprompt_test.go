@@ -45,10 +45,10 @@ func TestBuildChatPrompt_ContainsReplyInstruction(t *testing.T) {
 	engine := orchestrator.NewConversationEngine(agents, factStores, nil, nil)
 	engine.OnMessage(ctx, "engineering", "ceo", "can someone merge that PR?")
 
-	// At least one prompt should contain the "Reply as" instruction.
+	// At least one prompt should contain the "You are" instruction.
 	foundReplyAs := false
 	for _, call := range runner.calls {
-		if containsStr(call.stdin, "Reply as") {
+		if containsStr(call.stdin, "You are") {
 			foundReplyAs = true
 			break
 		}

@@ -68,9 +68,9 @@ func ReplyInstructionForTest(name, channel string) string {
 
 func replyInstruction(name, channel string) string {
 	if channel == chitchatChannel {
-		return fmt.Sprintf("You're %s, hanging out with your team. Say whatever's on your mind — an opinion, a reaction, something funny, a rant, a random thought. Talk like a real person on Slack with colleagues you like. 1-3 sentences.", name)
+		return fmt.Sprintf("You are %s. Say \"I\" — never refer to yourself by name or role. Say whatever's on your mind — an opinion, a reaction, something funny, a rant, a random thought. Talk like a real person on Slack with colleagues you like. 1-3 sentences.", name)
 	}
-	return fmt.Sprintf("Reply as %s. 1-3 sentences, Slack formatting. Only respond if you have something to add.", name)
+	return fmt.Sprintf("You are %s. Say \"I\" — never refer to yourself by name or role. 1-3 sentences, Slack formatting. Only respond if you have something to add.", name)
 }
 
 func channelInstruction(channel string) string {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/JR-G/squad0/internal/agent"
 )
@@ -52,6 +53,15 @@ func (assigner *Assigner) SetLinearURL(url string) {
 // SetSmartAssigner connects the smart filtering layer.
 func (assigner *Assigner) SetSmartAssigner(sa *SmartAssigner) {
 	assigner.smartAssigner = sa
+}
+
+// DeferTicket marks a ticket as deferred in the smart assigner.
+// No-op if smart dispatch is not configured.
+func (assigner *Assigner) DeferTicket(ticket string, duration time.Duration) {
+	if assigner.smartAssigner == nil {
+		return
+	}
+	assigner.smartAssigner.DeferTicket(ticket, duration)
 }
 
 // RequestAssignments fetches tickets from Linear, filters them, and

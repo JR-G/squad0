@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/JR-G/squad0/internal/agent"
 	"github.com/JR-G/squad0/internal/pipeline"
@@ -15,20 +16,22 @@ import (
 // checking, priority ordering, skill matching, and circuit breakers.
 // The PM agent is only consulted for genuine tiebreakers.
 type SmartAssigner struct {
-	mu            sync.Mutex
-	failureCounts map[string]int // ticket → failure count
-	pipelineStore *pipeline.WorkItemStore
-	doneTickets   map[string]bool // cache of completed ticket IDs
-	maxFailures   int
+	mu              sync.Mutex
+	failureCounts   map[string]int       // ticket → failure count
+	deferredTickets map[string]time.Time // ticket → deferred until
+	pipelineStore   *pipeline.WorkItemStore
+	doneTickets     map[string]bool // cache of completed ticket IDs
+	maxFailures     int
 }
 
 // NewSmartAssigner creates a SmartAssigner with default settings.
 func NewSmartAssigner(pipelineStore *pipeline.WorkItemStore) *SmartAssigner {
 	return &SmartAssigner{
-		failureCounts: make(map[string]int),
-		pipelineStore: pipelineStore,
-		doneTickets:   make(map[string]bool),
-		maxFailures:   3,
+		failureCounts:   make(map[string]int),
+		deferredTickets: make(map[string]time.Time),
+		pipelineStore:   pipelineStore,
+		doneTickets:     make(map[string]bool),
+		maxFailures:     3,
 	}
 }
 
@@ -54,6 +57,30 @@ func (sa *SmartAssigner) IsCircuitOpen(ticket string) bool {
 	return sa.failureCounts[ticket] >= sa.maxFailures
 }
 
+// DeferTicket marks a ticket as deferred for the given duration.
+// The assigner will skip this ticket until the deferral expires.
+func (sa *SmartAssigner) DeferTicket(ticket string, duration time.Duration) {
+	sa.mu.Lock()
+	defer sa.mu.Unlock()
+	sa.deferredTickets[ticket] = time.Now().Add(duration)
+	log.Printf("assign: deferred %s for %s", ticket, duration)
+}
+
+// IsDeferred returns true if the ticket is currently deferred.
+func (sa *SmartAssigner) IsDeferred(ticket string) bool {
+	sa.mu.Lock()
+	defer sa.mu.Unlock()
+	until, ok := sa.deferredTickets[ticket]
+	if !ok {
+		return false
+	}
+	if time.Now().After(until) {
+		delete(sa.deferredTickets, ticket)
+		return false
+	}
+	return true
+}
+
 // FilterAndRank takes raw Linear tickets and idle engineers, and
 // returns assignments sorted by priority with dependency checking,
 // circuit breakers, and skill matching applied.
@@ -76,6 +103,11 @@ func (sa *SmartAssigner) filterEligible(ctx context.Context, tickets []LinearTic
 	eligible := make([]LinearTicket, 0, len(tickets))
 
 	for _, ticket := range tickets {
+		if sa.IsDeferred(ticket.ID) {
+			log.Printf("assign: skipping %s — deferred by PM", ticket.ID)
+			continue
+		}
+
 		if sa.IsCircuitOpen(ticket.ID) {
 			log.Printf("assign: skipping %s — circuit open (%d failures)", ticket.ID, sa.failureCounts[ticket.ID])
 			continue
@@ -117,6 +149,13 @@ func (sa *SmartAssigner) isAlreadyInPipeline(ctx context.Context, ticket string)
 
 	for _, item := range items {
 		if !item.Stage.IsTerminal() {
+			return true
+		}
+		// A "failed" item with an open PR means the engineer went idle
+		// while the PR was in review. The PR is still live — don't
+		// reassign the ticket to someone else.
+		if item.Stage == pipeline.StageFailed && item.PRURL != "" {
+			log.Printf("assign: skipping %s — failed but PR still open (%s)", ticket, item.PRURL)
 			return true
 		}
 	}

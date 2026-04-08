@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/JR-G/squad0/internal/agent"
 	"github.com/JR-G/squad0/internal/memory"
@@ -132,6 +133,36 @@ func TestSmartAssigner_FilterAndRank_SkipsInPipeline(t *testing.T) {
 	assert.Equal(t, "JAM-NEW", assignments[0].Ticket)
 }
 
+func TestSmartAssigner_FilterAndRank_SkipsFailedWithOpenPR(t *testing.T) {
+	t.Parallel()
+
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	ctx := context.Background()
+	store := pipeline.NewWorkItemStore(sqlDB)
+	require.NoError(t, store.InitSchema(ctx))
+
+	// Simulate: engineer went idle, item marked failed, but PR is still open.
+	itemID, _ := store.Create(ctx, pipeline.WorkItem{
+		Ticket: "JAM-PR", Engineer: agent.RoleEngineer1, Stage: pipeline.StageReviewing,
+	})
+	_ = store.SetPRURL(ctx, itemID, "https://github.com/org/repo/pull/42")
+	_ = store.Advance(ctx, itemID, pipeline.StageFailed)
+
+	sa := orchestrator.NewSmartAssigner(store)
+
+	tickets := []orchestrator.LinearTicket{
+		{ID: "JAM-PR", Title: "has open PR", Priority: 1},
+		{ID: "JAM-FREE", Title: "no work yet", Priority: 2},
+	}
+
+	assignments := sa.FilterAndRank(ctx, tickets, []agent.Role{agent.RoleEngineer2})
+	require.Len(t, assignments, 1)
+	assert.Equal(t, "JAM-FREE", assignments[0].Ticket)
+}
+
 func TestSmartAssigner_FailureCount(t *testing.T) {
 	t.Parallel()
 
@@ -139,6 +170,25 @@ func TestSmartAssigner_FailureCount(t *testing.T) {
 	assert.Equal(t, 0, sa.FailureCount("JAM-1"))
 	sa.RecordFailure("JAM-1")
 	assert.Equal(t, 1, sa.FailureCount("JAM-1"))
+}
+
+func TestSmartAssigner_DeferTicket_SkipsDeferredTickets(t *testing.T) {
+	t.Parallel()
+
+	sa := orchestrator.NewSmartAssigner(nil)
+	sa.DeferTicket("JAM-20", 1*time.Hour)
+
+	assert.True(t, sa.IsDeferred("JAM-20"))
+	assert.False(t, sa.IsDeferred("JAM-21"))
+
+	tickets := []orchestrator.LinearTicket{
+		{ID: "JAM-20", Title: "deferred", Priority: 1},
+		{ID: "JAM-21", Title: "available", Priority: 2},
+	}
+
+	assignments := sa.FilterAndRank(context.Background(), tickets, []agent.Role{agent.RoleEngineer1})
+	require.Len(t, assignments, 1)
+	assert.Equal(t, "JAM-21", assignments[0].Ticket)
 }
 
 func TestAssigner_SetLinearAPIKey_EnablesSmartDispatch(t *testing.T) {

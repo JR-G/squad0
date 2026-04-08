@@ -77,7 +77,7 @@ func TestBuildChatPrompt_Engineer3Role_HasReplyAs(t *testing.T) {
 	engine.OnMessage(ctx, "engineering", "ceo", "thoughts on the CLI DX?")
 
 	if len(runner.calls) > 0 {
-		assert.Contains(t, runner.calls[0].stdin, "Reply as",
+		assert.Contains(t, runner.calls[0].stdin, "You are",
 			"engineer-3 prompt should contain Reply as instruction",
 		)
 	}
@@ -107,7 +107,7 @@ func TestBuildChatPrompt_TechLeadRole_HasReplyAs(t *testing.T) {
 
 	if len(runner.calls) > 0 {
 		// Identity is now in CLAUDE.md; the prompt just has "Reply as {name}".
-		assert.Contains(t, runner.calls[0].stdin, "Reply as")
+		assert.Contains(t, runner.calls[0].stdin, "You are")
 	}
 }
 

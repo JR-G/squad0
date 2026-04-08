@@ -233,7 +233,7 @@ func TestBuildChatPrompt_WithRoster_UsesRosterNames(t *testing.T) {
 	rosterNames := []string{"Ada", "Kai", "Spark", "Nova", "Flux", "Atlas", "Iris"}
 	for _, call := range runner.calls {
 		for _, name := range rosterNames {
-			if strings.Contains(call.stdin, "Reply as "+name) {
+			if strings.Contains(call.stdin, "You are "+name) {
 				foundRosterName = true
 				break
 			}
@@ -303,7 +303,7 @@ func TestBuildChatPrompt_DesignerRole_HasReplyAs(t *testing.T) {
 
 	if len(runner.calls) > 0 {
 		// Identity is now in CLAUDE.md; the prompt just has "Reply as {name}".
-		assert.Contains(t, runner.calls[0].stdin, "Reply as")
+		assert.Contains(t, runner.calls[0].stdin, "You are")
 	}
 }
 
@@ -331,7 +331,7 @@ func TestBuildChatPrompt_PMRole_HasReplyAs(t *testing.T) {
 
 	if len(runner.calls) > 0 {
 		// Identity is now in CLAUDE.md; the prompt just has "Reply as {name}".
-		assert.Contains(t, runner.calls[0].stdin, "Reply as")
+		assert.Contains(t, runner.calls[0].stdin, "You are")
 	}
 }
 

@@ -54,7 +54,7 @@ func TestSetVoices_LoadsPersonalityVoiceSections(t *testing.T) {
 	// Verify the engine processed messages and at least one prompt uses
 	// the minimal Reply as format.
 	assert.GreaterOrEqual(t, len(runner.calls), 1, "expected at least one agent to be called")
-	assert.Contains(t, runner.calls[0].stdin, "Reply as",
+	assert.Contains(t, runner.calls[0].stdin, "You are",
 		"prompt should use the minimal Reply as format")
 }
 

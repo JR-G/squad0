@@ -291,7 +291,7 @@ func TestBuildChatPrompt_AllRoles_ContainReplyAs(t *testing.T) {
 		runner := runners[role]
 		if len(runner.calls) > 0 {
 			calledCount++
-			assert.Contains(t, runner.calls[0].stdin, "Reply as",
+			assert.Contains(t, runner.calls[0].stdin, "You are",
 				"prompt for %s should contain Reply as instruction", role)
 		}
 	}
