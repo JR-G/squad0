@@ -151,11 +151,11 @@ func (sa *SmartAssigner) isAlreadyInPipeline(ctx context.Context, ticket string)
 		if !item.Stage.IsTerminal() {
 			return true
 		}
-		// A "failed" item with an open PR means the engineer went idle
-		// while the PR was in review. The PR is still live — don't
-		// reassign the ticket to someone else.
-		if item.Stage == pipeline.StageFailed && item.PRURL != "" {
-			log.Printf("assign: skipping %s — failed but PR still open (%s)", ticket, item.PRURL)
+		// A recently failed item with a PR means the engineer went
+		// idle while the PR was in review. Only block reassignment
+		// for recent failures — old ones are stale.
+		if item.Stage == pipeline.StageFailed && item.PRURL != "" && time.Since(item.UpdatedAt) < 2*time.Hour {
+			log.Printf("assign: skipping %s — recently failed with open PR (%s)", ticket, item.PRURL)
 			return true
 		}
 	}
