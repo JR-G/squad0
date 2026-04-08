@@ -114,6 +114,14 @@ func TestThreadTracker_ShortMessages_NoKeyPoints(t *testing.T) {
 	assert.Equal(t, 0, len(state.KeyPoints))
 }
 
+func TestConversationEngine_ThreadTrackerForTest_ReturnsTracker(t *testing.T) {
+	t.Parallel()
+
+	engine := orchestrator.NewConversationEngine(nil, nil, nil, nil)
+	tracker := engine.ThreadTrackerForTest()
+	assert.NotNil(t, tracker)
+}
+
 func TestPromptForPhase_Exploring_IsOpen(t *testing.T) {
 	t.Parallel()
 

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/JR-G/squad0/internal/agent"
@@ -66,6 +67,78 @@ func TestWorkSession_Cleanup_NonexistentWorktree_DoesNotPanic(t *testing.T) {
 
 	ws.Cleanup(context.Background())
 	ws.Cleanup(context.Background())
+}
+
+func TestNewWorkSession_ExistingBranch_ChecksOutInstead(t *testing.T) {
+	t.Parallel()
+
+	repoDir := t.TempDir()
+	initTestRepo(t, repoDir)
+
+	// Create the branch ahead of time (simulates an open PR).
+	c := execCommand(repoDir, "git", "branch", "feat/jam-50")
+	output, err := c.CombinedOutput()
+	require.NoError(t, err, "branch creation failed: %s", string(output))
+
+	// NewWorkSession should detect the existing branch and check it
+	// out instead of failing with "branch already exists".
+	ws, err := orchestrator.NewWorkSession(context.Background(), repoDir, agent.RoleEngineer1, "JAM-50")
+	require.NoError(t, err)
+	assert.DirExists(t, ws.Dir())
+
+	branchCmd := execCommand(ws.Dir(), "git", "rev-parse", "--abbrev-ref", "HEAD")
+	branchOutput, branchErr := branchCmd.Output()
+	require.NoError(t, branchErr)
+	assert.Equal(t, "feat/jam-50", strings.TrimSpace(string(branchOutput)))
+
+	ws.Cleanup(context.Background())
+}
+
+func TestNewFixUpSession_ChecksOutExistingBranch(t *testing.T) {
+	t.Parallel()
+
+	repoDir := t.TempDir()
+	initTestRepo(t, repoDir)
+
+	// Create the branch that a PR would be on.
+	c := execCommand(repoDir, "git", "branch", "feat/jam-42")
+	output, err := c.CombinedOutput()
+	require.NoError(t, err, "branch creation failed: %s", string(output))
+
+	// NewFixUpSession should check out that existing branch.
+	// prURL is empty so extractPRBranch will fail, falling back to the
+	// constructed name feat/jam-42.
+	ws, err := orchestrator.NewFixUpSession(context.Background(), repoDir, "", agent.RoleEngineer1, "JAM-42")
+	require.NoError(t, err)
+	assert.DirExists(t, ws.Dir())
+
+	// Verify the worktree is on the right branch.
+	branchCmd := execCommand(ws.Dir(), "git", "rev-parse", "--abbrev-ref", "HEAD")
+	branchOutput, branchErr := branchCmd.Output()
+	require.NoError(t, branchErr)
+	assert.Equal(t, "feat/jam-42", strings.TrimSpace(string(branchOutput)))
+
+	ws.Cleanup(context.Background())
+}
+
+func TestNewFixUpSession_BranchNotExist_FallsBackToConstructed(t *testing.T) {
+	t.Parallel()
+
+	repoDir := t.TempDir()
+	initTestRepo(t, repoDir)
+
+	// No branch exists yet — NewFixUpSession constructs feat/jam-99
+	// which also doesn't exist, so this should fail.
+	_, err := orchestrator.NewFixUpSession(context.Background(), repoDir, "", agent.RoleEngineer2, "JAM-99")
+	// The branch doesn't exist locally, so worktree add fails.
+	require.Error(t, err)
+}
+
+func TestNewFixUpSession_InvalidRepo_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	_, err := orchestrator.NewFixUpSession(context.Background(), "/nonexistent/repo", "", agent.RoleEngineer1, "JAM-1")
+	require.Error(t, err)
 }
 
 func TestRescuePR_ExtractsPRURL(t *testing.T) {

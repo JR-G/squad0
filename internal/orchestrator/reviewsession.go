@@ -415,11 +415,22 @@ func (orch *Orchestrator) startFixUp(ctx context.Context, prURL, ticket string, 
 	time.Sleep(orch.acknowledgePause())
 	orch.acknowledgeThread(ctx, engineerAgent, engineerRole, "engineering")
 
+	// Work in a worktree on the PR branch so the agent doesn't
+	// create a new branch/PR. If worktree creation fails, fall back
+	// to TargetRepoDir so fix-ups still attempt to run.
+	workDir, fixUpSession := orch.setupFixUpWorktree(ctx, prURL, engineerRole, ticket)
+	if fixUpSession != nil {
+		defer fixUpSession.Cleanup(ctx)
+	}
+
+	orch.writeMCPConfig(engineerAgent, workDir)
+	defer func() { _ = agent.RemoveMCPConfig(workDir) }()
+
 	handoffCtx := BuildHandoffContext(ctx, orch.handoffStore, ticket)
 	prompt := handoffCtx + BuildFixUpPrompt(prURL, ticket)
 	branch := fmt.Sprintf("feat/%s", strings.ToLower(ticket))
 
-	result, err := engineerAgent.ExecuteTask(ctx, prompt, nil, orch.cfg.TargetRepoDir)
+	result, err := engineerAgent.ExecuteTask(ctx, prompt, nil, workDir)
 	if err != nil {
 		log.Printf("fix-up session failed for %s on %s: %v", engineerRole, ticket, err)
 		orch.writeHandoff(ctx, ticket, engineerRole, "failed", result.Transcript, branch)
@@ -432,7 +443,7 @@ func (orch *Orchestrator) startFixUp(ctx context.Context, prURL, ticket string, 
 	orch.writeHandoff(ctx, ticket, engineerRole, "completed", result.Transcript, branch)
 
 	// Pre-submission checklist — verify work is clean before re-review.
-	RunPreSubmitCheck(ctx, engineerAgent, orch.cfg.TargetRepoDir)
+	RunPreSubmitCheck(ctx, engineerAgent, workDir)
 
 	log.Printf("fix-up: %s completed fix-up for %s", engineerName, ticket)
 
@@ -448,6 +459,16 @@ func (orch *Orchestrator) startFixUp(ctx context.Context, prURL, ticket string, 
 	// lifecycle: fix → re-review → approve/reject.
 	orch.emitEvent(ctx, EventFixUpComplete, prURL, ticket, workItemID, engineerRole)
 	orch.startReReview(ctx, prURL, ticket, workItemID, engineerRole)
+}
+
+func (orch *Orchestrator) setupFixUpWorktree(ctx context.Context, prURL string, role agent.Role, ticket string) (string, *WorkSession) {
+	session, err := NewFixUpSession(ctx, orch.cfg.TargetRepoDir, prURL, role, ticket)
+	if err != nil {
+		log.Printf("fix-up: worktree failed for %s, using repo dir: %v", ticket, err)
+		return orch.cfg.TargetRepoDir, nil
+	}
+	dir := session.Dir()
+	return dir, session
 }
 
 // forceApproval ensures the reviewer's GitHub approval is actually submitted.

@@ -77,7 +77,7 @@ const fixUpPromptTemplate = `You need to address review feedback on your PR for 
 5. Fix the code, update tests, handle edge cases
 6. If the branch is behind main, rebase: git fetch origin main && git rebase origin/main
 7. Commit your fixes with conventional commit messages
-8. Push to the same branch — do NOT create a new PR
+8. Push: git push
 9. Verify CI passes after pushing: gh pr checks %s
 10. After fixing, reply to the review thread: gh pr comment %s --body 'Addressed all feedback: [brief summary of what you fixed]'
 

@@ -53,23 +53,58 @@ func NewWorkSession(ctx context.Context, repoDir string, role agent.Role, ticket
 
 	var lastErr error
 	for attempt := range maxWorktreeRetries {
-		cleanupStaleWorktree(ctx, repoDir, worktreeDir, branch)
+		cleanupStaleWorktree(ctx, repoDir, worktreeDir)
 
-		output, err := gitCommand(ctx, repoDir, "worktree", "add", "-b", branch, worktreeDir)
+		session, err := createWorktree(ctx, repoDir, worktreeDir, branch, role)
 		if err == nil {
-			log.Printf("created worktree for %s at %s (branch %s)", role, worktreeDir, branch)
-			return &WorkSession{repoDir: repoDir, worktreeDir: worktreeDir}, nil
+			return session, nil
 		}
 
-		lastErr = fmt.Errorf("creating worktree (attempt %d): %s: %w", attempt+1, string(output), err)
+		lastErr = fmt.Errorf("creating worktree (attempt %d): %w", attempt+1, err)
 		log.Printf("worktree attempt %d failed for %s: %v", attempt+1, role, lastErr)
 
-		// More aggressive cleanup on retry: remove the directory manually
-		// and prune in case git's internal state is stale.
-		forceCleanup(ctx, repoDir, worktreeDir, branch)
+		forceCleanup(ctx, repoDir, worktreeDir)
 	}
 
 	return nil, lastErr
+}
+
+// NewFixUpSession creates a worktree from an existing PR branch so
+// fix-up sessions work in isolation on the correct branch. The agent
+// pushes to the same branch — no new PRs created.
+func NewFixUpSession(ctx context.Context, repoDir, prURL string, role agent.Role, ticket string) (*WorkSession, error) {
+	worktreeDir := fmt.Sprintf("%s/.worktrees/%s", repoDir, role)
+	branch := extractPRBranch(ctx, repoDir, prURL)
+	if branch == "" {
+		branch = fmt.Sprintf("feat/%s", strings.ToLower(ticket))
+	}
+
+	// Fetch the branch from origin so the worktree has it.
+	_, _ = gitCommand(ctx, repoDir, "fetch", "origin", branch)
+
+	// Clean any stale worktree for this role.
+	_ = os.RemoveAll(worktreeDir)
+	_, _ = gitCommand(ctx, repoDir, "worktree", "prune")
+
+	// Check out the existing branch — no -b flag.
+	output, err := gitCommand(ctx, repoDir, "worktree", "add", worktreeDir, branch)
+	if err != nil {
+		return nil, fmt.Errorf("creating fix-up worktree for %s on %s: %s: %w", role, branch, string(output), err)
+	}
+
+	log.Printf("created fix-up worktree for %s at %s (branch %s)", role, worktreeDir, branch)
+	return &WorkSession{repoDir: repoDir, worktreeDir: worktreeDir}, nil
+}
+
+// extractPRBranch uses gh to get the head branch of a PR.
+func extractPRBranch(ctx context.Context, repoDir, prURL string) string {
+	cmd := exec.CommandContext(ctx, "gh", "pr", "view", prURL, "--json", "headRefName", "--jq", ".headRefName")
+	cmd.Dir = repoDir
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
 }
 
 // Dir returns the worktree directory path.
@@ -92,20 +127,48 @@ func logWorktreeRemoval(ctx context.Context, repoDir, worktreeDir string) {
 	log.Printf("cleaned up worktree %s", worktreeDir)
 }
 
-func cleanupStaleWorktree(ctx context.Context, repoDir, worktreeDir, branch string) {
+func createWorktree(ctx context.Context, repoDir, worktreeDir, branch string, role agent.Role) (*WorkSession, error) {
+	// New branch — first attempt for fresh tickets.
+	output, err := gitCommand(ctx, repoDir, "worktree", "add", "-b", branch, worktreeDir)
+	if err == nil {
+		log.Printf("created worktree for %s at %s (branch %s)", role, worktreeDir, branch)
+		return &WorkSession{repoDir: repoDir, worktreeDir: worktreeDir}, nil
+	}
+
+	// Branch already exists (e.g. open PR) — check it out instead.
+	if !branchExists(ctx, repoDir, branch) {
+		return nil, fmt.Errorf("%s: %w", string(output), err)
+	}
+
+	output, err = gitCommand(ctx, repoDir, "worktree", "add", worktreeDir, branch)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", string(output), err)
+	}
+
+	log.Printf("created worktree for %s at %s (existing branch %s)", role, worktreeDir, branch)
+	return &WorkSession{repoDir: repoDir, worktreeDir: worktreeDir}, nil
+}
+
+// cleanupStaleWorktree removes the worktree directory and prunes git
+// state. Does NOT delete the branch or push to origin — that would
+// close open PRs.
+func cleanupStaleWorktree(ctx context.Context, repoDir, worktreeDir string) {
 	_, _ = gitCommand(ctx, repoDir, "worktree", "remove", "--force", worktreeDir)
-	_, _ = gitCommand(ctx, repoDir, "branch", "-D", branch)
-	_, _ = gitCommand(ctx, repoDir, "push", "origin", "--delete", branch)
 	_, _ = gitCommand(ctx, repoDir, "worktree", "prune")
 }
 
 // forceCleanup is a last-resort cleanup that removes the worktree
-// directory from disk and deletes the branch, ignoring all errors.
-// Used when git's internal state has diverged from what's on disk.
-func forceCleanup(ctx context.Context, repoDir, worktreeDir, branch string) {
+// directory from disk. Does NOT delete branches — they may belong
+// to open PRs.
+func forceCleanup(ctx context.Context, repoDir, worktreeDir string) {
 	_ = os.RemoveAll(worktreeDir)
 	_, _ = gitCommand(ctx, repoDir, "worktree", "prune")
-	_, _ = gitCommand(ctx, repoDir, "branch", "-D", branch)
+}
+
+// branchExists returns true if a local branch with the given name exists.
+func branchExists(ctx context.Context, repoDir, branch string) bool {
+	_, err := gitCommand(ctx, repoDir, "rev-parse", "--verify", branch)
+	return err == nil
 }
 
 func gitCommand(ctx context.Context, dir string, args ...string) ([]byte, error) {
