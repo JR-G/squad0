@@ -50,7 +50,7 @@ func (bridge *SessionBridge) Chat(ctx context.Context, prompt, workDir string) (
 	fallback := bridge.fallback
 	bridge.mu.Unlock()
 
-	response, err := runChat(ctx, active, prompt, workDir)
+	response, err := runChat(ctx, active, prompt, workDir, bridge.role)
 	if err == nil {
 		return response, nil
 	}
@@ -65,7 +65,7 @@ func (bridge *SessionBridge) Chat(ctx context.Context, prompt, workDir string) (
 	}
 
 	log.Printf("bridge: %s failed on %s, falling back to %s: %v", bridge.role, active.Name(), fallback.Name(), err)
-	fallbackResponse, fallbackErr := runChat(ctx, fallback, prompt, workDir)
+	fallbackResponse, fallbackErr := runChat(ctx, fallback, prompt, workDir, bridge.role)
 	if fallbackErr != nil {
 		return fallbackResponse, fmt.Errorf("fallback %s also failed: %w", fallback.Name(), fallbackErr)
 	}
@@ -75,13 +75,14 @@ func (bridge *SessionBridge) Chat(ctx context.Context, prompt, workDir string) (
 }
 
 // runChat executes a chat prompt with the correct model and workdir.
-func runChat(ctx context.Context, rt Runtime, prompt, workDir string) (string, error) {
+func runChat(ctx context.Context, rt Runtime, prompt, workDir string, role agent.Role) (string, error) {
 	cpr, ok := rt.(*ClaudeProcessRuntime)
 	if !ok {
 		return rt.Send(ctx, prompt)
 	}
 
 	cfg := agent.SessionConfig{
+		Role:       role,
 		Model:      chatModel,
 		Prompt:     prompt,
 		WorkingDir: workDir,

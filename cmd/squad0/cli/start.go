@@ -110,6 +110,11 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	}
 	_, _ = fmt.Fprint(out, tui.StepDone(fmt.Sprintf("%d agents created", len(agents))))
 
+	// Register MCP servers with Codex so fallback sessions have Linear access.
+	if cfg.Agents.CodexFallbackModel != "" {
+		ensureCodexMCP(ctx, out)
+	}
+
 	// Wire runtime bridges — persistent sessions for Claude, fresh for Codex.
 	wireBridges(agents, cfg.Agents.Runtime, cfg.Agents.CodexFallbackModel, modelMap, targetRepoDir, deps.DataDir)
 
@@ -466,6 +471,16 @@ func createHealthMonitor() *health.Monitor {
 		MaxSessionTime:       30 * time.Minute,
 		MaxConsecutiveErrors: 3,
 	})
+}
+
+func ensureCodexMCP(ctx context.Context, out io.Writer) {
+	runner := agent.ExecProcessRunner{}
+	servers := agent.BuildCodexMCPServers(agent.MCPOptions{})
+	if err := agent.EnsureCodexMCPServers(ctx, runner, servers); err != nil {
+		_, _ = fmt.Fprint(out, tui.StepWarn(fmt.Sprintf("Codex MCP setup failed: %v", err)))
+		return
+	}
+	_, _ = fmt.Fprint(out, tui.StepDone("Codex MCP servers registered"))
 }
 
 func resolveTargetRepo(targetRepo string) string {
