@@ -13,6 +13,16 @@ func (orch *Orchestrator) AdvancePipelineForTest(ctx context.Context, itemID int
 	orch.advancePipeline(ctx, itemID, stage)
 }
 
+// IsRoleIdleForTest exports isRoleIdle for testing.
+func (orch *Orchestrator) IsRoleIdleForTest(ctx context.Context, role agent.Role) bool {
+	return orch.isRoleIdle(ctx, role)
+}
+
+// FilterHealthyEngineersForTest exports filterHealthyEngineers for testing.
+func (orch *Orchestrator) FilterHealthyEngineersForTest(roles []agent.Role) []agent.Role {
+	return orch.filterHealthyEngineers(roles)
+}
+
 // ShouldEscalateForTest exports shouldEscalate for testing.
 func (orch *Orchestrator) ShouldEscalateForTest(ctx context.Context, workItemID int64, ticket string) bool {
 	return orch.shouldEscalate(ctx, workItemID, ticket)

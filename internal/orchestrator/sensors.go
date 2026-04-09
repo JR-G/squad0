@@ -54,6 +54,10 @@ func (orch *Orchestrator) RunSensors(ctx context.Context) {
 		return
 	}
 
+	// Reconcile pipeline against GitHub first — one CLI call, no Claude.
+	// This ensures all pipeline stages match reality before sensors run.
+	orch.ReconcileGitHubState(ctx)
+
 	orch.senseUnmergedApproved(ctx)
 	orch.senseStaleWorking(ctx)
 	orch.sensePipelineDrift(ctx)

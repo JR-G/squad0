@@ -191,6 +191,39 @@ func TestSmartAssigner_DeferTicket_SkipsDeferredTickets(t *testing.T) {
 	assert.Equal(t, "JAM-21", assignments[0].Ticket)
 }
 
+func TestSmartAssigner_SkillMatching_Engineer1_Backend(t *testing.T) {
+	t.Parallel()
+
+	sa := orchestrator.NewSmartAssigner(nil)
+	tickets := []orchestrator.LinearTicket{{ID: "JAM-BE", Title: "api work", Labels: []string{"api", "backend"}}}
+	all := []agent.Role{agent.RoleEngineer1, agent.RoleEngineer2, agent.RoleEngineer3}
+	assignments := sa.FilterAndRank(context.Background(), tickets, all)
+	require.Len(t, assignments, 1)
+	assert.Equal(t, agent.RoleEngineer1, assignments[0].Role)
+}
+
+func TestSmartAssigner_SkillMatching_Engineer2_Frontend(t *testing.T) {
+	t.Parallel()
+
+	sa := orchestrator.NewSmartAssigner(nil)
+	tickets := []orchestrator.LinearTicket{{ID: "JAM-FE", Title: "ui work", Labels: []string{"frontend", "ui"}}}
+	all := []agent.Role{agent.RoleEngineer1, agent.RoleEngineer2, agent.RoleEngineer3}
+	assignments := sa.FilterAndRank(context.Background(), tickets, all)
+	require.Len(t, assignments, 1)
+	assert.Equal(t, agent.RoleEngineer2, assignments[0].Role)
+}
+
+func TestSmartAssigner_SkillMatching_Engineer3_Infra(t *testing.T) {
+	t.Parallel()
+
+	sa := orchestrator.NewSmartAssigner(nil)
+	tickets := []orchestrator.LinearTicket{{ID: "JAM-INFRA", Title: "deploy", Labels: []string{"deploy", "infra"}}}
+	all := []agent.Role{agent.RoleEngineer1, agent.RoleEngineer2, agent.RoleEngineer3}
+	assignments := sa.FilterAndRank(context.Background(), tickets, all)
+	require.Len(t, assignments, 1)
+	assert.Equal(t, agent.RoleEngineer3, assignments[0].Role)
+}
+
 func TestAssigner_SetLinearAPIKey_EnablesSmartDispatch(t *testing.T) {
 	t.Parallel()
 
