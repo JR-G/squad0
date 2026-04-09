@@ -3,6 +3,7 @@ package orchestrator_test
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"testing"
 	"time"
 
@@ -158,6 +159,210 @@ func TestSmartAssigner_DeferTicket_ExpiresOverTime(t *testing.T) {
 // ---------------------------------------------------------------------------
 // deferral.go — additional signal patterns
 // ---------------------------------------------------------------------------
+
+func TestSensors_UnmergedApproved_DetectsStaleApproval(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+	pipeStore := pipeline.NewWorkItemStore(sqlDB)
+	require.NoError(t, pipeStore.InitSchema(ctx))
+
+	memDB, memErr := memory.Open(ctx, ":memory:")
+	require.NoError(t, memErr)
+	t.Cleanup(func() { _ = memDB.Close() })
+
+	runner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"done"}` + "\n")}
+	agents := map[agent.Role]*agent.Agent{
+		agent.RoleEngineer1: buildAgent(t, runner, agent.RoleEngineer1, memDB),
+	}
+
+	orch := orchestrator.NewOrchestrator(orchestrator.Config{}, agents, checkIns, nil, nil)
+	orch.SetPipeline(pipeStore)
+	situations := orchestrator.NewSituationQueue()
+	orch.SetSituationQueue(situations)
+
+	itemID, _ := pipeStore.Create(ctx, pipeline.WorkItem{
+		Ticket: "JAM-APPROVED", Engineer: agent.RoleEngineer1, Stage: pipeline.StageApproved,
+	})
+	_ = pipeStore.SetPRURL(ctx, itemID, "https://github.com/org/repo/pull/1")
+	// Backdate to trigger stale approved detection.
+	_, _ = sqlDB.ExecContext(ctx, `UPDATE work_items SET updated_at = datetime('now', '-1 hour')`)
+
+	orch.RunSensorsForTest(t)
+
+	approvedFound := false
+	for _, sit := range situations.Drain() {
+		if sit.Type == orchestrator.SitUnmergedApprovedPR && sit.Ticket == "JAM-APPROVED" {
+			approvedFound = true
+		}
+	}
+	assert.True(t, approvedFound)
+}
+
+func TestSensors_PipelineDrift_DetectsIdleWithOpenPR(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+	pipeStore := pipeline.NewWorkItemStore(sqlDB)
+	require.NoError(t, pipeStore.InitSchema(ctx))
+
+	memDB, memErr := memory.Open(ctx, ":memory:")
+	require.NoError(t, memErr)
+	t.Cleanup(func() { _ = memDB.Close() })
+
+	runner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"done"}` + "\n")}
+	agents := map[agent.Role]*agent.Agent{
+		agent.RoleEngineer1: buildAgent(t, runner, agent.RoleEngineer1, memDB),
+	}
+
+	orch := orchestrator.NewOrchestrator(orchestrator.Config{}, agents, checkIns, nil, nil)
+	orch.SetPipeline(pipeStore)
+	situations := orchestrator.NewSituationQueue()
+	orch.SetSituationQueue(situations)
+
+	// Engineer is idle but has an open PR.
+	require.NoError(t, checkIns.Upsert(ctx, coordination.CheckIn{
+		Agent: agent.RoleEngineer1, Status: coordination.StatusIdle, FilesTouching: []string{},
+	}))
+	itemID, _ := pipeStore.Create(ctx, pipeline.WorkItem{
+		Ticket: "JAM-DRIFT", Engineer: agent.RoleEngineer1, Stage: pipeline.StageReviewing,
+	})
+	_ = pipeStore.SetPRURL(ctx, itemID, "https://github.com/org/repo/pull/2")
+
+	orch.RunSensorsForTest(t)
+
+	driftFound := false
+	for _, sit := range situations.Drain() {
+		if sit.Type == orchestrator.SitPipelineDrift && sit.Ticket == "JAM-DRIFT" {
+			driftFound = true
+		}
+	}
+	assert.True(t, driftFound)
+}
+
+// ---------------------------------------------------------------------------
+// reconcileWithFetcher + FilterHealthyEngineers — zero coverage exports
+// ---------------------------------------------------------------------------
+
+func TestReconcileWithFetcher_FakeFetcher_Reconciles(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	pipeStore := pipeline.NewWorkItemStore(sqlDB)
+	require.NoError(t, pipeStore.InitSchema(ctx))
+
+	itemID, _ := pipeStore.Create(ctx, pipeline.WorkItem{
+		Ticket: "JAM-RF", Engineer: agent.RoleEngineer1, Stage: pipeline.StageReviewing,
+	})
+	_ = pipeStore.SetPRURL(ctx, itemID, "https://github.com/org/repo/pull/77")
+
+	orch := newReconcileOrch(t, pipeStore)
+
+	orch.ReconcileWithFetcherForTest(ctx, func(_ context.Context) (map[string]orchestrator.PRState, error) {
+		return map[string]orchestrator.PRState{
+			"https://github.com/org/repo/pull/77": {State: "MERGED"},
+		}, nil
+	})
+
+	item, _ := pipeStore.GetByID(ctx, itemID)
+	assert.Equal(t, pipeline.StageMerged, item.Stage)
+}
+
+func TestNewGHPRStateFetcher_ReturnsFunction(t *testing.T) {
+	t.Parallel()
+	fetcher := orchestrator.NewGHPRStateFetcher("/tmp")
+	assert.NotNil(t, fetcher)
+	// Call it — will fail (no gh in /tmp) but should not panic.
+	_, err := fetcher(context.Background())
+	assert.Error(t, err)
+}
+
+func TestReconcileWithFetcher_Error_DoesNotPanic(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	pipeStore := pipeline.NewWorkItemStore(sqlDB)
+	require.NoError(t, pipeStore.InitSchema(ctx))
+
+	orch := newReconcileOrch(t, pipeStore)
+
+	assert.NotPanics(t, func() {
+		orch.ReconcileWithFetcherForTest(ctx, func(_ context.Context) (map[string]orchestrator.PRState, error) {
+			return nil, fmt.Errorf("gh not available")
+		})
+	})
+}
+
+func TestFilterHealthyEngineers_NilMonitor_ReturnsAllEngineers(t *testing.T) {
+	t.Parallel()
+
+	orch := orchestrator.NewOrchestrator(orchestrator.Config{}, nil, nil, nil, nil)
+	roles := []agent.Role{agent.RoleEngineer1, agent.RoleEngineer2}
+	filtered := orch.FilterHealthyEngineersForTest(roles)
+	assert.Len(t, filtered, 2)
+}
+
+func TestEscalationTracker_Acknowledge_UntrackedKey_DoesNotPanic(t *testing.T) {
+	t.Parallel()
+	tracker := orchestrator.NewEscalationTracker()
+	tracker.Acknowledge("never-tracked-key")
+}
+
+func TestSensors_RepeatedFailures_DetectsPattern(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+	pipeStore := pipeline.NewWorkItemStore(sqlDB)
+	require.NoError(t, pipeStore.InitSchema(ctx))
+
+	orch := orchestrator.NewOrchestrator(orchestrator.Config{}, nil, checkIns, nil, nil)
+	orch.SetPipeline(pipeStore)
+	situations := orchestrator.NewSituationQueue()
+	orch.SetSituationQueue(situations)
+
+	for range 4 {
+		itemID, _ := pipeStore.Create(ctx, pipeline.WorkItem{
+			Ticket: "JAM-FAIL", Engineer: agent.RoleEngineer1, Stage: pipeline.StageWorking,
+		})
+		_ = pipeStore.Advance(ctx, itemID, pipeline.StageFailed)
+	}
+
+	orch.RunSensorsForTest(t)
+
+	failFound := false
+	for _, sit := range situations.Drain() {
+		if sit.Type == orchestrator.SitRepeatedFailure && sit.Ticket == "JAM-FAIL" {
+			failFound = true
+		}
+	}
+	assert.True(t, failFound)
+}
 
 func TestDeferralSignal_StopPattern(t *testing.T) {
 	t.Parallel()

@@ -166,7 +166,8 @@ func (orch *Orchestrator) emitEvent(ctx context.Context, kind EventKind, prURL, 
 // to prevent races. These handlers are for genuinely async operations.
 func (orch *Orchestrator) RegisterDefaultHandlers(bus *EventBus) {
 	bus.On(EventMergeFailed, func(ctx context.Context, event Event) {
-		orch.startFixUp(ctx, event.PRURL, event.Ticket, event.WorkItemID, event.EngineerRole)
+		comments := fetchStructuredComments(ctx, orch.cfg.TargetRepoDir, event.PRURL)
+		orch.startFixUp(ctx, event.PRURL, event.Ticket, event.WorkItemID, event.EngineerRole, comments)
 	})
 
 	bus.On(EventAgentIdle, func(ctx context.Context, event Event) {

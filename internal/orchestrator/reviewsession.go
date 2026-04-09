@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os/exec"
 	"regexp"
 	"strings"
 	"time"
@@ -374,16 +375,19 @@ func (orch *Orchestrator) handleChangesRequested(ctx context.Context, prURL, tic
 		return
 	}
 
+	// Extract structured review comments before fix-up.
+	comments := fetchStructuredComments(ctx, orch.cfg.TargetRepoDir, prURL)
+
 	engineerName := orch.NameForRole(engineerRole)
 	prLink := orch.cfg.Links.PRLink(prURL)
 	orch.postAsRole(ctx, "reviews",
 		fmt.Sprintf("%s, changes requested on %s — review comments are on the PR. %s", engineerName, ticket, prLink),
 		agent.RoleReviewer)
 
-	orch.startFixUp(ctx, prURL, ticket, workItemID, engineerRole)
+	orch.startFixUp(ctx, prURL, ticket, workItemID, engineerRole, comments)
 }
 
-func (orch *Orchestrator) startFixUp(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role) {
+func (orch *Orchestrator) startFixUp(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role, comments []ReviewComment) {
 	engineerAgent, ok := orch.agents[engineerRole]
 	if !ok {
 		log.Printf("no agent for %s to address review feedback", engineerRole)
@@ -427,7 +431,8 @@ func (orch *Orchestrator) startFixUp(ctx context.Context, prURL, ticket string, 
 	defer func() { _ = agent.RemoveMCPConfig(workDir) }()
 
 	handoffCtx := BuildHandoffContext(ctx, orch.handoffStore, ticket)
-	prompt := handoffCtx + BuildFixUpPrompt(prURL, ticket)
+	checklist := FormatFixUpChecklist(comments)
+	prompt := handoffCtx + BuildFixUpPrompt(prURL, ticket) + checklist
 	branch := fmt.Sprintf("feat/%s", strings.ToLower(ticket))
 
 	result, err := engineerAgent.ExecuteTask(ctx, prompt, nil, workDir)
@@ -442,26 +447,33 @@ func (orch *Orchestrator) startFixUp(ctx context.Context, prURL, ticket string, 
 
 	orch.writeHandoff(ctx, ticket, engineerRole, "completed", result.Transcript, branch)
 
-	// Pre-submission checklist — verify work is clean before re-review.
 	RunPreSubmitCheck(ctx, engineerAgent, workDir)
+
+	// Verify which review comments were addressed in the diff.
+	verifiedComments := comments
+	if len(comments) > 0 {
+		diffCmd := exec.CommandContext(ctx, "git", "diff", "--name-only", "origin/main...HEAD")
+		diffCmd.Dir = workDir
+		diffOut, _ := diffCmd.Output()
+		verifiedComments = CheckCommentsAddressedWithDiff(comments, string(diffOut))
+	}
 
 	log.Printf("fix-up: %s completed fix-up for %s", engineerName, ticket)
 
-	// Narrate completion — other agents see progress.
 	prLink := orch.cfg.Links.PRLink(prURL)
 	orch.postAsRole(ctx, "engineering",
-		fmt.Sprintf("Addressed the review comments on %s — %s. Pushed and ready for re-review.", ticketLink, prLink),
+		fmt.Sprintf("Addressed the review comments on %s — %s. Pushed and ready for re-review. %s",
+			ticketLink, prLink, SummariseVerification(verifiedComments)),
 		engineerRole)
 
-	_ = result
-
-	// Re-review is synchronous — the fix-up goroutine owns the full
-	// lifecycle: fix → re-review → approve/reject.
 	orch.emitEvent(ctx, EventFixUpComplete, prURL, ticket, workItemID, engineerRole)
 	orch.startReReview(ctx, prURL, ticket, workItemID, engineerRole)
 }
 
 func (orch *Orchestrator) setupFixUpWorktree(ctx context.Context, prURL string, role agent.Role, ticket string) (string, *WorkSession) {
+	if ctx.Err() != nil {
+		return orch.cfg.TargetRepoDir, nil
+	}
 	session, err := NewFixUpSession(ctx, orch.cfg.TargetRepoDir, prURL, role, ticket)
 	if err != nil {
 		log.Printf("fix-up: worktree failed for %s, using repo dir: %v", ticket, err)
