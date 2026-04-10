@@ -37,10 +37,14 @@ codex_fallback_model = "gpt-5-codex"
 
 [agents.models]
 pm = "claude-sonnet-4-6"
-tech_lead = "claude-opus-4-6"
+tech_lead = "claude-sonnet-4-6"
 engineer = "claude-sonnet-4-6"
-reviewer = "claude-opus-4-6"
+reviewer = "claude-sonnet-4-6"
 designer = "claude-sonnet-4-6"
+
+[agents.runtime]
+default = "claude"
+fallback = "codex"
 
 [quality]
 lint = "golangci-lint run"

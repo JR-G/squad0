@@ -205,15 +205,15 @@ func (orch *Orchestrator) resumeWithGitHubState(ctx context.Context, item pipeli
 // and needs reassignment. Otherwise it is left for the engineer to
 // pick up naturally.
 func (orch *Orchestrator) resumeStaleWorkingItem(ctx context.Context, item pipeline.WorkItem) {
-	// Only fail items from a previous process lifetime. If the item
-	// was updated after this process started, the engineer might
-	// still be working — don't nuke their session.
-	if item.UpdatedAt.After(orch.startedAt) {
-		log.Printf("work item %s is from this session — leaving for engineer", item.Ticket)
+	age := time.Since(item.UpdatedAt)
+
+	// Don't fail items less than 30 minutes old — the engineer may
+	// still be working or the session just started.
+	if age < 30*time.Minute {
+		log.Printf("work item %s is %s old — too soon to fail", item.Ticket, formatDuration(age))
 		return
 	}
 
-	age := time.Since(item.UpdatedAt)
 	log.Printf("work item %s has no PR after %s — marking failed", item.Ticket, formatDuration(age))
 	orch.failAndRequeue(ctx, item)
 }
@@ -261,8 +261,11 @@ func (orch *Orchestrator) clearStaleWork(ctx context.Context, role agent.Role, i
 
 	for _, item := range items {
 		if item.Stage == pipeline.StageWorking && item.PRURL == "" {
-			log.Printf("tick: %s has no PR for %s — marking failed", role, item.Ticket)
-			orch.failAndRequeue(ctx, item)
+			// Working with no PR — the session may still be running or
+			// may have crashed. Don't fail it on a timer. Resume it so
+			// the engineer gets another chance.
+			log.Printf("tick: %s has working item %s with no PR — resuming", role, item.Ticket)
+			allCleared = false
 			continue
 		}
 		orch.resumeWorkItem(ctx, item)
