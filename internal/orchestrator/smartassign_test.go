@@ -133,7 +133,7 @@ func TestSmartAssigner_FilterAndRank_SkipsInPipeline(t *testing.T) {
 	assert.Equal(t, "JAM-NEW", assignments[0].Ticket)
 }
 
-func TestSmartAssigner_FilterAndRank_SkipsFailedWithOpenPR(t *testing.T) {
+func TestSmartAssigner_FilterAndRank_FailedItemsAreReassignable(t *testing.T) {
 	t.Parallel()
 
 	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
@@ -144,7 +144,8 @@ func TestSmartAssigner_FilterAndRank_SkipsFailedWithOpenPR(t *testing.T) {
 	store := pipeline.NewWorkItemStore(sqlDB)
 	require.NoError(t, store.InitSchema(ctx))
 
-	// Simulate: engineer went idle, item marked failed, but PR is still open.
+	// Failed items should NOT block reassignment — reconciliation
+	// handles marking closed PRs as failed.
 	itemID, _ := store.Create(ctx, pipeline.WorkItem{
 		Ticket: "JAM-PR", Engineer: agent.RoleEngineer1, Stage: pipeline.StageReviewing,
 	})
@@ -154,13 +155,12 @@ func TestSmartAssigner_FilterAndRank_SkipsFailedWithOpenPR(t *testing.T) {
 	sa := orchestrator.NewSmartAssigner(store)
 
 	tickets := []orchestrator.LinearTicket{
-		{ID: "JAM-PR", Title: "has open PR", Priority: 1},
-		{ID: "JAM-FREE", Title: "no work yet", Priority: 2},
+		{ID: "JAM-PR", Title: "previously failed", Priority: 1},
 	}
 
 	assignments := sa.FilterAndRank(ctx, tickets, []agent.Role{agent.RoleEngineer2})
 	require.Len(t, assignments, 1)
-	assert.Equal(t, "JAM-FREE", assignments[0].Ticket)
+	assert.Equal(t, "JAM-PR", assignments[0].Ticket)
 }
 
 func TestSmartAssigner_FailureCount(t *testing.T) {

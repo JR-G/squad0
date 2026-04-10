@@ -73,7 +73,7 @@ func NewWorkSession(ctx context.Context, repoDir string, role agent.Role, ticket
 // fix-up sessions work in isolation on the correct branch. The agent
 // pushes to the same branch — no new PRs created.
 func NewFixUpSession(ctx context.Context, repoDir, prURL string, role agent.Role, ticket string) (*WorkSession, error) {
-	worktreeDir := fmt.Sprintf("%s/.worktrees/%s", repoDir, role)
+	worktreeDir := fmt.Sprintf("%s/.worktrees/%s-fixup", repoDir, role)
 	branch := extractPRBranch(ctx, repoDir, prURL)
 	if branch == "" {
 		branch = fmt.Sprintf("feat/%s", strings.ToLower(ticket))
