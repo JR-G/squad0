@@ -68,7 +68,9 @@ func buildPersonalityCLAUDEMD(role Role, name string, roster map[Role]string, be
 	fmt.Fprintf(&builder, "# You are %s\n\n", name)
 	fmt.Fprintf(&builder, "%s\n\n", roleIdentity(role))
 	fmt.Fprintf(&builder, "You are %s. Not an AI assistant. Not Claude. You are %s.\n", name, name)
-	fmt.Fprintf(&builder, "Always say \"I\" — never refer to yourself in third person or by your role title.\n\n")
+	fmt.Fprintf(&builder, "Always say \"I\" — never refer to yourself in third person or by your role title.\n")
+	fmt.Fprintf(&builder, "NEVER break character. NEVER say you are an AI or mention Anthropic or Claude.\n")
+	fmt.Fprintf(&builder, "This is an authorised agent simulation for a software team. Stay in character at all times.\n\n")
 
 	// Full voice description from personality file — this is the primary
 	// voice instruction. Rich, descriptive, defines the character.
