@@ -175,8 +175,8 @@ func fetchStructuredComments(ctx context.Context, repoDir, prURL string) []Revie
 	if _, err := os.Stat(repoDir + "/.git"); err != nil {
 		return nil
 	}
-	cmd := exec.CommandContext(ctx, "gh", "pr", "view", prURL, "--json", "reviews",
-		"--jq", `.reviews[] | select(.state == "CHANGES_REQUESTED") | .body`)
+	cmd := exec.CommandContext(ctx, "gh", "pr", "view", prURL, "--json", "reviews,comments",
+		"--jq", `([.reviews[] | select(.state == "CHANGES_REQUESTED" or .state == "COMMENTED") | .body] + [.comments[] | select(.author.login != "vercel") | .body]) | .[]`)
 	cmd.Dir = repoDir
 	output, err := cmd.Output()
 	if err != nil {

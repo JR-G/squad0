@@ -231,11 +231,12 @@ func TestClearStaleWork_IdleWithNoPR_MarksFailedAndReturnsTrue(t *testing.T) {
 	_ = orch.Run(timedCtx)
 	orch.Wait()
 
-	// The item should be failed because it's working with no PR and idle.
+	// The item should NOT be failed — working items are left for the
+	// engineer to resume, not aggressively killed.
 	item, getErr := pipeStore.GetByID(ctx, itemID)
 	require.NoError(t, getErr)
-	assert.Equal(t, pipeline.StageFailed, item.Stage,
-		"idle engineer's working item with no PR should be marked failed")
+	assert.Equal(t, pipeline.StageWorking, item.Stage,
+		"working item with no PR should be left for engineer to resume")
 }
 
 func TestClearStaleWork_WorkingNoPR_FailedDirectly(t *testing.T) {

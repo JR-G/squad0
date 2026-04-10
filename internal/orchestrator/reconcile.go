@@ -134,6 +134,13 @@ func (orch *Orchestrator) reconcileClosed(ctx context.Context, item pipeline.Wor
 func (orch *Orchestrator) reconcileOpen(ctx context.Context, item pipeline.WorkItem, ghState PRState) {
 	decision := strings.ToUpper(ghState.ReviewDecision)
 
+	// Pipeline says approved but GitHub doesn't — revert to reviewing.
+	if item.Stage == pipeline.StageApproved && decision != "APPROVED" {
+		log.Printf("reconcile: %s pipeline says approved but GitHub says %q — reverting to reviewing", item.Ticket, decision)
+		orch.advancePipeline(ctx, item.ID, pipeline.StageReviewing)
+		return
+	}
+
 	switch {
 	case decision == "APPROVED" && item.Stage != pipeline.StageApproved:
 		log.Printf("reconcile: %s is approved on GitHub — advancing", item.Ticket)
