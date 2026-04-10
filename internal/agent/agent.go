@@ -219,11 +219,12 @@ func (agent *Agent) SetDefaultWorkDir(dir string) {
 // be buried in other context.
 func (agent *Agent) DirectSession(ctx context.Context, prompt string) (SessionResult, error) {
 	cfg := SessionConfig{
-		Role:       agent.role,
-		Model:      agent.model,
-		Prompt:     prompt,
-		WorkingDir: agent.defaultWorkDir,
-		Env:        agent.envWithGHToken(),
+		Role:          agent.role,
+		Model:         agent.model,
+		Prompt:        prompt,
+		WorkingDir:    agent.defaultWorkDir,
+		MCPConfigPath: agent.MCPConfigPath,
+		Env:           agent.envWithGHToken(),
 	}
 
 	return agent.session.Run(ctx, cfg)

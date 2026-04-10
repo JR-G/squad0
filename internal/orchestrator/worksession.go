@@ -150,11 +150,13 @@ func createWorktree(ctx context.Context, repoDir, worktreeDir, branch string, ro
 }
 
 // cleanupStaleWorktree removes the worktree directory and prunes git
-// state. Does NOT delete the branch or push to origin — that would
-// close open PRs.
+// state. Also detaches the main repo if it's on a feature branch —
+// worktrees can't check out a branch that's already checked out.
 func cleanupStaleWorktree(ctx context.Context, repoDir, worktreeDir string) {
 	_, _ = gitCommand(ctx, repoDir, "worktree", "remove", "--force", worktreeDir)
+	_ = os.RemoveAll(worktreeDir)
 	_, _ = gitCommand(ctx, repoDir, "worktree", "prune")
+	detachIfOnFeatureBranch(ctx, repoDir)
 }
 
 // forceCleanup is a last-resort cleanup that removes the worktree
@@ -163,6 +165,23 @@ func cleanupStaleWorktree(ctx context.Context, repoDir, worktreeDir string) {
 func forceCleanup(ctx context.Context, repoDir, worktreeDir string) {
 	_ = os.RemoveAll(worktreeDir)
 	_, _ = gitCommand(ctx, repoDir, "worktree", "prune")
+	detachIfOnFeatureBranch(ctx, repoDir)
+}
+
+// detachIfOnFeatureBranch switches the main repo to main if it's
+// stuck on a feature branch. Git refuses to create a worktree for
+// a branch that's already checked out elsewhere.
+func detachIfOnFeatureBranch(ctx context.Context, repoDir string) {
+	output, err := gitCommand(ctx, repoDir, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return
+	}
+	branch := strings.TrimSpace(string(output))
+	if branch == "main" || branch == "HEAD" {
+		return
+	}
+	log.Printf("worktree: main repo is on %s — switching to main", branch)
+	_, _ = gitCommand(ctx, repoDir, "checkout", "main")
 }
 
 // branchExists returns true if a local branch with the given name exists.

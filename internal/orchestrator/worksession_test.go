@@ -94,6 +94,27 @@ func TestNewWorkSession_ExistingBranch_ChecksOutInstead(t *testing.T) {
 	ws.Cleanup(context.Background())
 }
 
+func TestNewWorkSession_DetachesFromFeatureBranch(t *testing.T) {
+	t.Parallel()
+
+	repoDir := t.TempDir()
+	initTestRepo(t, repoDir)
+
+	c := execCommand(repoDir, "git", "checkout", "-b", "feat/jam-99")
+	output, err := c.CombinedOutput()
+	require.NoError(t, err, string(output))
+
+	ws, wsErr := orchestrator.NewWorkSession(context.Background(), repoDir, agent.RoleEngineer1, "JAM-99")
+	require.NoError(t, wsErr)
+	assert.DirExists(t, ws.Dir())
+
+	branchCmd := execCommand(repoDir, "git", "rev-parse", "--abbrev-ref", "HEAD")
+	branchOut, _ := branchCmd.Output()
+	assert.Equal(t, "main", strings.TrimSpace(string(branchOut)))
+
+	ws.Cleanup(context.Background())
+}
+
 func TestNewFixUpSession_ChecksOutExistingBranch(t *testing.T) {
 	t.Parallel()
 

@@ -253,11 +253,13 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	commandHandler := newCommandDispatcher(orch, bot, conversation, personas, buildLinkConfig(cfg))
 	bot.OnMessage(commandHandler.handleMessage)
 
+	for _, a := range agents {
+		orch.WriteMCPConfigForTest(a, targetRepoDir)
+	}
 	configureGitHubAppToken(ctx, agents, deps.SecretLoader, out)
 
 	_, _ = fmt.Fprint(out, tui.StepDone("All systems ready"))
 	_, _ = fmt.Fprintln(out)
-
 	appLogger.Info("system", "startup", "orchestrator starting")
 
 	loop := deps.EventLoop
