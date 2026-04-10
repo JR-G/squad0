@@ -69,6 +69,7 @@ func (orch *Orchestrator) dispatchPMActions(ctx context.Context, situations []Si
 	orch.extractDeferrals(situations, response)
 
 	// Post the PM's management actions to engineering.
+	log.Printf("pm: %s said: %q", orch.NameForRole(agent.RolePM), response)
 	orch.postAsRole(ctx, "engineering", response, agent.RolePM)
 
 	// Flag warning/critical situations in triage and track for staleness.
