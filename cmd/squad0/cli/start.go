@@ -203,6 +203,7 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	if slackSecrets.LinearAPIKey != "" {
 		assigner.SetLinearAPIKey(slackSecrets.LinearAPIKey)
 		assigner.SetSmartAssigner(orchestrator.NewSmartAssigner(pipelineStore))
+		_ = os.Setenv("LINEAR_API_KEY", slackSecrets.LinearAPIKey)
 		_, _ = fmt.Fprint(out, tui.StepDone("Smart dispatch enabled"))
 	}
 
@@ -258,8 +259,7 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	}
 	configureGitHubAppToken(ctx, agents, deps.SecretLoader, out)
 
-	_, _ = fmt.Fprint(out, tui.StepDone("All systems ready"))
-	_, _ = fmt.Fprintln(out)
+	_, _ = fmt.Fprintln(out, tui.StepDone("All systems ready"))
 	appLogger.Info("system", "startup", "orchestrator starting")
 
 	loop := deps.EventLoop
