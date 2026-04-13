@@ -54,7 +54,13 @@ func BuildCodexMCPServers(opts MCPOptions) []CodexMCPServer {
 		{
 			Name:    "linear",
 			Command: "bunx",
-			Args:    []string{"@linear/mcp-server"},
+			Args: []string{
+				"-y",
+				"mcp-remote",
+				"https://mcp.linear.app/mcp",
+				"--header",
+				"Authorization:${LINEAR_AUTH_HEADER}",
+			},
 		},
 	}
 

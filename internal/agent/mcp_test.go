@@ -19,7 +19,9 @@ func TestDefaultMCPConfig_HasLinearServer(t *testing.T) {
 	linear, ok := cfg.MCPServers["linear"]
 	require.True(t, ok, "linear server should be present")
 	assert.Equal(t, "bunx", linear.Command)
-	assert.Contains(t, linear.Args, "@linear/mcp-server")
+	assert.Contains(t, linear.Args, "mcp-remote")
+	assert.Contains(t, linear.Args, "https://mcp.linear.app/mcp")
+	assert.Contains(t, linear.Args, "Authorization:${LINEAR_AUTH_HEADER}")
 }
 
 func TestDefaultMCPConfig_NeverUsesNpx(t *testing.T) {

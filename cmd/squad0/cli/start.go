@@ -199,11 +199,11 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 		orch.SetSpecialisationStore(specStore)
 	}
 
-	// Smart dispatch: direct Linear queries + dependency/priority/skill filtering.
 	if slackSecrets.LinearAPIKey != "" {
 		assigner.SetLinearAPIKey(slackSecrets.LinearAPIKey)
 		assigner.SetSmartAssigner(orchestrator.NewSmartAssigner(pipelineStore))
 		_ = os.Setenv("LINEAR_API_KEY", slackSecrets.LinearAPIKey)
+		_ = os.Setenv("LINEAR_AUTH_HEADER", "Bearer "+slackSecrets.LinearAPIKey)
 		_, _ = fmt.Fprint(out, tui.StepDone("Smart dispatch enabled"))
 	}
 
