@@ -168,12 +168,28 @@ func FormatReReviewChecklist(comments []ReviewComment) string {
 	return builder.String()
 }
 
+// commentFetcher is the function used by HasOutstandingReviewComments
+// to load structured review feedback. Overridable via
+// SetCommentFetcherForTest so tests can simulate Devin or CodeRabbit
+// comments without shelling out to gh.
+var commentFetcher = fetchStructuredComments
+
 // HasOutstandingReviewComments returns true if the PR has any
 // unaddressed review comments from reviewers like Devin or CodeRabbit
 // that a plain reviewDecision check would miss. Used to gate approval
 // transitions so squad0 doesn't merge PRs with open review feedback.
 func HasOutstandingReviewComments(ctx context.Context, repoDir, prURL string) bool {
-	return len(fetchStructuredComments(ctx, repoDir, prURL)) > 0
+	return len(commentFetcher(ctx, repoDir, prURL)) > 0
+}
+
+// SetCommentFetcherForTest replaces the commentFetcher used by
+// HasOutstandingReviewComments and returns a restore function.
+// Tests inject a stub so they can drive the approval-gate branches
+// deterministically without spawning gh.
+func SetCommentFetcherForTest(fn func(context.Context, string, string) []ReviewComment) func() {
+	prev := commentFetcher
+	commentFetcher = fn
+	return func() { commentFetcher = prev }
 }
 
 func fetchStructuredComments(ctx context.Context, repoDir, prURL string) []ReviewComment {
