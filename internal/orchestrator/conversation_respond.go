@@ -76,7 +76,11 @@ func (engine *ConversationEngine) postAndRecord(ctx context.Context, channel str
 
 	engine.mu.Lock()
 	state := engine.getOrCreateChannel(channel)
-	state.recentLines = appendRecent(state.recentLines, fmt.Sprintf("%s: %s", role, text))
+	speaker := engine.roster[role]
+	if speaker == "" {
+		speaker = string(role)
+	}
+	state.recentLines = appendRecent(state.recentLines, fmt.Sprintf("%s: %s", speaker, text))
 	engine.mu.Unlock()
 
 	engine.maybeStoreConversationBelief(ctx, role, text)

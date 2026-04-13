@@ -78,7 +78,7 @@ func RunConversationRound(ctx context.Context, agents map[agent.Role]*agent.Agen
 		}
 
 		if postToEngineering(ctx, bot, text, role) {
-			recentMessages = append(recentMessages, fmt.Sprintf("%s: %s", role, text))
+			recentMessages = append(recentMessages, fmt.Sprintf("%s: %s", agentInstance.Name(), text))
 			responded[role] = true
 		}
 	}

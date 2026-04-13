@@ -197,6 +197,20 @@ func (agent *Agent) SetChatContext(roster map[Role]string, beliefs []string, voi
 	agent.chatVoice = voiceText
 }
 
+// Name returns the agent's chosen display name from the chat
+// roster, falling back to the role slug if the roster hasn't been
+// set yet. Used everywhere history lines or identity references are
+// rendered for other agents to read — never expose the role slug to
+// the model if a real name exists.
+func (agent *Agent) Name() string {
+	agent.chatMu.Lock()
+	defer agent.chatMu.Unlock()
+	if name, ok := agent.chatRoster[agent.role]; ok && name != "" {
+		return name
+	}
+	return string(agent.role)
+}
+
 // SetBridge connects a ChatBridge for routing QuickChat through a
 // persistent session or alternative runtime. Optional — when not set,
 // QuickChat spawns fresh processes as before.

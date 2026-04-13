@@ -399,7 +399,7 @@ func (orch *Orchestrator) postAsRole(ctx context.Context, channel, text string, 
 	}
 
 	if orch.conversation != nil {
-		go orch.conversation.OnThreadMessage(ctx, channel, string(role), text, ts)
+		go orch.conversation.OnThreadMessage(ctx, channel, orch.NameForRole(role), text, ts)
 	}
 }
 

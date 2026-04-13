@@ -122,6 +122,13 @@ func (orch *Orchestrator) shouldEscalate(ctx context.Context, workItemID int64, 
 
 // resumePendingWork checks the pipeline for non-terminal work items
 // from a previous run and resumes them. Called on startup.
+//
+// squad0's engineer sessions are child processes that die when the
+// binary restarts, so on boot any StageWorking-with-no-PR item is by
+// definition a dead session and must be respawned — otherwise the
+// engineer sits idle with "has open work" but nothing ever starts it.
+// StageAssigned items are in the same boat: the assigner picked them
+// last time but the restart killed the spawn before it ran.
 func (orch *Orchestrator) resumePendingWork(ctx context.Context) {
 	if orch.pipelineStore == nil {
 		return
@@ -141,6 +148,58 @@ func (orch *Orchestrator) resumePendingWork(ctx context.Context) {
 	}
 }
 
+// resumeAssignment respawns an engineer session for an existing
+// pipeline item. Used for crash recovery: the pipeline row already
+// exists, so we reuse its ID rather than creating a new one. Safe to
+// call for items in StageAssigned (never got to StageWorking) and
+// StageWorking-with-no-PR (session died before opening a PR).
+func (orch *Orchestrator) resumeAssignment(ctx context.Context, item pipeline.WorkItem) {
+	agentInstance, ok := orch.agents[item.Engineer]
+	if !ok {
+		log.Printf("resume: no agent for role %s on %s", item.Engineer, item.Ticket)
+		return
+	}
+
+	if err := orch.checkIns.Upsert(ctx, coordination.CheckIn{
+		Agent:         item.Engineer,
+		Ticket:        item.Ticket,
+		Status:        coordination.StatusWorking,
+		FilesTouching: []string{},
+		Message:       fmt.Sprintf("resuming %s", item.Ticket),
+	}); err != nil {
+		log.Printf("resume: checkin upsert failed for %s: %v", item.Engineer, err)
+		return
+	}
+
+	if item.Stage != pipeline.StageWorking {
+		orch.advancePipeline(ctx, item.ID, pipeline.StageWorking)
+	}
+
+	assignment := Assignment{
+		Role:       item.Engineer,
+		Ticket:     item.Ticket,
+		WorkItemID: item.ID,
+	}
+
+	sessionCtx, cancel := context.WithCancel(ctx)
+	orch.registerSessionCancel(item.Engineer, cancel)
+
+	orch.wg.Add(1)
+	go func() {
+		defer orch.wg.Done()
+		defer orch.clearSessionCancel(item.Engineer)
+		orch.runSession(sessionCtx, agentInstance, assignment)
+	}()
+
+	log.Printf("resume: respawned session for %s on %s (item %d)", item.Engineer, item.Ticket, item.ID)
+}
+
+// staleWorkingThreshold is how long a StageWorking item with no PR
+// can linger before we give up and mark it failed. Items that
+// haven't produced a PR in this long have usually hit a real problem
+// that respawning won't fix.
+const staleWorkingThreshold = 30 * time.Minute
+
 func (orch *Orchestrator) resumeWorkItem(ctx context.Context, item pipeline.WorkItem) {
 	log.Printf("resuming %s (stage: %s, PR: %s)", item.Ticket, item.Stage, item.PRURL)
 
@@ -151,11 +210,15 @@ func (orch *Orchestrator) resumeWorkItem(ctx context.Context, item pipeline.Work
 		return
 	}
 
+	if item.Stage == pipeline.StageWorking && time.Since(item.UpdatedAt) > staleWorkingThreshold {
+		log.Printf("work item %s has no PR after %s — marking failed", item.Ticket, formatDuration(time.Since(item.UpdatedAt)))
+		orch.failAndRequeue(ctx, item)
+		return
+	}
+
 	switch item.Stage { //nolint:exhaustive // only actionable stages handled
-	case pipeline.StageWorking:
-		orch.resumeStaleWorkingItem(ctx, item)
-	case pipeline.StageAssigned:
-		log.Printf("work item %s was assigned but not started — will be re-assigned", item.Ticket)
+	case pipeline.StageWorking, pipeline.StageAssigned:
+		orch.resumeAssignment(ctx, item)
 	}
 }
 
@@ -206,24 +269,6 @@ func (orch *Orchestrator) resumeWithGitHubState(ctx context.Context, item pipeli
 	}
 }
 
-// resumeStaleWorkingItem handles a StageWorking item with no PR.
-// If it has been working for more than 30 minutes, the work is stale
-// and needs reassignment. Otherwise it is left for the engineer to
-// pick up naturally.
-func (orch *Orchestrator) resumeStaleWorkingItem(ctx context.Context, item pipeline.WorkItem) {
-	age := time.Since(item.UpdatedAt)
-
-	// Don't fail items less than 30 minutes old — the engineer may
-	// still be working or the session just started.
-	if age < 30*time.Minute {
-		log.Printf("work item %s is %s old — too soon to fail", item.Ticket, formatDuration(age))
-		return
-	}
-
-	log.Printf("work item %s has no PR after %s — marking failed", item.Ticket, formatDuration(age))
-	orch.failAndRequeue(ctx, item)
-}
-
 func (orch *Orchestrator) filterByWIP(ctx context.Context, roles []agent.Role) []agent.Role {
 	if orch.pipelineStore == nil {
 		return roles
@@ -261,16 +306,19 @@ func (orch *Orchestrator) filterByWIP(ctx context.Context, roles []agent.Role) [
 
 // clearStaleWork handles open items for an idle engineer. Returns true
 // if all items were cleared and the engineer is free for new work.
+//
+// A StageWorking item with no PR and an idle check-in means the
+// session died without progressing. Normally that's handled by
+// resumePendingWork at startup, but if a mid-run session crashes we
+// also respawn it here after a short grace window so the engineer
+// doesn't sit blocked until the 30-minute stale timer fires.
 func (orch *Orchestrator) clearStaleWork(ctx context.Context, role agent.Role, items []pipeline.WorkItem) bool {
 	log.Printf("tick: %s is idle but has open work — clearing", role)
 	allCleared := true
 
 	for _, item := range items {
-		if item.Stage == pipeline.StageWorking && item.PRURL == "" {
-			// Working with no PR — the session may still be running or
-			// may have crashed. Don't fail it on a timer. Resume it so
-			// the engineer gets another chance.
-			log.Printf("tick: %s has working item %s with no PR — resuming", role, item.Ticket)
+		if isDeadWorkingSession(item) {
+			orch.handleDeadSession(ctx, role, item)
 			allCleared = false
 			continue
 		}
@@ -280,6 +328,25 @@ func (orch *Orchestrator) clearStaleWork(ctx context.Context, role agent.Role, i
 
 	return allCleared
 }
+
+func isDeadWorkingSession(item pipeline.WorkItem) bool {
+	return item.Stage == pipeline.StageWorking && item.PRURL == ""
+}
+
+func (orch *Orchestrator) handleDeadSession(ctx context.Context, role agent.Role, item pipeline.WorkItem) {
+	if time.Since(item.UpdatedAt) <= runtimeSessionDeadGrace {
+		log.Printf("tick: %s has working item %s with no PR — waiting for session", role, item.Ticket)
+		return
+	}
+	log.Printf("tick: %s has dead session on %s — respawning", role, item.Ticket)
+	orch.resumeAssignment(ctx, item)
+}
+
+// runtimeSessionDeadGrace is how long a StageWorking item without a
+// PR is left alone before the tick loop concludes the session died
+// and respawns it. Long enough to avoid racing a legitimate session
+// mid-transition, short enough to recover from crashes quickly.
+const runtimeSessionDeadGrace = 90 * time.Second
 
 // CheckCircuitBreakerForTest exports checkCircuitBreaker for testing.
 func (orch *Orchestrator) CheckCircuitBreakerForTest(ctx context.Context, ticket string) {
