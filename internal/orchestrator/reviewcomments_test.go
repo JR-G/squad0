@@ -8,6 +8,101 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestParseLiveBotReview_DevinCommentAfterLastCommit_ReturnsTrue(t *testing.T) {
+	t.Parallel()
+
+	data := []byte(`{
+		"reviews": [
+			{"author": {"login": "devin-ai-integration"}, "state": "COMMENTED", "submittedAt": "2026-04-08T20:31:23Z"}
+		],
+		"commits": [
+			{"committedDate": "2026-04-08T19:00:00Z"},
+			{"committedDate": "2026-04-08T20:24:36Z"}
+		]
+	}`)
+
+	assert.True(t, orchestrator.ParseLiveBotReviewForTest(data))
+}
+
+func TestParseLiveBotReview_CodeRabbitCommentAfterLastCommit_ReturnsTrue(t *testing.T) {
+	t.Parallel()
+
+	data := []byte(`{
+		"reviews": [
+			{"author": {"login": "coderabbitai[bot]"}, "state": "COMMENTED", "submittedAt": "2026-04-09T10:00:00Z"}
+		],
+		"commits": [
+			{"committedDate": "2026-04-09T09:30:00Z"}
+		]
+	}`)
+
+	assert.True(t, orchestrator.ParseLiveBotReviewForTest(data))
+}
+
+func TestParseLiveBotReview_StaleReviewBeforeLastCommit_ReturnsFalse(t *testing.T) {
+	t.Parallel()
+
+	data := []byte(`{
+		"reviews": [
+			{"author": {"login": "devin-ai-integration"}, "state": "COMMENTED", "submittedAt": "2026-04-08T19:00:00Z"}
+		],
+		"commits": [
+			{"committedDate": "2026-04-08T20:24:36Z"}
+		]
+	}`)
+
+	assert.False(t, orchestrator.ParseLiveBotReviewForTest(data))
+}
+
+func TestParseLiveBotReview_HumanReviewer_Ignored(t *testing.T) {
+	t.Parallel()
+
+	data := []byte(`{
+		"reviews": [
+			{"author": {"login": "JR-G"}, "state": "COMMENTED", "submittedAt": "2026-04-08T20:31:23Z"}
+		],
+		"commits": [
+			{"committedDate": "2026-04-08T20:24:36Z"}
+		]
+	}`)
+
+	assert.False(t, orchestrator.ParseLiveBotReviewForTest(data))
+}
+
+func TestParseLiveBotReview_BotApprovedNotCommented_Ignored(t *testing.T) {
+	t.Parallel()
+
+	data := []byte(`{
+		"reviews": [
+			{"author": {"login": "devin-ai-integration"}, "state": "APPROVED", "submittedAt": "2026-04-08T20:31:23Z"}
+		],
+		"commits": [
+			{"committedDate": "2026-04-08T20:24:36Z"}
+		]
+	}`)
+
+	assert.False(t, orchestrator.ParseLiveBotReviewForTest(data))
+}
+
+func TestParseLiveBotReview_NoCommits_ReturnsFalse(t *testing.T) {
+	t.Parallel()
+
+	data := []byte(`{
+		"reviews": [
+			{"author": {"login": "devin-ai-integration"}, "state": "COMMENTED", "submittedAt": "2026-04-08T20:31:23Z"}
+		],
+		"commits": []
+	}`)
+
+	assert.False(t, orchestrator.ParseLiveBotReviewForTest(data))
+}
+
+func TestParseLiveBotReview_InvalidJSON_ReturnsFalse(t *testing.T) {
+	t.Parallel()
+
+	assert.False(t, orchestrator.ParseLiveBotReviewForTest([]byte(`not json`)))
+}
+
 func TestParseReviewBody_ExtractsBlockersAndSuggestions(t *testing.T) {
 	t.Parallel()
 

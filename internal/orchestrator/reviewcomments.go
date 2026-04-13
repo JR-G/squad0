@@ -2,10 +2,12 @@ package orchestrator
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 const (
@@ -168,28 +170,122 @@ func FormatReReviewChecklist(comments []ReviewComment) string {
 	return builder.String()
 }
 
-// commentFetcher is the function used by HasOutstandingReviewComments
-// to load structured review feedback. Overridable via
-// SetCommentFetcherForTest so tests can simulate Devin or CodeRabbit
-// comments without shelling out to gh.
+// commentFetcher loads structured review feedback for the approval
+// gate. Overridable in tests via SetCommentFetcherForTest.
 var commentFetcher = fetchStructuredComments
 
+// liveBotReviewChecker reports whether a known review bot
+// (Devin, CodeRabbit) left a COMMENTED review after the latest push
+// to the PR branch. Overridable in tests via
+// SetLiveBotReviewCheckerForTest.
+var liveBotReviewChecker = hasLiveBotReview
+
 // HasOutstandingReviewComments returns true if the PR has any
-// unaddressed review comments from reviewers like Devin or CodeRabbit
-// that a plain reviewDecision check would miss. Used to gate approval
+// unaddressed review feedback that a plain reviewDecision check would
+// miss — either structured comments parsed from review bodies, or a
+// live COMMENTED review from a known bot reviewer (Devin, CodeRabbit)
+// posted after the most recent commit. Used to gate approval
 // transitions so squad0 doesn't merge PRs with open review feedback.
 func HasOutstandingReviewComments(ctx context.Context, repoDir, prURL string) bool {
-	return len(commentFetcher(ctx, repoDir, prURL)) > 0
+	if len(commentFetcher(ctx, repoDir, prURL)) > 0 {
+		return true
+	}
+	return liveBotReviewChecker(ctx, repoDir, prURL)
 }
 
-// SetCommentFetcherForTest replaces the commentFetcher used by
-// HasOutstandingReviewComments and returns a restore function.
-// Tests inject a stub so they can drive the approval-gate branches
+// SetCommentFetcherForTest replaces commentFetcher and returns a
+// restore function so tests can drive the structured-comment branch
 // deterministically without spawning gh.
 func SetCommentFetcherForTest(fn func(context.Context, string, string) []ReviewComment) func() {
 	prev := commentFetcher
 	commentFetcher = fn
 	return func() { commentFetcher = prev }
+}
+
+// SetLiveBotReviewCheckerForTest replaces liveBotReviewChecker and
+// returns a restore function so tests can drive the bot-review
+// branch deterministically without spawning gh.
+func SetLiveBotReviewCheckerForTest(fn func(context.Context, string, string) bool) func() {
+	prev := liveBotReviewChecker
+	liveBotReviewChecker = fn
+	return func() { liveBotReviewChecker = prev }
+}
+
+// hasLiveBotReview shells out to gh to check whether Devin or
+// CodeRabbit has an active COMMENTED review on the PR head. A review
+// is "live" when its submittedAt is after the last commit on the
+// branch — once the engineer pushes a fix the review becomes stale
+// and stops blocking the approval gate.
+func hasLiveBotReview(ctx context.Context, repoDir, prURL string) bool {
+	if repoDir == "" || prURL == "" || ctx.Err() != nil {
+		return false
+	}
+	if _, err := os.Stat(repoDir + "/.git"); err != nil {
+		return false
+	}
+	cmd := exec.CommandContext(ctx, "gh", "pr", "view", prURL, "--json", "reviews,commits")
+	cmd.Dir = repoDir
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return parseLiveBotReview(output)
+}
+
+// parseLiveBotReview reports whether the given gh JSON blob contains
+// a COMMENTED review from a known bot submitted after the latest
+// commit on the PR branch. Pure function, tested directly.
+func parseLiveBotReview(data []byte) bool {
+	var parsed struct {
+		Reviews []struct {
+			Author struct {
+				Login string `json:"login"`
+			} `json:"author"`
+			State       string    `json:"state"`
+			SubmittedAt time.Time `json:"submittedAt"`
+		} `json:"reviews"`
+		Commits []struct {
+			CommittedDate time.Time `json:"committedDate"`
+		} `json:"commits"`
+	}
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return false
+	}
+	if len(parsed.Commits) == 0 {
+		return false
+	}
+
+	lastCommit := parsed.Commits[0].CommittedDate
+	for _, commit := range parsed.Commits[1:] {
+		if commit.CommittedDate.After(lastCommit) {
+			lastCommit = commit.CommittedDate
+		}
+	}
+
+	for _, review := range parsed.Reviews {
+		if review.State != "COMMENTED" {
+			continue
+		}
+		if !isBotReviewer(review.Author.Login) {
+			continue
+		}
+		if review.SubmittedAt.After(lastCommit) {
+			return true
+		}
+	}
+	return false
+}
+
+// isBotReviewer returns true for login handles belonging to known
+// automated reviewers whose COMMENTED reviews should block merges.
+func isBotReviewer(login string) bool {
+	lower := strings.ToLower(login)
+	return strings.Contains(lower, "devin") || strings.Contains(lower, "coderabbit")
+}
+
+// ParseLiveBotReviewForTest exports parseLiveBotReview for tests.
+func ParseLiveBotReviewForTest(data []byte) bool {
+	return parseLiveBotReview(data)
 }
 
 func fetchStructuredComments(ctx context.Context, repoDir, prURL string) []ReviewComment {

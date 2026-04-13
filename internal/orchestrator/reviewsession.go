@@ -163,32 +163,35 @@ func (orch *Orchestrator) runReview(ctx context.Context, reviewer *agent.Agent, 
 
 	switch outcome {
 	case ReviewApproved:
-		orch.forceApproval(ctx, reviewer, prURL, ticket)
-		orch.advancePipeline(ctx, workItemID, pipeline.StageApproved)
-
-		engineerName := orch.NameForRole(engineerRole)
-		prLink := orch.cfg.Links.PRLink(prURL)
-		orch.announceAsRole(ctx, "reviews",
-			fmt.Sprintf("Approved %s — %s", ticket, prLink),
-			agent.RoleReviewer)
-		orch.postAsRole(ctx, "reviews",
-			fmt.Sprintf("%s, your PR is approved. Address any remaining comments and merge when ready. %s", engineerName, prLink),
-			agent.RolePM)
-
-		// Architecture review runs in the background — it does not block the merge.
-		go orch.archReviewWithTimeout(ctx, prURL, ticket, engineerRole)
-
-		// Merge is SYNCHRONOUS — the review goroutine owns the full
-		// lifecycle: review → approve → merge. No async event dispatch
-		// here because that caused races (merge starting while a
-		// parallel review was still running).
-		orch.emitEvent(ctx, EventPRApproved, prURL, ticket, workItemID, engineerRole)
-		orch.startEngineerMerge(ctx, prURL, ticket, workItemID, engineerRole)
-
+		if HasOutstandingReviewComments(ctx, orch.cfg.TargetRepoDir, prURL) {
+			log.Printf("review: %s approved by reviewer but has outstanding bot feedback — treating as changes requested", ticket)
+			orch.emitEvent(ctx, EventChangesRequested, prURL, ticket, workItemID, engineerRole)
+			orch.handleChangesRequested(ctx, prURL, ticket, workItemID, engineerRole, "")
+			return
+		}
+		orch.handleReviewApproved(ctx, reviewer, prURL, ticket, workItemID, engineerRole)
 	case ReviewChangesRequested:
 		orch.emitEvent(ctx, EventChangesRequested, prURL, ticket, workItemID, engineerRole)
 		orch.handleChangesRequested(ctx, prURL, ticket, workItemID, engineerRole, "")
 	}
+}
+
+func (orch *Orchestrator) handleReviewApproved(ctx context.Context, reviewer *agent.Agent, prURL, ticket string, workItemID int64, engineerRole agent.Role) {
+	orch.forceApproval(ctx, reviewer, prURL, ticket)
+	orch.advancePipeline(ctx, workItemID, pipeline.StageApproved)
+
+	engineerName := orch.NameForRole(engineerRole)
+	prLink := orch.cfg.Links.PRLink(prURL)
+	orch.announceAsRole(ctx, "reviews",
+		fmt.Sprintf("Approved %s — %s", ticket, prLink),
+		agent.RoleReviewer)
+	orch.postAsRole(ctx, "reviews",
+		fmt.Sprintf("%s, your PR is approved. Address any remaining comments and merge when ready. %s", engineerName, prLink),
+		agent.RolePM)
+
+	go orch.archReviewWithTimeout(ctx, prURL, ticket, engineerRole)
+	orch.emitEvent(ctx, EventPRApproved, prURL, ticket, workItemID, engineerRole)
+	orch.startEngineerMerge(ctx, prURL, ticket, workItemID, engineerRole)
 }
 
 // StartEngineerMergeForTest exports startEngineerMerge for testing.
@@ -483,7 +486,6 @@ func (orch *Orchestrator) setupFixUpWorktree(ctx context.Context, prURL string, 
 	return dir, session
 }
 
-// forceApproval ensures the reviewer's GitHub approval is actually submitted.
 func (orch *Orchestrator) startReReview(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role) {
 	reviewer, ok := orch.agents[agent.RoleReviewer]
 	if !ok {

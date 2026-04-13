@@ -17,11 +17,31 @@ import (
 )
 
 func stubOutstandingComments(comments ...orchestrator.ReviewComment) func() {
-	return orchestrator.SetCommentFetcherForTest(
+	restoreComments := orchestrator.SetCommentFetcherForTest(
 		func(_ context.Context, _, _ string) []orchestrator.ReviewComment {
 			return comments
 		},
 	)
+	restoreBot := orchestrator.SetLiveBotReviewCheckerForTest(
+		func(_ context.Context, _, _ string) bool { return false },
+	)
+	return func() {
+		restoreBot()
+		restoreComments()
+	}
+}
+
+func stubLiveBotReview(live bool) func() {
+	restoreComments := orchestrator.SetCommentFetcherForTest(
+		func(_ context.Context, _, _ string) []orchestrator.ReviewComment { return nil },
+	)
+	restoreBot := orchestrator.SetLiveBotReviewCheckerForTest(
+		func(_ context.Context, _, _ string) bool { return live },
+	)
+	return func() {
+		restoreBot()
+		restoreComments()
+	}
 }
 
 func TestReconcileItem_OpenApproved_OutstandingComments_StaysInReviewing(t *testing.T) {
@@ -93,6 +113,40 @@ func TestReconcileItem_OpenApproved_AlreadyReviewing_NoStageChange(t *testing.T)
 	item, getErr := store.GetByID(ctx, itemID)
 	require.NoError(t, getErr)
 	assert.Equal(t, pipeline.StageReviewing, item.Stage)
+}
+
+func TestReconcileItem_OpenApproved_LiveBotReview_StaysInReviewing(t *testing.T) {
+	restore := stubLiveBotReview(true)
+	defer restore()
+
+	ctx := context.Background()
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	store := pipeline.NewWorkItemStore(sqlDB)
+	require.NoError(t, store.InitSchema(ctx))
+
+	itemID, _ := store.Create(ctx, pipeline.WorkItem{
+		Ticket:   "JAM-GATE-BOT",
+		Engineer: agent.RoleEngineer1,
+		Stage:    pipeline.StagePROpened,
+	})
+	_ = store.SetPRURL(ctx, itemID, "https://github.com/org/repo/pull/103")
+
+	orch := newReconcileOrch(t, store)
+	orch.ReconcileItemForTest(ctx, pipeline.WorkItem{
+		ID:       itemID,
+		Ticket:   "JAM-GATE-BOT",
+		PRURL:    "https://github.com/org/repo/pull/103",
+		Stage:    pipeline.StagePROpened,
+		Engineer: agent.RoleEngineer1,
+	}, orchestrator.PRState{State: "OPEN", ReviewDecision: "APPROVED"})
+
+	item, getErr := store.GetByID(ctx, itemID)
+	require.NoError(t, getErr)
+	assert.Equal(t, pipeline.StageReviewing, item.Stage,
+		"live Devin/CodeRabbit review must block merge even without structured tags")
 }
 
 func TestReconcileItem_OpenApproved_NoOutstandingComments_Advances(t *testing.T) {
