@@ -168,6 +168,14 @@ func FormatReReviewChecklist(comments []ReviewComment) string {
 	return builder.String()
 }
 
+// HasOutstandingReviewComments returns true if the PR has any
+// unaddressed review comments from reviewers like Devin or CodeRabbit
+// that a plain reviewDecision check would miss. Used to gate approval
+// transitions so squad0 doesn't merge PRs with open review feedback.
+func HasOutstandingReviewComments(ctx context.Context, repoDir, prURL string) bool {
+	return len(fetchStructuredComments(ctx, repoDir, prURL)) > 0
+}
+
 func fetchStructuredComments(ctx context.Context, repoDir, prURL string) []ReviewComment {
 	if repoDir == "" || prURL == "" || ctx.Err() != nil {
 		return nil

@@ -181,6 +181,12 @@ func (orch *Orchestrator) resumeWithGitHubState(ctx context.Context, item pipeli
 
 	switch status {
 	case approvalStatusApproved:
+		if HasOutstandingReviewComments(ctx, orch.cfg.TargetRepoDir, item.PRURL) {
+			log.Printf("resume: %s is approved but has unaddressed review comments — reverting to reviewing", item.Ticket)
+			orch.advancePipeline(ctx, item.ID, pipeline.StageReviewing)
+			orch.startReview(ctx, item.PRURL, item.Ticket, item.ID, item.Engineer)
+			return
+		}
 		log.Printf("resume: %s is approved on GitHub — sending engineer to merge", item.Ticket)
 		orch.advancePipeline(ctx, item.ID, pipeline.StageApproved)
 		orch.wg.Add(1)

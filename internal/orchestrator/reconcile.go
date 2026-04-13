@@ -134,15 +134,18 @@ func (orch *Orchestrator) reconcileClosed(ctx context.Context, item pipeline.Wor
 func (orch *Orchestrator) reconcileOpen(ctx context.Context, item pipeline.WorkItem, ghState PRState) {
 	decision := strings.ToUpper(ghState.ReviewDecision)
 
-	// Pipeline says approved but GitHub doesn't — revert to reviewing.
-	if item.Stage == pipeline.StageApproved && decision != "APPROVED" {
+	if item.Stage == pipeline.StageApproved && decision != approvalStatusApproved {
 		log.Printf("reconcile: %s pipeline says approved but GitHub says %q — reverting to reviewing", item.Ticket, decision)
 		orch.advancePipeline(ctx, item.ID, pipeline.StageReviewing)
 		return
 	}
 
+	if orch.blockedByOutstandingComments(ctx, item, decision) {
+		return
+	}
+
 	switch {
-	case decision == "APPROVED" && item.Stage != pipeline.StageApproved:
+	case decision == approvalStatusApproved && item.Stage != pipeline.StageApproved:
 		log.Printf("reconcile: %s is approved on GitHub — advancing", item.Ticket)
 		orch.advancePipeline(ctx, item.ID, pipeline.StageApproved)
 
@@ -164,4 +167,23 @@ func (orch *Orchestrator) reconcileOpen(ctx context.Context, item pipeline.WorkI
 			})
 		}
 	}
+}
+
+// blockedByOutstandingComments returns true if a PR that GitHub
+// reports as APPROVED still has unaddressed structured review
+// comments (e.g. from Devin or CodeRabbit). In that case the item
+// is dropped back to reviewing so the fix-up loop runs instead of
+// advancing to merge.
+func (orch *Orchestrator) blockedByOutstandingComments(ctx context.Context, item pipeline.WorkItem, decision string) bool {
+	if decision != approvalStatusApproved {
+		return false
+	}
+	if !HasOutstandingReviewComments(ctx, orch.cfg.TargetRepoDir, item.PRURL) {
+		return false
+	}
+	log.Printf("reconcile: %s is approved but has unaddressed review comments — staying in reviewing", item.Ticket)
+	if item.Stage != pipeline.StageReviewing {
+		orch.advancePipeline(ctx, item.ID, pipeline.StageReviewing)
+	}
+	return true
 }
