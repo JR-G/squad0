@@ -107,7 +107,7 @@ type fakeBridge struct {
 	calls    int
 }
 
-func (b *fakeBridge) Chat(_ context.Context, _, _ string) (string, error) {
+func (b *fakeBridge) Chat(_ context.Context, _, _, _ string) (string, error) {
 	b.calls++
 	return b.response, b.err
 }

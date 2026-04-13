@@ -59,13 +59,16 @@ func TestResumePendingWork_ChangesRequested_TriggersFixUp(t *testing.T) {
 		agent.RoleReviewer:  reviewerAgent,
 	}
 
+	repoDir := t.TempDir()
+	initTestRepoWithBranch(t, repoDir, "feat/jam-cr1")
+
 	orch := orchestrator.NewOrchestrator(
 		orchestrator.Config{
 			PollInterval:     time.Second,
 			MaxParallel:      3,
 			CooldownAfter:    time.Second,
 			AcknowledgePause: time.Millisecond,
-			TargetRepoDir:    t.TempDir(),
+			TargetRepoDir:    repoDir,
 		},
 		agents, checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
@@ -82,7 +85,7 @@ func TestResumePendingWork_ChangesRequested_TriggersFixUp(t *testing.T) {
 	require.NoError(t, pipeStore.SetPRURL(ctx, itemID, "https://github.com/test-org/test-repo/pull/200"))
 	require.NoError(t, pipeStore.Advance(ctx, itemID, pipeline.StageChangesRequested))
 
-	timedCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	timedCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
 	_ = orch.Run(timedCtx)
@@ -138,13 +141,16 @@ func TestResumePendingWork_WorkingWithPR_TriggersFixUp(t *testing.T) {
 		agent.RoleReviewer:  reviewerAgent,
 	}
 
+	repoDir := t.TempDir()
+	initTestRepoWithBranch(t, repoDir, "feat/jam-wp1")
+
 	orch := orchestrator.NewOrchestrator(
 		orchestrator.Config{
 			PollInterval:     time.Second,
 			MaxParallel:      3,
 			CooldownAfter:    time.Second,
 			AcknowledgePause: time.Millisecond,
-			TargetRepoDir:    t.TempDir(),
+			TargetRepoDir:    repoDir,
 		},
 		agents, checkIns, nil, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
@@ -160,7 +166,7 @@ func TestResumePendingWork_WorkingWithPR_TriggersFixUp(t *testing.T) {
 	require.NoError(t, createErr)
 	require.NoError(t, pipeStore.SetPRURL(ctx, itemID, "https://github.com/test-org/test-repo/pull/201"))
 
-	timedCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	timedCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
 	_ = orch.Run(timedCtx)
@@ -233,7 +239,7 @@ func TestResumePendingWork_Approved_TriggersMerge(t *testing.T) {
 	require.NoError(t, pipeStore.SetPRURL(ctx, itemID, "https://github.com/test-org/test-repo/pull/202"))
 	require.NoError(t, pipeStore.Advance(ctx, itemID, pipeline.StageApproved))
 
-	timedCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	timedCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
 	_ = orch.Run(timedCtx)

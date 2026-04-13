@@ -97,6 +97,7 @@ type SessionConfig struct {
 	Role            Role
 	Model           string
 	Prompt          string
+	SystemPrompt    string // Injected via --append-system-prompt. Used for persona anchoring.
 	WorkingDir      string
 	MaxTurnDuration int
 	MCPConfigPath   string
@@ -268,6 +269,10 @@ func buildArgs(cfg SessionConfig) []string {
 		"--output-format", "stream-json",
 		"--verbose",
 		"--dangerously-skip-permissions",
+	}
+
+	if cfg.SystemPrompt != "" {
+		args = append(args, "--append-system-prompt", cfg.SystemPrompt)
 	}
 
 	if cfg.MaxTurnDuration > 0 {

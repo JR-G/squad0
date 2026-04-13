@@ -16,10 +16,10 @@ func TestBridge_Chat_DoubleSwap_StaysOnFallback(t *testing.T) {
 	active := &fakeRuntime{name: "claude", sendErr: fmt.Errorf("rate limit 429")}
 	fallback := &fakeRuntime{name: "codex", sendResponse: "ok"}
 	bridge := runtime.NewSessionBridge(agent.RoleEngineer1, active, fallback)
-	_, err := bridge.Chat(context.Background(), "test1", "")
+	_, err := bridge.Chat(context.Background(), "test1", "", "")
 	require.NoError(t, err)
 	assert.True(t, bridge.IsSwapped())
-	_, err2 := bridge.Chat(context.Background(), "test2", "")
+	_, err2 := bridge.Chat(context.Background(), "test2", "", "")
 	require.NoError(t, err2)
 	assert.Equal(t, "codex", bridge.Active().Name())
 }
@@ -29,7 +29,7 @@ func TestBridge_ResetSwap_ThenChat(t *testing.T) {
 	active := &fakeRuntime{name: "claude", sendErr: fmt.Errorf("rate limit 429")}
 	fallback := &fakeRuntime{name: "codex", sendResponse: "ok"}
 	bridge := runtime.NewSessionBridge(agent.RoleEngineer1, active, fallback)
-	_, _ = bridge.Chat(context.Background(), "test", "")
+	_, _ = bridge.Chat(context.Background(), "test", "", "")
 	bridge.ResetSwap()
 	assert.False(t, bridge.IsSwapped())
 	assert.Equal(t, "claude", bridge.Active().Name())
@@ -51,7 +51,7 @@ func TestBridge_Chat_NilFallback_RateLimit_ReturnsError(t *testing.T) {
 	t.Parallel()
 	active := &fakeRuntime{name: "claude", sendErr: fmt.Errorf("rate limit 429")}
 	bridge := runtime.NewSessionBridge(agent.RoleEngineer2, active, nil)
-	_, err := bridge.Chat(context.Background(), "test", "")
+	_, err := bridge.Chat(context.Background(), "test", "", "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no fallback")
 }

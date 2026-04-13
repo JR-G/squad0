@@ -19,7 +19,7 @@ func TestBridge_Chat_NilError_NotTimeout(t *testing.T) {
 	t.Parallel()
 	active := &fakeRuntime{name: "claude", sendResponse: "ok"}
 	bridge := runtime.NewSessionBridge(agent.RoleEngineer1, active, nil)
-	result, err := bridge.Chat(context.Background(), "hi", "")
+	result, err := bridge.Chat(context.Background(), "hi", "", "")
 	require.NoError(t, err)
 	assert.Equal(t, "ok", result)
 }

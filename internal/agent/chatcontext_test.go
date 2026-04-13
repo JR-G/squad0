@@ -43,8 +43,8 @@ func TestNewChatContext_CLAUDEMDContainsIdentity(t *testing.T) {
 	require.NoError(t, err)
 
 	md := string(content)
-	assert.Contains(t, md, "# You are Mara")
-	assert.Contains(t, md, "You are Mara. Not an AI assistant. Not Claude. You are Mara.")
+	assert.Contains(t, md, "# Persona: Mara")
+	assert.Contains(t, md, "You are playing Mara")
 	assert.Contains(t, md, "## Examples of how you talk")
 	assert.Contains(t, md, "why don't we just try it?")
 	assert.Contains(t, md, "Sable (Tech Lead)")
@@ -129,7 +129,7 @@ func TestNewChatContext_FallbackName(t *testing.T) {
 	content, err := os.ReadFile(filepath.Join(ctx.Dir(), "CLAUDE.md"))
 	require.NoError(t, err)
 
-	assert.Contains(t, string(content), "# You are pm")
+	assert.Contains(t, string(content), "# Persona: pm")
 }
 
 func TestSetChatContext_StoresRosterAndBeliefs(t *testing.T) {
@@ -181,7 +181,7 @@ func TestBuildPersonalityCLAUDEMDForPrime_ReturnsPersonality(t *testing.T) {
 	roster := map[agent.Role]string{agent.RoleEngineer1: "Callum"}
 	output := agent.BuildPersonalityCLAUDEMDForPrime(agent.RoleEngineer1, roster, nil, "dry and understated")
 
-	assert.Contains(t, output, "# You are Callum")
+	assert.Contains(t, output, "# Persona: Callum")
 	assert.Contains(t, output, "dry and understated")
 }
 
@@ -191,7 +191,7 @@ func TestBuildPersonalityCLAUDEMDForPrime_FallbackName(t *testing.T) {
 	roster := map[agent.Role]string{}
 	output := agent.BuildPersonalityCLAUDEMDForPrime(agent.RolePM, roster, nil, "")
 
-	assert.Contains(t, output, "# You are pm")
+	assert.Contains(t, output, "# Persona: pm")
 }
 
 func TestNewChatContext_AllRoles_HaveAntiPatterns(t *testing.T) {

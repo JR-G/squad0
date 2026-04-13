@@ -29,6 +29,7 @@ func buildNarrationOrch(
 	t *testing.T,
 	agents map[agent.Role]*agent.Agent,
 	memDB *memory.DB,
+	repoBranches ...string,
 ) (*orchestrator.Orchestrator, *pipeline.WorkItemStore) {
 	t.Helper()
 
@@ -51,6 +52,16 @@ func buildNarrationOrch(
 	t.Cleanup(server.Close)
 	bot := newTestSlackBot(server.URL)
 
+	repoDir := t.TempDir()
+	if len(repoBranches) > 0 {
+		initTestRepoWithBranch(t, repoDir, repoBranches[0])
+		for _, branch := range repoBranches[1:] {
+			c := execCommand(repoDir, "git", "branch", branch)
+			output, err := c.CombinedOutput()
+			require.NoError(t, err, "creating branch %s failed: %s", branch, string(output))
+		}
+	}
+
 	pmAgent := agents[agent.RolePM]
 	orch := orchestrator.NewOrchestrator(
 		orchestrator.Config{
@@ -58,7 +69,7 @@ func buildNarrationOrch(
 			MaxParallel:      3,
 			CooldownAfter:    time.Second,
 			AcknowledgePause: time.Millisecond,
-			TargetRepoDir:    t.TempDir(),
+			TargetRepoDir:    repoDir,
 		},
 		agents, checkIns, bot, orchestrator.NewAssigner(pmAgent, "TEST"),
 	)
@@ -114,7 +125,7 @@ func TestStartFixUp_WithNarration_PostsAndAcknowledges(t *testing.T) {
 		agent.RoleEngineer1: engAgent,
 	}
 
-	orch, pipeStore := buildNarrationOrch(t, agents, memDB)
+	orch, pipeStore := buildNarrationOrch(t, agents, memDB, "feat/jam-n1")
 
 	itemID, createErr := pipeStore.Create(ctx, pipeline.WorkItem{
 		Ticket: "JAM-N1", Engineer: agent.RoleEngineer1, Stage: pipeline.StageReviewing, Branch: "feat/jam-n1",

@@ -15,10 +15,12 @@ const chatModel = "claude-haiku-4-5-20251001"
 // ChatBridge is an optional bridge for routing QuickChat through an
 // alternative runtime with fallback support. When set, QuickChat
 // delegates to the bridge for execution. The bridge receives the
-// personality working directory so it can run Claude with the
-// CLAUDE.md context. Implemented by runtime.SessionBridge.
+// personality working directory *and* the persona system-prompt
+// so it can run Claude with both the CLAUDE.md context and the
+// --append-system-prompt persona anchor. Implemented by
+// runtime.SessionBridge.
 type ChatBridge interface {
-	Chat(ctx context.Context, prompt, workDir string) (string, error)
+	Chat(ctx context.Context, prompt, workDir, systemPrompt string) (string, error)
 }
 
 // Agent represents a squad0 team member with a persistent identity.
@@ -160,18 +162,20 @@ func (agent *Agent) QuickChat(ctx context.Context, prompt string) (string, error
 	}
 	defer chatCtx.Cleanup()
 
-	// Bridge path — personality dir passed so the bridge runs Claude
-	// with the CLAUDE.md, correct model, and fallback support.
+	// Bridge path — personality dir + system prompt passed so the
+	// bridge runs Claude with the CLAUDE.md, persona anchor, correct
+	// model, and fallback support.
 	if agent.chatBridge != nil {
-		return agent.chatBridge.Chat(ctx, prompt, chatCtx.Dir())
+		return agent.chatBridge.Chat(ctx, prompt, chatCtx.Dir(), chatCtx.SystemPrompt())
 	}
 
 	// Direct path — no bridge, use session.Run.
 	cfg := SessionConfig{
-		Role:       agent.role,
-		Model:      chatModel,
-		Prompt:     prompt,
-		WorkingDir: chatCtx.Dir(),
+		Role:         agent.role,
+		Model:        chatModel,
+		Prompt:       prompt,
+		SystemPrompt: chatCtx.SystemPrompt(),
+		WorkingDir:   chatCtx.Dir(),
 	}
 
 	result, runErr := agent.session.Run(ctx, cfg)

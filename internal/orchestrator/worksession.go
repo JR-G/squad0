@@ -86,8 +86,11 @@ func NewFixUpSession(ctx context.Context, repoDir, prURL string, role agent.Role
 	_ = os.RemoveAll(worktreeDir)
 	_, _ = gitCommand(ctx, repoDir, "worktree", "prune")
 
-	// Check out the existing branch — no -b flag.
-	output, err := gitCommand(ctx, repoDir, "worktree", "add", worktreeDir, branch)
+	// Check out the existing branch. --force lets us create the
+	// worktree even when the branch is already checked out in the
+	// main repo or another worktree — the fix-up worktree is
+	// ephemeral so parallel use is safe.
+	output, err := gitCommand(ctx, repoDir, "worktree", "add", "--force", worktreeDir, branch)
 	if err != nil {
 		return nil, fmt.Errorf("creating fix-up worktree for %s on %s: %s: %w", role, branch, string(output), err)
 	}
@@ -140,7 +143,7 @@ func createWorktree(ctx context.Context, repoDir, worktreeDir, branch string, ro
 		return nil, fmt.Errorf("%s: %w", string(output), err)
 	}
 
-	output, err = gitCommand(ctx, repoDir, "worktree", "add", worktreeDir, branch)
+	output, err = gitCommand(ctx, repoDir, "worktree", "add", "--force", worktreeDir, branch)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", string(output), err)
 	}

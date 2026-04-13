@@ -42,15 +42,17 @@ func NewSessionBridge(role agent.Role, active, fallback Runtime) *SessionBridge 
 const chatModel = "claude-haiku-4-5-20251001"
 
 // Chat runs a chat prompt with personality context. workDir is the
-// temp directory containing the personality CLAUDE.md. Uses Haiku
-// for chat. Falls back on rate limits or timeouts.
-func (bridge *SessionBridge) Chat(ctx context.Context, prompt, workDir string) (string, error) {
+// temp directory containing the personality CLAUDE.md and
+// systemPrompt is the persona anchor appended to Claude Code's
+// system prompt via --append-system-prompt. Uses Haiku for chat.
+// Falls back on rate limits or timeouts.
+func (bridge *SessionBridge) Chat(ctx context.Context, prompt, workDir, systemPrompt string) (string, error) {
 	bridge.mu.Lock()
 	active := bridge.active
 	fallback := bridge.fallback
 	bridge.mu.Unlock()
 
-	response, err := runChat(ctx, active, prompt, workDir, bridge.role)
+	response, err := runChat(ctx, active, prompt, workDir, systemPrompt, bridge.role)
 	if err == nil {
 		return response, nil
 	}
@@ -65,7 +67,7 @@ func (bridge *SessionBridge) Chat(ctx context.Context, prompt, workDir string) (
 	}
 
 	log.Printf("bridge: %s failed on %s, falling back to %s: %v", bridge.role, active.Name(), fallback.Name(), err)
-	fallbackResponse, fallbackErr := runChat(ctx, fallback, prompt, workDir, bridge.role)
+	fallbackResponse, fallbackErr := runChat(ctx, fallback, prompt, workDir, systemPrompt, bridge.role)
 	if fallbackErr != nil {
 		return fallbackResponse, fmt.Errorf("fallback %s also failed: %w", fallback.Name(), fallbackErr)
 	}
@@ -74,18 +76,20 @@ func (bridge *SessionBridge) Chat(ctx context.Context, prompt, workDir string) (
 	return fallbackResponse, nil
 }
 
-// runChat executes a chat prompt with the correct model and workdir.
-func runChat(ctx context.Context, rt Runtime, prompt, workDir string, role agent.Role) (string, error) {
+// runChat executes a chat prompt with the correct model, workdir,
+// and persona system prompt.
+func runChat(ctx context.Context, rt Runtime, prompt, workDir, systemPrompt string, role agent.Role) (string, error) {
 	cpr, ok := rt.(*ClaudeProcessRuntime)
 	if !ok {
 		return rt.Send(ctx, prompt)
 	}
 
 	cfg := agent.SessionConfig{
-		Role:       role,
-		Model:      chatModel,
-		Prompt:     prompt,
-		WorkingDir: workDir,
+		Role:         role,
+		Model:        chatModel,
+		Prompt:       prompt,
+		SystemPrompt: systemPrompt,
+		WorkingDir:   workDir,
 	}
 
 	result, err := cpr.session.Run(ctx, cfg)

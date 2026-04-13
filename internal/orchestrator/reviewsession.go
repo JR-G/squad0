@@ -422,13 +422,17 @@ func (orch *Orchestrator) startFixUp(ctx context.Context, prURL, ticket string, 
 	time.Sleep(orch.acknowledgePause())
 	orch.acknowledgeThread(ctx, engineerAgent, engineerRole, "engineering")
 
-	// Work in a worktree on the PR branch so the agent doesn't
-	// create a new branch/PR. If worktree creation fails, fall back
-	// to TargetRepoDir so fix-ups still attempt to run.
-	workDir, fixUpSession := orch.setupFixUpWorktree(ctx, prURL, engineerRole, ticket)
-	if fixUpSession != nil {
-		defer fixUpSession.Cleanup(ctx)
+	// Work must happen in an isolated worktree — never the shared
+	// target repo. Falling back to TargetRepoDir caused cross-ticket
+	// commit pollution when multiple fix-ups ran on the same dir.
+	workDir, fixUpSession, worktreeErr := orch.setupFixUpWorktree(ctx, prURL, engineerRole, ticket)
+	if worktreeErr != nil {
+		log.Printf("fix-up aborted for %s: worktree unavailable: %v", ticket, worktreeErr)
+		orch.writeHandoff(ctx, ticket, engineerRole, "failed", fmt.Sprintf("worktree setup failed: %v", worktreeErr), fmt.Sprintf("feat/%s", strings.ToLower(ticket)))
+		orch.escalateWorktreeFailure(ctx, ticket, prURL, engineerRole, worktreeErr)
+		return
 	}
+	defer fixUpSession.Cleanup(ctx)
 
 	orch.writeMCPConfig(engineerAgent, workDir)
 	defer func() { _ = agent.RemoveMCPConfig(workDir) }()
@@ -471,19 +475,6 @@ func (orch *Orchestrator) startFixUp(ctx context.Context, prURL, ticket string, 
 
 	orch.emitEvent(ctx, EventFixUpComplete, prURL, ticket, workItemID, engineerRole)
 	orch.startReReview(ctx, prURL, ticket, workItemID, engineerRole)
-}
-
-func (orch *Orchestrator) setupFixUpWorktree(ctx context.Context, prURL string, role agent.Role, ticket string) (string, *WorkSession) {
-	if ctx.Err() != nil {
-		return orch.cfg.TargetRepoDir, nil
-	}
-	session, err := NewFixUpSession(ctx, orch.cfg.TargetRepoDir, prURL, role, ticket)
-	if err != nil {
-		log.Printf("fix-up: worktree failed for %s, using repo dir: %v", ticket, err)
-		return orch.cfg.TargetRepoDir, nil
-	}
-	dir := session.Dir()
-	return dir, session
 }
 
 func (orch *Orchestrator) startReReview(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role) {

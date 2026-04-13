@@ -247,6 +247,18 @@ func initTestRepo(t *testing.T, dir string) {
 	require.NoError(t, err)
 }
 
+// initTestRepoWithBranch creates a git repo at dir and also creates
+// the given branch pointing at the initial commit. Used by tests that
+// rely on NewFixUpSession being able to check out an existing PR
+// branch. Without an existing branch, fix-up setup fails by design.
+func initTestRepoWithBranch(t *testing.T, dir, branch string) {
+	t.Helper()
+	initTestRepo(t, dir)
+	c := execCommand(dir, "git", "branch", branch)
+	output, err := c.CombinedOutput()
+	require.NoError(t, err, "creating branch %s failed: %s", branch, string(output))
+}
+
 func execCommand(dir, name string, args ...string) *exec.Cmd {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir

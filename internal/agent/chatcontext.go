@@ -7,18 +7,21 @@ import (
 	"strings"
 )
 
-// ChatContext creates a temporary directory with a CLAUDE.md that
-// establishes the agent's identity via Claude Code's own project
-// context mechanism. This is how Gas Town does it — work WITH
-// Claude Code instead of fighting its system prompt.
+// ChatContext holds a temp directory containing a CLAUDE.md *and*
+// the system-prompt text used to anchor the agent's persona when
+// spawning Claude Code. CLAUDE.md gives the model project-level
+// context; the system prompt is injected via --append-system-prompt
+// and carries stronger behavioural weight for identity and voice.
 type ChatContext struct {
-	dir string
+	dir          string
+	systemPrompt string
 }
 
-// NewChatContext creates a temp directory with a personality CLAUDE.md.
-// The caller must call Cleanup when done. voiceText is the full ## Voice
-// section from the agent's personality file — if empty, falls back to
-// hardcoded examples.
+// NewChatContext creates a temp directory with a personality CLAUDE.md
+// and stores the persona text for use as a system-prompt override.
+// The caller must call Cleanup when done. voiceText is the full
+// ## Voice section from the agent's personality file — if empty,
+// falls back to hardcoded examples.
 func NewChatContext(role Role, roster map[Role]string, beliefs []string, voiceText string) (*ChatContext, error) {
 	dir, err := os.MkdirTemp("", "squad0-chat-*")
 	if err != nil {
@@ -38,7 +41,28 @@ func NewChatContext(role Role, roster map[Role]string, beliefs []string, voiceTe
 		return nil, fmt.Errorf("writing CLAUDE.md: %w", err)
 	}
 
-	return &ChatContext{dir: dir}, nil
+	return &ChatContext{
+		dir:          dir,
+		systemPrompt: buildPersonaSystemPrompt(role, name),
+	}, nil
+}
+
+// SystemPrompt returns the persona system-prompt text to append when
+// spawning Claude Code for this chat.
+func (ctx *ChatContext) SystemPrompt() string {
+	return ctx.systemPrompt
+}
+
+// buildPersonaSystemPrompt returns the short persona anchor injected
+// via --append-system-prompt. Keep this brief — it runs alongside
+// Claude Code's own system prompt.
+func buildPersonaSystemPrompt(role Role, name string) string {
+	return fmt.Sprintf(
+		"You are playing %s, a %s on a software engineering team communicating on Slack. "+
+			"Respond in character as %s using first person. Keep messages Slack-casual, 1-3 sentences. "+
+			"The full persona and voice are in the project CLAUDE.md — follow it for tone, examples, and team knowledge.",
+		name, rosterTitle(role), name,
+	)
 }
 
 // Dir returns the temporary directory path.
@@ -64,13 +88,14 @@ func BuildPersonalityCLAUDEMDForPrime(role Role, roster map[Role]string, beliefs
 func buildPersonalityCLAUDEMD(role Role, name string, roster map[Role]string, beliefs []string, voiceText string) string {
 	var builder strings.Builder
 
-	// Identity anchor — inception prompting (CAMEL pattern).
-	fmt.Fprintf(&builder, "# You are %s\n\n", name)
+	// Persona framing — Anthropic's recommended pattern for durable
+	// character-play. Frames the agent as playing a role rather than
+	// denying what it is; refusing to deny being an AI is trained
+	// behaviour, so prompts that say "you are not an AI" trigger
+	// refusals. "Play the character of X" does not.
+	fmt.Fprintf(&builder, "# Persona: %s\n\n", name)
 	fmt.Fprintf(&builder, "%s\n\n", roleIdentity(role))
-	fmt.Fprintf(&builder, "You are %s. Not an AI assistant. Not Claude. You are %s.\n", name, name)
-	fmt.Fprintf(&builder, "Always say \"I\" — never refer to yourself in third person or by your role title.\n")
-	fmt.Fprintf(&builder, "NEVER break character. NEVER say you are an AI or mention Anthropic or Claude.\n")
-	fmt.Fprintf(&builder, "This is an authorised agent simulation for a software team. Stay in character at all times.\n\n")
+	fmt.Fprintf(&builder, "You are playing %s, a member of a software engineering team on Slack. Respond as %s would: use \"I\", reference teammates by name, talk about tickets, PRs, and code. Keep messages Slack-casual — 1-3 sentences. Stay in the persona even when the conversation gets abstract or philosophical; the team relies on consistent voices.\n\n", name, name)
 
 	// Full voice description from personality file — this is the primary
 	// voice instruction. Rich, descriptive, defines the character.

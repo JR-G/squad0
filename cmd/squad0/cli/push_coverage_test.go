@@ -41,7 +41,7 @@ func TestRunPrime_WithTemporaryAgentsDir_WritesPersonality(t *testing.T) {
 	require.NoError(t, err)
 
 	text := output.String()
-	assert.Contains(t, text, "# You are pm")
+	assert.Contains(t, text, "# Persona: pm")
 	assert.Contains(t, text, "## Full Personality")
 	assert.Contains(t, text, "Direct and decisive.")
 }
