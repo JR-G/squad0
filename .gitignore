@@ -9,3 +9,5 @@ coverage.html
 *.db
 *.db-wal
 *.db-shm
+.task/
+.mcp.json
