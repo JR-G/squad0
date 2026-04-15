@@ -237,13 +237,31 @@ func (bot *Bot) LoadRecentMessages(ctx context.Context, channel string, limit in
 	for idx := len(history.Messages) - 1; idx >= 0; idx-- {
 		msg := history.Messages[idx]
 		messages = append(messages, HistoryMessage{
-			User:      msg.User,
+			User:      resolveHistoryAuthor(msg),
 			Text:      msg.Text,
 			Timestamp: msg.Timestamp,
 		})
 	}
 
 	return messages, nil
+}
+
+// resolveHistoryAuthor extracts the best human-readable author for a
+// message pulled from Slack history. Squad0's agents post via the
+// shared bot token with a per-message username override, so every
+// message returns the same raw User ID. Preferring Msg.Username and
+// BotProfile.Name restores the persona display name ("Morgan — PM",
+// "Callum — Engineer") so the seeded chat history is meaningful and
+// the model doesn't have to invent labels like "Engineer-1" to
+// distinguish agents.
+func resolveHistoryAuthor(msg slackapi.Message) string {
+	if msg.Username != "" {
+		return msg.Username
+	}
+	if msg.BotProfile != nil && msg.BotProfile.Name != "" {
+		return msg.BotProfile.Name
+	}
+	return msg.User
 }
 
 func buildMessageOpts(text string, persona Persona) []slackapi.MsgOption {
