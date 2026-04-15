@@ -32,6 +32,7 @@ type ConversationEngine struct {
 	roster           map[agent.Role]string
 	voices           map[agent.Role]string
 	pauseChecker     PauseChecker
+	busyChecker      BusyChecker
 	concerns         *ConcernTracker
 	outputPipeline   *OutputPipeline
 	threadTracker    *ThreadTracker
@@ -149,19 +150,23 @@ func (engine *ConversationEngine) OnThreadMessage(ctx context.Context, channel, 
 		baseCount = 3
 	}
 
-	// Mentioned agents bypass decay entirely.
-	if baseCount == 0 && len(mentioned) > 0 {
+	// Mentioned agents normally bypass decay, except in a decided
+	// thread: agents @mentioning each other must not reopen a
+	// discussion the team has already resolved, or the chat spiral
+	// restarts right after a DECISION lands. Humans can still
+	// mention-bypass because a human message resets the phase below.
+	if baseCount == 0 && len(mentioned) > 0 && threadState.Phase != PhaseDecided {
 		baseCount = len(mentioned)
 	}
 
 	log.Printf("chat: channel=%s sender=%s phase=%s turns=%d responders=%d mentioned=%v thread=%s",
 		channel, sender, threadState.Phase, threadState.TurnCount, baseCount, mentioned, activeThread)
 
-	if baseCount == 0 && len(mentioned) == 0 {
+	if baseCount == 0 {
 		return
 	}
 
-	candidates := engine.pickCandidates(sender, baseCount, recentCopy, mentioned)
+	candidates := engine.pickCandidates(ctx, sender, baseCount, recentCopy, mentioned)
 	log.Printf("chat: picked %v to respond", candidates)
 
 	for _, role := range candidates {
@@ -367,28 +372,16 @@ func (engine *ConversationEngine) topBeliefs(ctx context.Context, role agent.Rol
 	return result
 }
 
-func (engine *ConversationEngine) pickCandidates(sender string, count int, _ []string, mentioned []agent.Role) []agent.Role {
-	allRoles := agent.AllRoles()
-	eligible := make([]agent.Role, 0, len(allRoles))
-	mentionedSet := make(map[agent.Role]bool, len(mentioned))
-
-	for _, role := range mentioned {
-		mentionedSet[role] = true
-	}
-
-	for _, role := range allRoles {
-		if string(role) == sender || role == agent.RoleReviewer || mentionedSet[role] {
-			continue
-		}
-		eligible = append(eligible, role)
-	}
+func (engine *ConversationEngine) pickCandidates(ctx context.Context, sender string, count int, _ []string, mentioned []agent.Role) []agent.Role {
+	eligible := engine.eligibleRoles(ctx, sender, mentioned)
 
 	rand.Shuffle(len(eligible), func(i, j int) {
 		eligible[i], eligible[j] = eligible[j], eligible[i]
 	})
 
-	// Mentioned agents are guaranteed, then fill remaining slots.
-	remaining := count - len(mentioned)
+	activeMentioned := engine.filterBusy(ctx, mentioned)
+
+	remaining := count - len(activeMentioned)
 	if remaining < 0 {
 		remaining = 0
 	}
@@ -396,8 +389,8 @@ func (engine *ConversationEngine) pickCandidates(sender string, count int, _ []s
 		remaining = len(eligible)
 	}
 
-	result := make([]agent.Role, 0, len(mentioned)+remaining)
-	result = append(result, mentioned...)
+	result := make([]agent.Role, 0, len(activeMentioned)+remaining)
+	result = append(result, activeMentioned...)
 	result = append(result, eligible[:remaining]...)
 
 	return result

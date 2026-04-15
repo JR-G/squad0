@@ -246,9 +246,9 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	conversation := orchestrator.NewConversationEngine(agents, agentFactStores, bot, roster)
 	conversation.SetProjectFactStore(projectFactStore)
 	conversation.SetConcernTracker(concerns)
+	conversation.SetBusyChecker(busyCheckerFromCheckIns(checkInStore))
 	orch.SetConversationEngine(conversation)
 	orch.SetRoster(roster)
-
 	seedConversationHistory(ctx, bot, conversation, cfg)
 
 	commandHandler := newCommandDispatcher(orch, bot, conversation, personas, buildLinkConfig(cfg))
