@@ -47,7 +47,7 @@ func TestNewChatContext_CLAUDEMDContainsIdentity(t *testing.T) {
 	assert.Contains(t, md, "You are playing Mara")
 	assert.Contains(t, md, "## Examples of how you talk")
 	assert.Contains(t, md, "why don't we just try it?")
-	assert.Contains(t, md, "Sable (Tech Lead)")
+	assert.Contains(t, md, "Sable — tech lead")
 }
 
 func TestNewChatContext_IncludesBeliefs(t *testing.T) {

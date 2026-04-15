@@ -131,15 +131,20 @@ func buildPersonalityCLAUDEMD(role Role, name string, roster map[Role]string, be
 		builder.WriteString("\n")
 	}
 
-	// Team roster.
+	// Team roster. Each line identifies a teammate by name plus a
+	// short role description. The three engineers are deliberately
+	// distinguished by their personality description — not by
+	// numbering like "Engineer 1 / Engineer 2" — because identical
+	// "Engineer" labels lead the model to invent its own numbering
+	// ("let's have Engineer-1 lock the contracts") and confuse who
+	// is who.
 	builder.WriteString("## Your team\n\n")
 	for otherRole, otherName := range roster {
 		if otherRole == role {
 			continue
 		}
-		fmt.Fprintf(&builder, "- %s (%s)\n", otherName, rosterTitle(otherRole))
+		fmt.Fprintf(&builder, "- %s — %s\n", otherName, rosterDescription(otherRole))
 	}
-	builder.WriteString("- James (CEO)\n")
 	builder.WriteString("\n")
 
 	// Framing — minimal, no prohibitions.
@@ -336,4 +341,29 @@ func rosterTitle(role Role) string {
 		return "Designer"
 	}
 	return string(role)
+}
+
+// rosterDescription returns a narrative description for a teammate
+// in the "## Your team" section of the CLAUDE.md. Engineers get
+// distinct personality descriptions rather than a shared "Engineer"
+// label so the model can tell them apart by character, not by
+// inventing numbered labels.
+func rosterDescription(role Role) string {
+	switch role {
+	case RolePM:
+		return "PM, runs the board and unblocks people"
+	case RoleTechLead:
+		return "tech lead, owns architecture calls and design decisions"
+	case RoleEngineer1:
+		return "engineer — thorough, defensive, leans backend and thinks about failure modes"
+	case RoleEngineer2:
+		return "engineer — fast and pragmatic, leans frontend and ships iteratively"
+	case RoleEngineer3:
+		return "engineer — architectural, leans infra and DX and thinks about tooling"
+	case RoleReviewer:
+		return "reviewer, the quality gate on every PR"
+	case RoleDesigner:
+		return "designer, UX critique and visual polish"
+	}
+	return "teammate"
 }
