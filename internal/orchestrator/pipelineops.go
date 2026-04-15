@@ -333,6 +333,21 @@ func isDeadWorkingSession(item pipeline.WorkItem) bool {
 	return item.Stage == pipeline.StageWorking && item.PRURL == ""
 }
 
+// IsDeadWorkingSessionForTest exports isDeadWorkingSession for testing.
+func IsDeadWorkingSessionForTest(item pipeline.WorkItem) bool {
+	return isDeadWorkingSession(item)
+}
+
+// HandleDeadSessionForTest exports handleDeadSession for testing.
+func (orch *Orchestrator) HandleDeadSessionForTest(ctx context.Context, role agent.Role, item pipeline.WorkItem) {
+	orch.handleDeadSession(ctx, role, item)
+}
+
+// ResumeAssignmentForTest exports resumeAssignment for testing.
+func (orch *Orchestrator) ResumeAssignmentForTest(ctx context.Context, item pipeline.WorkItem) {
+	orch.resumeAssignment(ctx, item)
+}
+
 func (orch *Orchestrator) handleDeadSession(ctx context.Context, role agent.Role, item pipeline.WorkItem) {
 	if time.Since(item.UpdatedAt) <= runtimeSessionDeadGrace {
 		log.Printf("tick: %s has working item %s with no PR — waiting for session", role, item.Ticket)
