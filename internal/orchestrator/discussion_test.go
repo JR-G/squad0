@@ -56,7 +56,7 @@ func TestDiscussionPhase_PostsPlan(t *testing.T) {
 		Role: agent.RoleEngineer1, Ticket: "JAM-42", Description: "Add auth",
 	}
 
-	discussion := orch.RunDiscussionForTest(ctx, engAgent, assignment)
+	discussion, _ := orch.RunDiscussionForTest(ctx, engAgent, assignment)
 
 	// The engineer should have been asked for a plan.
 	require.NotEmpty(t, planRunner.calls)
@@ -99,7 +99,7 @@ func TestDiscussionPhase_PassResponse_ReturnsEmpty(t *testing.T) {
 		Role: agent.RoleEngineer1, Ticket: "JAM-42", Description: "test",
 	}
 
-	discussion := orch.RunDiscussionForTest(ctx, engAgent, assignment)
+	discussion, _ := orch.RunDiscussionForTest(ctx, engAgent, assignment)
 	assert.Empty(t, discussion)
 }
 
@@ -137,7 +137,7 @@ func TestDiscussionPhase_Error_ReturnsEmpty(t *testing.T) {
 		Role: agent.RoleEngineer1, Ticket: "JAM-42", Description: "test",
 	}
 
-	discussion := orch.RunDiscussionForTest(ctx, engAgent, assignment)
+	discussion, _ := orch.RunDiscussionForTest(ctx, engAgent, assignment)
 	assert.Empty(t, discussion)
 }
 
@@ -200,7 +200,7 @@ func TestDiscussionPhase_WithConversation_CollectsMessages(t *testing.T) {
 		Role: agent.RoleEngineer1, Ticket: "JAM-42", Description: "Add JWT auth",
 	}
 
-	discussion := orch.RunDiscussionForTest(ctx, agents[agent.RoleEngineer1], assignment)
+	discussion, _ := orch.RunDiscussionForTest(ctx, agents[agent.RoleEngineer1], assignment)
 
 	assert.Contains(t, discussion, "Team Discussion")
 }

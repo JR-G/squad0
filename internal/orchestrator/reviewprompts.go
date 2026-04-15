@@ -10,9 +10,12 @@ const reviewPromptTemplate = `You are reviewing pull request #%s for ticket %s.
 ## Instructions
 1. Read the PR diff: gh pr diff %s
 2. Read the PR description: gh pr view %s
+   - Look for a '## Decisions Honoured' section in the body. Each bullet there is a DECISION the team made during the pre-implementation discussion that the engineer committed to honour.
+   - For each listed decision, verify the code actually implements it. A decision that was ignored, substituted, or silently changed is a [blocker].
 3. Check for review comments (CodeRabbit, humans, prior reviews): gh pr view %s --comments
 4. Analyse the changes for:
    - Correctness: does the code do what the ticket asks?
+   - Decisions: are all entries in 'Decisions Honoured' actually honoured in the diff?
    - Bugs: off-by-one errors, nil pointer dereferences, race conditions
    - Tests: are the changes adequately tested?
    - Security: any injection, XSS, or auth issues?

@@ -54,7 +54,7 @@ func TestWaitForQuiet_NoEngine_UsesFixedWait(t *testing.T) {
 	}
 
 	start := time.Now()
-	_ = orch.RunDiscussionForTest(ctx, engAgent, assignment)
+	_, _ = orch.RunDiscussionForTest(ctx, engAgent, assignment)
 	elapsed := time.Since(start)
 
 	// Should return quickly since DiscussionWait is 10ms.
@@ -125,7 +125,7 @@ func TestWaitForQuiet_CancelledContext_ReturnsImmediately(t *testing.T) {
 	}
 
 	start := time.Now()
-	_ = orch.RunDiscussionForTest(ctx, engAgent, assignment)
+	_, _ = orch.RunDiscussionForTest(ctx, engAgent, assignment)
 	elapsed := time.Since(start)
 
 	assert.Less(t, elapsed, 2*time.Second)
@@ -196,7 +196,7 @@ func TestWaitForQuiet_MaxWaitReached_Proceeds(t *testing.T) {
 	}
 
 	start := time.Now()
-	_ = orch.RunDiscussionForTest(ctx, engAgent, assignment)
+	_, _ = orch.RunDiscussionForTest(ctx, engAgent, assignment)
 	elapsed := time.Since(start)
 
 	// Should finish quickly because DiscussionWait (maxWait) is 50ms.

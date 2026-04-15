@@ -18,6 +18,11 @@ type Assignment struct {
 	Description string
 	WorkingDir  string
 	WorkItemID  int64
+	// Decisions captures DECISION lines extracted from the
+	// pre-implementation discussion so they flow into both the
+	// engineer's implementation prompt and the reviewer's prompt
+	// without needing a separate store.
+	Decisions []Decision
 }
 
 // Assigner fetches tickets from Linear directly, applies smart

@@ -18,7 +18,7 @@ const (
 )
 
 // RunDiscussionForTest exports runDiscussionPhase for testing.
-func (orch *Orchestrator) RunDiscussionForTest(ctx context.Context, agentInstance *agent.Agent, assignment Assignment) string {
+func (orch *Orchestrator) RunDiscussionForTest(ctx context.Context, agentInstance *agent.Agent, assignment Assignment) (string, []Decision) {
 	return orch.runDiscussionPhase(ctx, agentInstance, assignment)
 }
 
@@ -47,8 +47,11 @@ Use Slack formatting (*bold* not **bold**). No headers. Respond with ONLY your p
 
 // runDiscussionPhase posts the engineer's plan and waits for team
 // feedback before implementation begins. Returns the discussion
-// messages so they can be included in the implementation prompt.
-func (orch *Orchestrator) runDiscussionPhase(ctx context.Context, agentInstance *agent.Agent, assignment Assignment) string {
+// transcript and any DECISIONs extracted from it so they can both be
+// included in the implementation prompt. Decisions are captured
+// separately so the engineer sees them as binding commitments, not
+// just raw chat lines.
+func (orch *Orchestrator) runDiscussionPhase(ctx context.Context, agentInstance *agent.Agent, assignment Assignment) (string, []Decision) {
 	role := agentInstance.Role()
 	planPrompt := fmt.Sprintf(planPromptTemplate, assignment.Ticket, assignment.Description)
 
@@ -57,13 +60,13 @@ func (orch *Orchestrator) runDiscussionPhase(ctx context.Context, agentInstance 
 	result, err := agentInstance.DirectSession(ctx, planPrompt)
 	if err != nil {
 		log.Printf("discussion: %s failed to generate plan: %v", role, err)
-		return ""
+		return "", nil
 	}
 	plan := result.Transcript
 
 	plan = filterPassResponse(plan)
 	if plan == "" {
-		return ""
+		return "", nil
 	}
 
 	// Post the plan — this triggers the conversation engine so
@@ -79,8 +82,14 @@ func (orch *Orchestrator) runDiscussionPhase(ctx context.Context, agentInstance 
 	// PM makes the call if the discussion didn't converge.
 	orch.BreakDiscussionTie(ctx, "engineering")
 
-	// Collect the discussion for the implementation prompt.
-	return orch.collectDiscussion(ctx, "engineering")
+	// Collect the discussion for the implementation prompt and pull
+	// out every DECISION line as a binding commitment.
+	transcript := orch.collectDiscussion(ctx, "engineering")
+	decisions := ExtractDecisionsFromTranscript(transcript)
+	if len(decisions) > 0 {
+		log.Printf("discussion: extracted %d decisions for %s", len(decisions), assignment.Ticket)
+	}
+	return transcript, decisions
 }
 
 // waitForQuiet polls the conversation engine until the channel has been

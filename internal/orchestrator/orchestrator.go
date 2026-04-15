@@ -305,8 +305,12 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 	orch.recordSessionStart(role)
 	ticketLink := orch.cfg.Links.TicketLink(assignment.Ticket)
 
-	// Discussion phase — engineer posts plan, team responds.
-	discussion := orch.runDiscussionPhase(ctx, agentInstance, assignment)
+	// Discussion phase — engineer posts plan, team responds. The
+	// discussion returns the raw transcript plus any DECISION lines
+	// extracted from it so they can flow into the implementation
+	// prompt as binding commitments.
+	discussion, decisions := orch.runDiscussionPhase(ctx, agentInstance, assignment)
+	assignment.Decisions = decisions
 
 	workSession, err := NewWorkSession(ctx, orch.cfg.TargetRepoDir, role, assignment.Ticket)
 	if err != nil {
@@ -328,7 +332,7 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 	orch.acknowledgeThread(ctx, agentInstance, role, "engineering")
 
 	seanceCtx := BuildSeanceContextFull(ctx, orch.projectEpisodeStore, orch.agentFactStores(), orch.handoffStore, assignment.Ticket, role)
-	prompt := seanceCtx + discussion + BuildImplementationPrompt(assignment.Ticket, assignment.Description)
+	prompt := seanceCtx + discussion + FormatDecisionsForPrompt(decisions) + BuildImplementationPrompt(assignment.Ticket, assignment.Description)
 	branch := fmt.Sprintf("feat/%s", assignment.Ticket)
 	result, err := agentInstance.ExecuteTask(ctx, prompt, nil, workSession.Dir())
 	if err != nil {
