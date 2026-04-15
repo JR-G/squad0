@@ -15,32 +15,21 @@ tasks:
       - security unlock-keychain ~/Library/Keychains/login.keychain-db
 
   start:
-    desc: Build, kill any existing instance, and start squad0 in a detached tmux session so it survives terminal close, lock, and sleep
+    desc: Build, kill any existing instance, and start squad0 in the foreground
     deps: [build, unlock]
     cmds:
-      - tmux kill-session -t squad0 2>/dev/null || true
       - pkill -x squad0 2>/dev/null || true
       - sleep 1
       - pgrep -x ollama > /dev/null || (ollama serve &)
-      - tmux new-session -d -s squad0 './bin/squad0 start'
-      - echo ""
-      - echo "squad0 running in tmux session 'squad0'."
-      - echo "  task logs   — attach and watch (Ctrl+B then D to detach)"
-      - echo "  task stop   — stop the process"
+      - ./bin/squad0 start
 
   restart:
-    desc: Alias for start — rebuild, kill, relaunch in detached tmux
+    desc: Alias for start — rebuild, kill, relaunch
     deps: [start]
 
-  logs:
-    desc: Attach to the running squad0 tmux session (Ctrl+B then D to detach)
-    cmds:
-      - tmux attach -t squad0
-
   stop:
-    desc: Stop the running squad0 process and kill its tmux session
+    desc: Stop the running squad0 process
     cmds:
-      - tmux kill-session -t squad0 2>/dev/null || true
       - pkill -x squad0 2>/dev/null || true
 
   status:
