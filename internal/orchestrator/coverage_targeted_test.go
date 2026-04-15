@@ -56,6 +56,47 @@ func TestEnsureAgentMCPConfig_ValidDir_WritesMCPJSONUnderRoleSubdir(t *testing.T
 	assert.FileExists(t, expectedPath)
 }
 
+func TestEnsureAgentMCPConfig_RelativeBaseDir_ResolvesToAbsolute(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	memDB, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = memDB.Close() })
+
+	sqlDB, sqlErr := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, sqlErr)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+
+	runner := &fakeProcessRunner{
+		output: []byte(`{"type":"result","result":"done"}` + "\n"),
+	}
+	engAgent := buildAgent(t, runner, agent.RoleEngineer1, memDB)
+	engAgent.SetDBPath("/tmp/test-agent.db")
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{MemoryBinaryPath: "/usr/local/bin/squad0-memory"},
+		map[agent.Role]*agent.Agent{agent.RoleEngineer1: engAgent},
+		checkIns, nil, nil,
+	)
+
+	// Create a relative base dir alongside t.TempDir() so the
+	// absolute-path resolution has something real to point at.
+	absTmp := t.TempDir()
+	t.Cleanup(func() { _ = os.Chdir(".") })
+	require.NoError(t, os.Chdir(absTmp))
+
+	orch.EnsureAgentMCPConfigForTest(engAgent, "data/mcp")
+
+	// MCPConfigPath must be absolute so Claude Code can find it
+	// regardless of the worktree or target repo it's spawned in.
+	assert.True(t, filepath.IsAbs(engAgent.MCPConfigPath),
+		"MCPConfigPath must be absolute, got %q", engAgent.MCPConfigPath)
+	assert.FileExists(t, engAgent.MCPConfigPath)
+}
+
 func TestEnsureAgentMCPConfig_MakeDirFailure_DoesNotPanic(t *testing.T) {
 	t.Parallel()
 
