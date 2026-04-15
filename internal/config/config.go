@@ -184,7 +184,7 @@ func (cfg Config) Validate() error {
 }
 
 var validRuntimes = map[string]bool{
-	"claude": true, "claude-persistent": true, "codex": true, "": true,
+	"claude": true, "codex": true, "": true,
 }
 
 func validateRuntime(rt RuntimeConfig) error {

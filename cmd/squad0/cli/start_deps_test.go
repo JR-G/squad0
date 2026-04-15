@@ -101,6 +101,9 @@ func TestCreateSlackBot_ReturnsNonNilBot(t *testing.T) {
 func TestRunOrchestratorWithContext_FullSetup_ReachesEventLoop(t *testing.T) {
 	t.Parallel()
 
+	restoreMCP := cli.StubVerifyMCPHealth()
+	defer restoreMCP()
+
 	tmpDir := t.TempDir()
 	out := &bytes.Buffer{}
 

@@ -36,7 +36,7 @@ func (orch *Orchestrator) recordSessionEnd(role agent.Role, ticket string, succe
 
 // EnsureAgentMCPConfigForTest exports ensureAgentMCPConfig for testing.
 func (orch *Orchestrator) EnsureAgentMCPConfigForTest(agentInstance *agent.Agent, baseDir string) {
-	orch.ensureAgentMCPConfig(agentInstance, baseDir)
+	EnsureAgentMCPConfig(agentInstance, baseDir, orch.cfg.MemoryBinaryPath)
 }
 
 // AgentFactStoresForTest exports agentFactStores for testing.
@@ -44,7 +44,7 @@ func (orch *Orchestrator) AgentFactStoresForTest() map[agent.Role]*memory.FactSt
 	return orch.agentFactStores()
 }
 
-// ensureAgentMCPConfig writes a stable .mcp.json for the given agent
+// EnsureAgentMCPConfig writes a stable .mcp.json for the given agent
 // under baseDir/<role>/.mcp.json and sets the agent's MCPConfigPath
 // to the ABSOLUTE path. Called once per agent at startup. The file
 // is never removed — it lives for the lifetime of the squad0
@@ -53,10 +53,24 @@ func (orch *Orchestrator) AgentFactStoresForTest() map[agent.Role]*memory.FactSt
 // --mcp-config regardless of cwd. Agents run in worktrees and
 // target-repo dirs where a relative path would resolve to the wrong
 // place, so MCPConfigPath must be absolute.
-func (orch *Orchestrator) ensureAgentMCPConfig(agentInstance *agent.Agent, baseDir string) {
+//
+// The AgentDBPath inside the config is also made absolute here so
+// the memory MCP server can find its SQLite file regardless of the
+// subprocess's working directory. A prior bug stored a relative
+// "data/agents/<role>.db" which failed to open whenever claude ran
+// in the target repo or a worktree — the memory server silently
+// reported status=failed in mcp_servers init and every memory tool
+// call errored out.
+func EnsureAgentMCPConfig(agentInstance *agent.Agent, baseDir, memoryBinaryPath string) {
+	absDBPath, err := resolveAbsDBPath(agentInstance)
+	if err != nil {
+		log.Printf("failed to resolve DB path for %s: %v", agentInstance.Role(), err)
+		return
+	}
+
 	mcpCfg := agent.BuildMCPConfig(agent.MCPOptions{
-		MemoryBinaryPath: orch.cfg.MemoryBinaryPath,
-		AgentDBPath:      agentInstance.DBPath(),
+		MemoryBinaryPath: memoryBinaryPath,
+		AgentDBPath:      absDBPath,
 	})
 
 	absBase, err := filepath.Abs(baseDir)
@@ -77,6 +91,14 @@ func (orch *Orchestrator) ensureAgentMCPConfig(agentInstance *agent.Agent, baseD
 	}
 
 	agentInstance.MCPConfigPath = filepath.Join(agentDir, ".mcp.json")
+}
+
+func resolveAbsDBPath(agentInstance *agent.Agent) (string, error) {
+	raw := agentInstance.DBPath()
+	if raw == "" {
+		return "", nil
+	}
+	return filepath.Abs(raw)
 }
 
 func (orch *Orchestrator) breakSilence(ctx context.Context) {

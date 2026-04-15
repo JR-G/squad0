@@ -26,6 +26,19 @@ func BuildModelMap(cfg config.Config) map[agent.Role]string {
 	return buildModelMap(cfg)
 }
 
+// StubVerifyMCPHealth replaces the startup MCP smoke-test with a
+// no-op so tests don't spawn a real `claude` subprocess. Returns a
+// restore function the caller should defer. Intended only for
+// package-level startup tests — never stub in unit tests covering
+// the smoke-test itself.
+func StubVerifyMCPHealth() func() {
+	previous := verifyMCPHealth
+	verifyMCPHealth = func(_ context.Context, _ *agent.Agent, _, _ string) error {
+		return nil
+	}
+	return func() { verifyMCPHealth = previous }
+}
+
 // ParseCronToInterval exports parseCronToInterval for testing.
 func ParseCronToInterval(cron string) time.Duration {
 	return parseCronToInterval(cron)

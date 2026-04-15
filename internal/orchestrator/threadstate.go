@@ -239,25 +239,25 @@ func containsPoint(points []string, point string) bool {
 func PromptForPhase(phase ThreadPhase, state ThreadState) string {
 	switch phase {
 	case PhaseExploring:
-		return "The team is discussing this. Share your perspective if you have one."
+		return "The team is discussing this. Share your perspective if you have one. If you have nothing new to contribute, respond PASS."
 
 	case PhaseDebating:
 		pointsSummary := summarisePoints(state.KeyPoints)
 		if pointsSummary != "" {
 			return "The thread is weighing options. Points raised so far: " +
 				pointsSummary +
-				"\nIf you have a *new* angle or a strong opinion, weigh in. If you'd just be echoing what's been said, don't respond."
+				"\nIf you have a *new* angle or a strong opinion, weigh in. If you'd just be echoing what's been said, respond PASS."
 		}
-		return "The thread is weighing options. If you have a *new* angle or a strong opinion, weigh in. If you'd just be echoing what's been said, don't respond."
+		return "The thread is weighing options. If you have a *new* angle or a strong opinion, weigh in. If you'd just be echoing what's been said, respond PASS."
 
 	case PhaseConverging:
-		return "The team is aligning. Only respond if you see a specific problem that hasn't been raised. Agreement doesn't need restating."
+		return "The team is aligning. Respond PASS unless you see a specific problem that hasn't been raised — agreement, summaries, and \"nothing to add\" are all PASS."
 
 	case PhaseDecided:
 		if state.Decision != "" {
-			return "Decision reached: " + state.Decision + ". Only respond if you spot a critical issue that was missed."
+			return "Decision reached: " + state.Decision + ". Respond PASS unless you spot a critical issue that was missed. Confirmation is not needed."
 		}
-		return "A decision was reached. Only respond if you spot a critical issue that was missed."
+		return "A decision was reached. Respond PASS unless you spot a critical issue that was missed. Confirmation is not needed."
 	}
 
 	return ""

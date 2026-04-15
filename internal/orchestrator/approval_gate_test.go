@@ -149,6 +149,50 @@ func TestReconcileItem_OpenApproved_LiveBotReview_StaysInReviewing(t *testing.T)
 		"live Devin/CodeRabbit review must block merge even without structured tags")
 }
 
+func TestReconcileItem_OpenApproved_SuggestionsOnly_Advances(t *testing.T) {
+	// Suggestions are advisory (see FormatFixUpChecklist: "Suggestions
+	// are optional but appreciated"). A PR with only suggestion-level
+	// feedback and no blockers must advance past the approval gate —
+	// the alternative is an infinite reviewing→fix-up→re-review loop
+	// every time a reviewer uses the word "suggestion" in an otherwise
+	// approved review. This is the regression behind JAM-24's stuck
+	// state during the Apr 15 incident.
+	restore := stubOutstandingComments(
+		orchestrator.ReviewComment{ID: "rc-1", Severity: "suggestion", Body: "consider renaming foo"},
+		orchestrator.ReviewComment{ID: "rc-2", Severity: "suggestion", Body: "add a docstring here"},
+	)
+	defer restore()
+
+	ctx := context.Background()
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	store := pipeline.NewWorkItemStore(sqlDB)
+	require.NoError(t, store.InitSchema(ctx))
+
+	itemID, _ := store.Create(ctx, pipeline.WorkItem{
+		Ticket:   "JAM-GATE-SUGGEST",
+		Engineer: agent.RoleEngineer1,
+		Stage:    pipeline.StageReviewing,
+	})
+	_ = store.SetPRURL(ctx, itemID, "https://github.com/org/repo/pull/555")
+
+	orch := newReconcileOrch(t, store)
+	orch.ReconcileItemForTest(ctx, pipeline.WorkItem{
+		ID:       itemID,
+		Ticket:   "JAM-GATE-SUGGEST",
+		PRURL:    "https://github.com/org/repo/pull/555",
+		Stage:    pipeline.StageReviewing,
+		Engineer: agent.RoleEngineer1,
+	}, orchestrator.PRState{State: "OPEN", ReviewDecision: "APPROVED"})
+
+	item, getErr := store.GetByID(ctx, itemID)
+	require.NoError(t, getErr)
+	assert.Equal(t, pipeline.StageApproved, item.Stage,
+		"suggestion-only comments must not block an approved PR")
+}
+
 func TestReconcileItem_OpenApproved_NoOutstandingComments_Advances(t *testing.T) {
 	restore := stubOutstandingComments()
 	defer restore()

@@ -238,6 +238,53 @@ func TestExtractExitError_GenericError_DefaultsToOne(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// summarizeFailureOutput
+// ---------------------------------------------------------------------------
+
+func TestSummarizeFailureOutput_EmptyInput_ReturnsEmpty(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, "", agent.SummarizeFailureOutputForTest(""))
+}
+
+func TestSummarizeFailureOutput_ShortInput_ReturnsTrimmed(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, "some error", agent.SummarizeFailureOutputForTest("  some error  "))
+}
+
+func TestSummarizeFailureOutput_LongInput_Truncates(t *testing.T) {
+	t.Parallel()
+	long := ""
+	for range 500 {
+		long += "x"
+	}
+	result := agent.SummarizeFailureOutputForTest(long)
+	assert.Contains(t, result, "...(truncated)")
+	assert.LessOrEqual(t, len(result), 420) // 400 + suffix
+}
+
+// ---------------------------------------------------------------------------
+// extractAssistantText
+// ---------------------------------------------------------------------------
+
+func TestExtractAssistantText_BadJSON_ReturnsEmpty(t *testing.T) {
+	t.Parallel()
+	msg := agent.StreamMessage{Message: []byte(`{not valid}`)}
+	assert.Equal(t, "", agent.ExtractAssistantTextForTest(msg))
+}
+
+func TestExtractAssistantText_NoTextBlocks_ReturnsEmpty(t *testing.T) {
+	t.Parallel()
+	msg := agent.StreamMessage{Message: []byte(`{"content":[{"type":"tool_use","name":"Edit"}]}`)}
+	assert.Equal(t, "", agent.ExtractAssistantTextForTest(msg))
+}
+
+func TestExtractAssistantText_TextBlocks_ConcatenatesText(t *testing.T) {
+	t.Parallel()
+	msg := agent.StreamMessage{Message: []byte(`{"content":[{"type":"text","text":"hello "},{"type":"text","text":"world"}]}`)}
+	assert.Equal(t, "hello world", agent.ExtractAssistantTextForTest(msg))
+}
+
+// ---------------------------------------------------------------------------
 // Helper: env-capturing runner
 // ---------------------------------------------------------------------------
 

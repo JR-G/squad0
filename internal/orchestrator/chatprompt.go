@@ -70,7 +70,34 @@ func replyInstruction(name, channel string) string {
 	if channel == chitchatChannel {
 		return fmt.Sprintf("You are %s. Say \"I\" — never refer to yourself by name or role. Say whatever's on your mind — an opinion, a reaction, something funny, a rant, a random thought. Talk like a real person on Slack with colleagues you like. 1-3 sentences.", name)
 	}
-	return fmt.Sprintf("You are %s. Say \"I\" — never refer to yourself by name or role. 1-3 sentences, Slack formatting. Only respond if you have something to add.", name)
+	return fmt.Sprintf(
+		"You are %s. Say \"I\" — never refer to yourself by name or role. 1-3 sentences, Slack formatting.\n\n"+
+			"IMPORTANT: If you have nothing meaningful to add — no new information, no question, no concrete next step, no opinion that hasn't been said — respond with exactly the word PASS on its own line and nothing else. "+
+			"Do NOT write \"nothing to add\", \"thread's locked\", \"I'm good\", \"waiting for PR\" or similar filler. Those are worse than silence. "+
+			"PASS is correct and expected — it's how you stay quiet. Speak only when you have something real to contribute.",
+		name)
+}
+
+// passSentinel is the exact token an agent emits when it has nothing
+// to add. Case-insensitive match; anything surrounding it (quotes,
+// punctuation, whitespace) is trimmed before comparison.
+const passSentinel = "PASS"
+
+// isPassResponse reports whether a chat response is a pass sentinel
+// — the agent's way of saying "stay quiet." An empty string is NOT a
+// pass; that is a generation failure that should retry. Handles a few
+// common wrapping patterns the model produces even when told to emit
+// exactly PASS: wrapping quotes, trailing punctuation, a leading
+// "PASS." etc. Kept deliberately tight so real messages that happen
+// to contain the word "pass" (e.g. "I'll pass on that idea") still
+// post normally.
+func isPassResponse(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return false
+	}
+	trimmed = strings.Trim(trimmed, "\"'`.* \t\n")
+	return strings.EqualFold(trimmed, passSentinel)
 }
 
 func channelInstruction(channel string) string {
@@ -88,6 +115,11 @@ func ContainsQuestionForTest(text string) bool {
 // containsQuestion returns true if the text contains a question mark.
 func containsQuestion(text string) bool {
 	return strings.Contains(text, "?")
+}
+
+// IsPassResponseForTest exports isPassResponse for testing.
+func IsPassResponseForTest(text string) bool {
+	return isPassResponse(text)
 }
 
 // ChannelInstructionForTest exports channelInstruction for testing.

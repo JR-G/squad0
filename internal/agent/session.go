@@ -74,6 +74,10 @@ func (runner envProcessRunner) Run(ctx context.Context, stdin, workingDir, name 
 	return runner.base.Run(ctx, stdin, workingDir, name, args...)
 }
 
+// streamRoleAssistant is the role value on assistant messages in
+// Claude Code's stream-json output.
+const streamRoleAssistant = "assistant"
+
 // StreamMessage represents a single line of Claude Code's stream-json output.
 type StreamMessage struct {
 	Type    string          `json:"type"`
@@ -134,6 +138,16 @@ func (session *Session) Run(ctx context.Context, cfg SessionConfig) (SessionResu
 	output, err := runner.Run(ctx, cfg.Prompt, cfg.WorkingDir, "claude", args...)
 
 	result := parseClaudeResult(output, err)
+
+	// Post-hoc visibility: log a one-line summary of what tools the
+	// session actually called so operators can see work happening
+	// without reading the ~/.claude jsonl transcript by hand. Only
+	// fires when the session did at least one tool call — a plain
+	// chat exchange (QuickChat) shouldn't spam the log.
+	summary := SummariseToolCalls(result.Messages)
+	if len(summary.Counts) > 0 {
+		log.Printf("session %s finished: %s", cfg.Role, summary.Format())
+	}
 
 	// If rate limited and Codex fallback is configured, retry.
 	if err != nil {
@@ -314,7 +328,7 @@ func extractTranscript(messages []StreamMessage) string {
 	}
 
 	for _, msg := range messages {
-		if msg.Type != "assistant" {
+		if msg.Type != streamRoleAssistant {
 			continue
 		}
 
@@ -388,6 +402,16 @@ func restoreEnvVar(key, oldVal string) {
 		return
 	}
 	_ = os.Setenv(key, oldVal)
+}
+
+// SummarizeFailureOutputForTest exports summarizeFailureOutput for testing.
+func SummarizeFailureOutputForTest(raw string) string {
+	return summarizeFailureOutput(raw)
+}
+
+// ExtractAssistantTextForTest exports extractAssistantText for testing.
+func ExtractAssistantTextForTest(msg StreamMessage) string {
+	return extractAssistantText(msg)
 }
 
 // ExtractExitError returns the exit code from an exec.ExitError, or 1

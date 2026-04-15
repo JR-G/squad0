@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -14,6 +16,7 @@ import (
 	"github.com/JR-G/squad0/internal/orchestrator"
 	"github.com/JR-G/squad0/internal/routing"
 	"github.com/JR-G/squad0/internal/runtime"
+	"github.com/JR-G/squad0/internal/tui"
 )
 
 // wireBridges creates a SessionBridge per agent based on RuntimeConfig
@@ -25,11 +28,11 @@ func wireBridges(
 	codexModel string,
 	modelMap map[agent.Role]string,
 	targetRepoDir string,
-	dataDir string,
+	_ string,
 ) {
 	for role, agentInstance := range agents {
 		model := modelMap[role]
-		bridge := createBridgeForRole(role, cfg, codexModel, model, targetRepoDir, dataDir)
+		bridge := createBridgeForRole(role, cfg, codexModel, model, targetRepoDir)
 		if bridge == nil {
 			continue
 		}
@@ -41,7 +44,7 @@ func wireBridges(
 func createBridgeForRole(
 	role agent.Role,
 	cfg config.RuntimeConfig,
-	codexModel, claudeModel, workDir, dataDir string,
+	codexModel, claudeModel, workDir string,
 ) *runtime.SessionBridge {
 	activeName := cfg.Default
 	if override, ok := cfg.Overrides[string(role)]; ok {
@@ -49,17 +52,15 @@ func createBridgeForRole(
 	}
 
 	runner := agent.ExecProcessRunner{}
-	inboxDir := filepath.Join(dataDir, "inbox", string(role))
-	outboxDir := filepath.Join(dataDir, "outbox", string(role))
 
-	active := buildRuntime(activeName, role, runner, codexModel, claudeModel, workDir, inboxDir, outboxDir)
+	active := buildRuntime(activeName, role, runner, codexModel, claudeModel, workDir)
 	if active == nil {
 		return nil
 	}
 
 	var fallback runtime.Runtime
 	if cfg.Fallback != "" && cfg.Fallback != activeName {
-		fallback = buildRuntime(cfg.Fallback, role, runner, codexModel, claudeModel, workDir, inboxDir, outboxDir)
+		fallback = buildRuntime(cfg.Fallback, role, runner, codexModel, claudeModel, workDir)
 	}
 
 	return runtime.NewSessionBridge(role, active, fallback)
@@ -70,30 +71,19 @@ func buildRuntime(
 	role agent.Role,
 	runner agent.ProcessRunner, //nolint:unparam // varies in production via createBridgeForRole
 	codexModel, claudeModel, workDir string,
-	inboxDir, outboxDir string,
 ) runtime.Runtime {
 	switch name {
 	case "claude":
-		// Default: fresh process per interaction (proven, stable).
+		// Fresh process per interaction — proven, stable, and the
+		// only Claude runtime squad0 supports. A prior "persistent
+		// tmux" runtime was deleted as dead code; if you need to
+		// bring it back, reintroduce it deliberately, not as an
+		// opportunistic fix.
 		session := agent.NewSession(runner)
 		if codexModel != "" {
 			session.SetCodexFallback(codexModel)
 		}
 		return runtime.NewClaudeProcessRuntime(session, claudeModel, workDir)
-	case "claude-persistent":
-		// Opt-in: persistent tmux session with hooks.
-		inbox, err := runtime.NewInbox(inboxDir, outboxDir)
-		if err != nil {
-			log.Printf("runtime: failed to create inbox for %s: %v", role, err)
-			return nil
-		}
-		return runtime.NewClaudePersistentRuntime(
-			runtime.ExecTmuxExecutor{},
-			inbox,
-			string(role),
-			claudeModel,
-			workDir,
-		)
 	case "codex":
 		return runtime.NewCodexRuntime(runner, codexModel, workDir)
 	default:
@@ -149,6 +139,56 @@ func buildLinkConfig(cfg config.Config) slack.LinkConfig {
 		GitHubOwner:     cfg.GitHub.Owner,
 		GitHubRepo:      repo,
 	}
+}
+
+func ensureCodexMCP(ctx context.Context, out io.Writer) {
+	runner := agent.ExecProcessRunner{}
+	servers := agent.BuildCodexMCPServers(agent.MCPOptions{})
+	if err := agent.EnsureCodexMCPServers(ctx, runner, servers); err != nil {
+		_, _ = fmt.Fprint(out, tui.StepWarn(fmt.Sprintf("Codex MCP setup failed: %v", err)))
+		return
+	}
+	_, _ = fmt.Fprint(out, tui.StepDone("Codex MCP servers registered"))
+}
+
+func resolveTargetRepo(targetRepo string) string {
+	if targetRepo == "" {
+		return ""
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+
+	repoName := filepath.Base(targetRepo)
+	return filepath.Join(home, "repos", repoName)
+}
+
+// wireAgentMCP writes each agent's .mcp.json (memory MCP only — the
+// Linear connector is user-scope, not configured by squad0) and then
+// runs the startup MCP smoke test. Must happen BEFORE wireBridges so
+// agents have MCPConfigPath populated when their runtime spawns
+// claude. Returns an error with an actionable setup hint if the
+// smoke test trips — never silently boot with a broken MCP.
+func wireAgentMCP(
+	ctx context.Context,
+	out io.Writer,
+	agents map[agent.Role]*agent.Agent,
+	modelMap map[agent.Role]string,
+	dataDir, targetRepoDir string,
+) error {
+	memoryBinaryPath := resolveMemoryBinaryPath()
+	mcpBaseDir := filepath.Join(dataDir, "mcp")
+	for _, agentInstance := range agents {
+		orchestrator.EnsureAgentMCPConfig(agentInstance, mcpBaseDir, memoryBinaryPath)
+	}
+
+	if err := verifyMCPHealth(ctx, agents[agent.RolePM], modelMap[agent.RolePM], targetRepoDir); err != nil {
+		return fmt.Errorf("MCP smoke test: %w\n\n%s", err, mcpSetupHint())
+	}
+	_, _ = fmt.Fprint(out, tui.StepDone("MCP servers verified (Linear connected, memory connected)"))
+	return nil
 }
 
 func resolveMemoryBinaryPath() string {

@@ -10,16 +10,24 @@ import (
 
 const moveTicketPromptTemplate = `Move Linear ticket %s to "%s" status.
 
-Use the Linear MCP tools to update this ticket's state. Find the correct workflow state for "%s" and update the issue.
+Use the Linear MCP tools (these are the exact tool names — do not guess
+shorter variants, they will not exist):
 
-Steps:
-1. Get the issue details: use the get_issue tool with identifier "%s"
-2. List the available workflow states: use the list_issue_statuses tool
-3. Find the state ID that matches "%s"
-4. Update the issue state: use the save_issue tool
+1. mcp__claude_ai_Linear__get_issue — arguments: {"id": "%s"}
+2. mcp__claude_ai_Linear__list_issue_statuses — arguments: {"teamId": "<teamId from step 1>"}
+3. Find the state id whose name matches "%s"
+4. mcp__claude_ai_Linear__save_issue — arguments: {"id": "%s", "stateId": "<id from step 3>"}
 
-Respond with just "done" when complete, or "failed" if you couldn't update it.
+Respond with just "done" when complete, or "failed: <short reason>" if you could not update it.
 `
+
+// The fmt.Sprintf call in MoveTicketState fills these placeholders in
+// order:
+//  1. ticket          — "Move Linear ticket %s ..."
+//  2. targetState     — "to \"%s\" status"
+//  3. ticket          — get_issue id
+//  4. targetState     — "whose name matches \"%s\""
+//  5. ticket          — save_issue id
 
 // MoveTicketState uses the PM agent to transition a Linear ticket to
 // the given state. This is a safety net — agents also move tickets
@@ -29,7 +37,7 @@ func MoveTicketState(ctx context.Context, pmAgent *agent.Agent, ticket, targetSt
 		return
 	}
 
-	prompt := fmt.Sprintf(moveTicketPromptTemplate, ticket, targetState, targetState, ticket, targetState)
+	prompt := fmt.Sprintf(moveTicketPromptTemplate, ticket, targetState, ticket, targetState, ticket)
 
 	result, err := pmAgent.DirectSession(ctx, prompt)
 	if err != nil {

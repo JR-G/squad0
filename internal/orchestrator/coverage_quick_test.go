@@ -20,13 +20,52 @@ func TestReplyInstruction_Engineering(t *testing.T) {
 	t.Parallel()
 	result := orchestrator.ReplyInstructionForTest("Mara", "engineering")
 	assert.Contains(t, result, "Mara")
-	assert.Contains(t, result, "Only respond if you have something to add")
+	// PASS sentinel is the stay-silent mechanism — the engineering
+	// reply prompt must tell the model to emit it when there's
+	// nothing to add, and must ban the filler phrases that were
+	// flooding the channel pre-fix.
+	assert.Contains(t, result, "PASS")
+	assert.Contains(t, result, "nothing to add")
 }
 
 func TestReplyInstruction_Chitchat(t *testing.T) {
 	t.Parallel()
 	result := orchestrator.ReplyInstructionForTest("Mara", "chitchat")
 	assert.Contains(t, result, "Mara")
+}
+
+func TestIsPassResponse_Variants(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"PASS", true},
+		{"pass", true},
+		{"Pass", true},
+		{" PASS ", true},
+		{"\"PASS\"", true},
+		{"`PASS`", true},
+		{"PASS.", true},
+		{"*PASS*", true},
+		// Real messages that happen to contain "pass" should NOT match.
+		{"I'll pass on that idea", false},
+		{"PASS the salt please", false},
+		{"Let's pass this to Callum", false},
+		// Empty is not a pass — it's a generation failure.
+		{"", false},
+		// Filler phrases are NOT pass sentinels — the model should not
+		// have produced them, but if it does, they post normally so the
+		// similarity checker can catch duplicates.
+		{"nothing to add", false},
+		{"thread's locked", false},
+	}
+
+	for _, tt := range tests {
+		assert.Equal(t, tt.want, orchestrator.IsPassResponseForTest(tt.input),
+			"isPassResponse(%q)", tt.input)
+	}
 }
 
 func TestCheckCircuitBreaker_NilAssigner_DoesNotPanic(t *testing.T) {
@@ -237,6 +276,64 @@ func TestPRStatus_Empty_ReturnsNone(t *testing.T) {
 func TestPRStatus_WithURL_ReturnsOpen(t *testing.T) {
 	t.Parallel()
 	assert.Equal(t, "open", orchestrator.PRStatusForTest("https://github.com/org/repo/pull/1"))
+}
+
+func TestIsAlreadyCleanWorktreeError_Variants(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		output string
+		want   bool
+	}{
+		{"fatal: '/path/to/wt' is not a working tree", true},
+		{"fatal: '/path/to/wt': No such file or directory", true},
+		{"error: '/path/to/wt' is not a valid path", true},
+		{"fatal: IS NOT A WORKING TREE", true},
+		{"fatal: could not lock ref", false},
+		{"", false},
+		{"some random error", false},
+	}
+
+	for _, tt := range tests {
+		assert.Equal(t, tt.want, orchestrator.IsAlreadyCleanWorktreeErrorForTest(tt.output),
+			"isAlreadyCleanWorktreeError(%q)", tt.output)
+	}
+}
+
+func TestPromptForPhase_Exploring_ContainsPASS(t *testing.T) {
+	t.Parallel()
+
+	state := orchestrator.ThreadState{Phase: orchestrator.PhaseExploring}
+	prompt := orchestrator.PromptForPhase(orchestrator.PhaseExploring, state)
+	assert.Contains(t, prompt, "PASS")
+}
+
+func TestPromptForPhase_Decided_WithDecision_ContainsPASS(t *testing.T) {
+	t.Parallel()
+
+	state := orchestrator.ThreadState{
+		Phase:    orchestrator.PhaseDecided,
+		Decision: "use a queue",
+	}
+	prompt := orchestrator.PromptForPhase(orchestrator.PhaseDecided, state)
+	assert.Contains(t, prompt, "PASS")
+	assert.Contains(t, prompt, "use a queue")
+}
+
+func TestPromptForPhase_Decided_NoDecision_ContainsPASS(t *testing.T) {
+	t.Parallel()
+
+	state := orchestrator.ThreadState{Phase: orchestrator.PhaseDecided}
+	prompt := orchestrator.PromptForPhase(orchestrator.PhaseDecided, state)
+	assert.Contains(t, prompt, "PASS")
+}
+
+func TestPromptForPhase_Converging_ContainsPASS(t *testing.T) {
+	t.Parallel()
+
+	state := orchestrator.ThreadState{Phase: orchestrator.PhaseConverging}
+	prompt := orchestrator.PromptForPhase(orchestrator.PhaseConverging, state)
+	assert.Contains(t, prompt, "PASS")
 }
 
 func TestIsDuplicate_NoPipeline_ReturnsFalse(t *testing.T) {

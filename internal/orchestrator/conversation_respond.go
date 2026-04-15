@@ -37,6 +37,17 @@ func (engine *ConversationEngine) attemptChat(ctx context.Context, agentInstance
 	}
 
 	text := strings.TrimSpace(transcript)
+
+	// PASS sentinel — the agent chose silence. Log it distinctly so
+	// we can tell a real "nothing to say" choice apart from a crash
+	// or an empty transcript, and never retry. This is the whole
+	// point of the sentinel: a pass is a successful non-response, not
+	// a failure to generate text.
+	if isPassResponse(text) {
+		log.Printf("chat: %s passed (stayed silent)", role)
+		return "", true
+	}
+
 	log.Printf("chat: %s said: %q", role, text)
 
 	if text == "" {

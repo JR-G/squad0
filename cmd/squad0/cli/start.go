@@ -83,6 +83,12 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 
 	_, _ = fmt.Fprint(out, tui.Banner())
 
+	absDataDir, err := filepath.Abs(deps.DataDir)
+	if err != nil {
+		return fmt.Errorf("resolving data dir %q to absolute path: %w", deps.DataDir, err)
+	}
+	deps.DataDir = absDataDir
+
 	appLogger, consoleWriter, err := setupLogger(deps.DataDir, out)
 	if err != nil {
 		return err
@@ -109,6 +115,10 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 		return fmt.Errorf("creating agents: %w", err)
 	}
 	_, _ = fmt.Fprint(out, tui.StepDone(fmt.Sprintf("%d agents created", len(agents))))
+
+	if err := wireAgentMCP(ctx, out, agents, modelMap, deps.DataDir, targetRepoDir); err != nil {
+		return err
+	}
 
 	// Register MCP servers with Codex so fallback sessions have Linear access.
 	if cfg.Agents.CodexFallbackModel != "" {
@@ -254,9 +264,6 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	commandHandler := newCommandDispatcher(orch, bot, conversation, personas, buildLinkConfig(cfg))
 	bot.OnMessage(commandHandler.handleMessage)
 
-	for _, a := range agents {
-		orch.EnsureAgentMCPConfigForTest(a, filepath.Join(deps.DataDir, "mcp"))
-	}
 	configureGitHubAppToken(ctx, agents, deps.SecretLoader, out)
 
 	_, _ = fmt.Fprintln(out, tui.StepDone("All systems ready"))
@@ -473,28 +480,4 @@ func createHealthMonitor() *health.Monitor {
 		MaxSessionTime:       30 * time.Minute,
 		MaxConsecutiveErrors: 3,
 	})
-}
-
-func ensureCodexMCP(ctx context.Context, out io.Writer) {
-	runner := agent.ExecProcessRunner{}
-	servers := agent.BuildCodexMCPServers(agent.MCPOptions{})
-	if err := agent.EnsureCodexMCPServers(ctx, runner, servers); err != nil {
-		_, _ = fmt.Fprint(out, tui.StepWarn(fmt.Sprintf("Codex MCP setup failed: %v", err)))
-		return
-	}
-	_, _ = fmt.Fprint(out, tui.StepDone("Codex MCP servers registered"))
-}
-
-func resolveTargetRepo(targetRepo string) string {
-	if targetRepo == "" {
-		return ""
-	}
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-
-	repoName := filepath.Base(targetRepo)
-	return filepath.Join(home, "repos", repoName)
 }

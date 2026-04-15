@@ -174,7 +174,7 @@ func extractCodexContentBytes(data []byte) (string, bool) {
 		return "", true
 	}
 
-	if msg.Role != "" && msg.Role != "assistant" {
+	if msg.Role != "" && msg.Role != streamRoleAssistant {
 		return "", true
 	}
 

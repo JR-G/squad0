@@ -28,8 +28,6 @@ func NewRootCommand() *cobra.Command {
 		newSecretsCommand(),
 		newStatusCommand(&configPath),
 		newVersionCommand(),
-		newPrimeCommand(),
-		newInboxCommand(),
 		newSessionCommand(),
 	)
 

@@ -141,7 +141,7 @@ func TestPromptForPhase_Debating_EncouragesNewAngles(t *testing.T) {
 	prompt := orchestrator.PromptForPhase(orchestrator.PhaseDebating, state)
 
 	assert.Contains(t, prompt, "new")
-	assert.Contains(t, prompt, "don't respond")
+	assert.Contains(t, prompt, "PASS")
 	assert.Contains(t, prompt, "use a queue")
 }
 

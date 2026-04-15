@@ -180,15 +180,26 @@ var commentFetcher = fetchStructuredComments
 // SetLiveBotReviewCheckerForTest.
 var liveBotReviewChecker = hasLiveBotReview
 
-// HasOutstandingReviewComments returns true if the PR has any
-// unaddressed review feedback that a plain reviewDecision check would
-// miss — either structured comments parsed from review bodies, or a
-// live COMMENTED review from a known bot reviewer (Devin, CodeRabbit)
-// posted after the most recent commit. Used to gate approval
-// transitions so squad0 doesn't merge PRs with open review feedback.
+// HasOutstandingReviewComments returns true if the PR has unaddressed
+// BLOCKER-severity feedback that a plain reviewDecision check would
+// miss — either structured blocker comments parsed from review
+// bodies, or a live COMMENTED review from a known bot reviewer
+// (Devin, CodeRabbit) posted after the most recent commit. Used to
+// gate approval transitions so squad0 doesn't merge PRs with open
+// review feedback.
+//
+// Suggestions are deliberately NOT counted. They are advisory by
+// design (see FormatFixUpChecklist: "Suggestions are optional but
+// appreciated") and must not block merge. A previous bug returned
+// true on any comment at all, which trapped PRs in an infinite
+// reviewing→fix-up→re-review loop whenever a reviewer used the word
+// "suggestion" in an otherwise approved review — e.g. JAM-24.
 func HasOutstandingReviewComments(ctx context.Context, repoDir, prURL string) bool {
-	if len(commentFetcher(ctx, repoDir, prURL)) > 0 {
-		return true
+	comments := commentFetcher(ctx, repoDir, prURL)
+	for _, comment := range comments {
+		if comment.Severity == severityBlocker {
+			return true
+		}
 	}
 	return liveBotReviewChecker(ctx, repoDir, prURL)
 }

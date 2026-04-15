@@ -366,8 +366,8 @@ func TestBuildChatPrompt_WithBeliefs_SetChatContextCalled(t *testing.T) {
 	// Verify that the engine called agents (which means SetChatContext was invoked
 	// in tryRespondInThread) and the prompts use the minimal Reply as format.
 	assert.GreaterOrEqual(t, len(runner.calls), 1, "expected at least one agent to be called")
-	assert.Contains(t, runner.calls[0].stdin, "Only respond if",
-		"prompt should include contribution guidance")
+	assert.Contains(t, runner.calls[0].stdin, "PASS",
+		"prompt should include the stay-silent sentinel")
 }
 
 func TestConversationEngine_IsDuplicate_SimilarMessage_Drops(t *testing.T) {

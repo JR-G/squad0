@@ -194,6 +194,48 @@ func TestBuildPersonalityCLAUDEMDForPrime_FallbackName(t *testing.T) {
 	assert.Contains(t, output, "# Persona: pm")
 }
 
+func TestNewChatContext_AllRoles_ProduceValidRosterTitles(t *testing.T) {
+	t.Parallel()
+
+	roles := agent.AllRoles()
+	roster := make(map[agent.Role]string, len(roles))
+	for _, role := range roles {
+		roster[role] = string(role)
+	}
+
+	// Exercise every roleIdentity/voiceExamples/voiceAntiPatterns/
+	// rosterTitle/rosterDescription branch by creating a chat context
+	// for every role. The CLAUDE.md must mention the role's display
+	// name (from roster) and contain voice examples.
+	for _, role := range roles {
+		ctx, err := agent.NewChatContext(role, roster, nil, "custom voice text for test")
+		require.NoError(t, err)
+
+		content, readErr := os.ReadFile(filepath.Join(ctx.Dir(), "CLAUDE.md"))
+		require.NoError(t, readErr)
+		assert.Contains(t, string(content), string(role), "CLAUDE.md should mention role %s", role)
+		assert.Contains(t, string(content), "custom voice text for test")
+
+		ctx.Cleanup()
+	}
+}
+
+func TestNewChatContext_WithBeliefs_IncludesBeliefs(t *testing.T) {
+	t.Parallel()
+
+	roster := map[agent.Role]string{agent.RoleReviewer: "Kael"}
+	beliefs := []string{"always check error paths", "prefer small PRs"}
+
+	ctx, err := agent.NewChatContext(agent.RoleReviewer, roster, beliefs, "")
+	require.NoError(t, err)
+	defer ctx.Cleanup()
+
+	content, readErr := os.ReadFile(filepath.Join(ctx.Dir(), "CLAUDE.md"))
+	require.NoError(t, readErr)
+	assert.Contains(t, string(content), "always check error paths")
+	assert.Contains(t, string(content), "prefer small PRs")
+}
+
 func TestNewChatContext_AllRoles_HaveAntiPatterns(t *testing.T) {
 	t.Parallel()
 

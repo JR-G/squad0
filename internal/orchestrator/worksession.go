@@ -123,11 +123,29 @@ func (ws *WorkSession) Cleanup(ctx context.Context) {
 
 func logWorktreeRemoval(ctx context.Context, repoDir, worktreeDir string) {
 	output, err := gitCommand(ctx, repoDir, "worktree", "remove", "--force", worktreeDir)
-	if err != nil {
-		log.Printf("failed to remove worktree %s: %s: %v", worktreeDir, string(output), err)
+	if err == nil {
+		log.Printf("cleaned up worktree %s", worktreeDir)
 		return
 	}
-	log.Printf("cleaned up worktree %s", worktreeDir)
+
+	// "not a working tree" and "No such file or directory" mean the
+	// worktree is already gone — the cleanup ran twice, or someone
+	// pruned it first. That's the desired end state, not a failure.
+	// Silently accept it and prune stale refs so the next create
+	// doesn't trip over the ghost.
+	if isAlreadyCleanWorktreeError(string(output)) {
+		_, _ = gitCommand(ctx, repoDir, "worktree", "prune")
+		return
+	}
+
+	log.Printf("failed to remove worktree %s: %s: %v", worktreeDir, string(output), err)
+}
+
+func isAlreadyCleanWorktreeError(output string) bool {
+	lower := strings.ToLower(output)
+	return strings.Contains(lower, "is not a working tree") ||
+		strings.Contains(lower, "no such file or directory") ||
+		strings.Contains(lower, "not a valid path")
 }
 
 func createWorktree(ctx context.Context, repoDir, worktreeDir, branch string, role agent.Role) (*WorkSession, error) {
@@ -197,6 +215,11 @@ func gitCommand(ctx context.Context, dir string, args ...string) ([]byte, error)
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	return cmd.CombinedOutput()
+}
+
+// IsAlreadyCleanWorktreeErrorForTest exports isAlreadyCleanWorktreeError for testing.
+func IsAlreadyCleanWorktreeErrorForTest(output string) bool {
+	return isAlreadyCleanWorktreeError(output)
 }
 
 // RescuePRForTest exports rescuePR for testing.

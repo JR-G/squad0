@@ -74,6 +74,24 @@ func TestAgent_Role_ReturnsRole(t *testing.T) {
 	assert.Equal(t, agent.RoleEngineer1, agentInstance.Role())
 }
 
+func TestAgent_Name_WithRoster_ReturnsChosenName(t *testing.T) {
+	t.Parallel()
+
+	agentInstance, _ := setupAgentTest(t)
+	agentInstance.SetChatContext(
+		map[agent.Role]string{agent.RoleEngineer1: "Callum"},
+		nil, "",
+	)
+	assert.Equal(t, "Callum", agentInstance.Name())
+}
+
+func TestAgent_Name_WithoutRoster_FallsBackToRole(t *testing.T) {
+	t.Parallel()
+
+	agentInstance, _ := setupAgentTest(t)
+	assert.Equal(t, string(agent.RoleEngineer1), agentInstance.Name())
+}
+
 func TestAgent_ExecuteTask_SuccessfulSession_StoresEpisode(t *testing.T) {
 	t.Parallel()
 
