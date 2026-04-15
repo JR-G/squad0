@@ -11,17 +11,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDefaultMCPConfig_HasLinearServer(t *testing.T) {
+func TestDefaultMCPConfig_HasLinearHTTPServer(t *testing.T) {
 	t.Parallel()
 
 	cfg := agent.DefaultMCPConfig()
 
 	linear, ok := cfg.MCPServers["linear"]
 	require.True(t, ok, "linear server should be present")
-	assert.Equal(t, "bunx", linear.Command)
-	assert.Contains(t, linear.Args, "mcp-remote")
-	assert.Contains(t, linear.Args, "https://mcp.linear.app/mcp")
-	assert.Contains(t, linear.Args, "Authorization:${LINEAR_AUTH_HEADER}")
+	assert.Equal(t, "http", linear.Type)
+	assert.Equal(t, "https://mcp.linear.app/mcp", linear.URL)
+	assert.Empty(t, linear.Command, "http servers do not use Command")
+	assert.Empty(t, linear.Args, "http servers do not use Args")
 }
 
 func TestDefaultMCPConfig_NeverUsesNpx(t *testing.T) {
@@ -54,7 +54,8 @@ func TestWriteMCPConfig_CreatesFile(t *testing.T) {
 
 	linear, ok := parsed.MCPServers["linear"]
 	require.True(t, ok)
-	assert.Equal(t, "bunx", linear.Command)
+	assert.Equal(t, "http", linear.Type)
+	assert.Equal(t, "https://mcp.linear.app/mcp", linear.URL)
 }
 
 func TestWriteMCPConfig_InvalidDir_ReturnsError(t *testing.T) {

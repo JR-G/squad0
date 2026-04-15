@@ -18,7 +18,8 @@ func TestBuildMCPConfig_WithBothPaths_IncludesMemoryServer(t *testing.T) {
 
 	linear, ok := cfg.MCPServers["linear"]
 	require.True(t, ok, "linear server should be present")
-	assert.Equal(t, "bunx", linear.Command)
+	assert.Equal(t, "http", linear.Type)
+	assert.Equal(t, "https://mcp.linear.app/mcp", linear.URL)
 
 	mem, ok := cfg.MCPServers["memory"]
 	require.True(t, ok, "memory server should be present when both paths set")

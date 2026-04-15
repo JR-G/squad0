@@ -8,9 +8,14 @@ import (
 )
 
 // MCPServerConfig represents a single MCP server entry in .mcp.json.
+// Stdio servers set Command + Args; HTTP servers set Type + URL.
+// Only one form is populated per entry — the omitempty tags ensure
+// Claude Code sees exactly the shape it expects.
 type MCPServerConfig struct {
-	Command string   `json:"command"`
-	Args    []string `json:"args"`
+	Type    string   `json:"type,omitempty"`
+	URL     string   `json:"url,omitempty"`
+	Command string   `json:"command,omitempty"`
+	Args    []string `json:"args,omitempty"`
 }
 
 // MCPConfig represents the full .mcp.json file structure.
@@ -26,18 +31,16 @@ type MCPOptions struct {
 }
 
 // BuildMCPConfig returns the MCP configuration for an agent session,
-// including the Linear MCP server and the agent's personal memory server.
+// including the Linear MCP server and the agent's personal memory
+// server. Linear is configured as Claude Code's native HTTP MCP
+// type — Claude Code handles OAuth itself against the user's
+// ~/.claude credential cache, so the spawned subprocess doesn't need
+// any auth header passed through the .mcp.json.
 func BuildMCPConfig(opts MCPOptions) MCPConfig {
 	servers := map[string]MCPServerConfig{
 		"linear": {
-			Command: "bunx",
-			Args: []string{
-				"-y",
-				"mcp-remote",
-				"https://mcp.linear.app/mcp",
-				"--header",
-				"Authorization:${LINEAR_AUTH_HEADER}",
-			},
+			Type: "http",
+			URL:  "https://mcp.linear.app/mcp",
 		},
 	}
 
