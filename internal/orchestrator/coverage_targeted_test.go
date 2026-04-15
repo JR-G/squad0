@@ -3,6 +3,7 @@ package orchestrator_test
 import (
 	"context"
 	"database/sql"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -16,10 +17,10 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// writeMCPConfig — test with valid temp dir
+// ensureAgentMCPConfig — stable per-agent config path
 // ---------------------------------------------------------------------------
 
-func TestWriteMCPConfig_ValidDir_WritesMCPJSON(t *testing.T) {
+func TestEnsureAgentMCPConfig_ValidDir_WritesMCPJSONUnderRoleSubdir(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -45,15 +46,17 @@ func TestWriteMCPConfig_ValidDir_WritesMCPJSON(t *testing.T) {
 		checkIns, nil, nil,
 	)
 
-	workDir := t.TempDir()
-	orch.WriteMCPConfigForTest(engAgent, workDir)
+	baseDir := t.TempDir()
+	orch.EnsureAgentMCPConfigForTest(engAgent, baseDir)
 
-	// Verify .mcp.json was written and MCPConfigPath was set.
-	expectedPath := filepath.Join(workDir, ".mcp.json")
+	// Verify .mcp.json was written under <baseDir>/<role>/.mcp.json
+	// and MCPConfigPath was set to the absolute path.
+	expectedPath := filepath.Join(baseDir, string(agent.RoleEngineer1), ".mcp.json")
 	assert.Equal(t, expectedPath, engAgent.MCPConfigPath)
+	assert.FileExists(t, expectedPath)
 }
 
-func TestWriteMCPConfig_InvalidDir_DoesNotPanic(t *testing.T) {
+func TestEnsureAgentMCPConfig_MakeDirFailure_DoesNotPanic(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -79,12 +82,16 @@ func TestWriteMCPConfig_InvalidDir_DoesNotPanic(t *testing.T) {
 		checkIns, nil, nil,
 	)
 
-	// Non-existent directory — writeMCPConfig should log the error, not panic.
+	// Point baseDir at an existing file so MkdirAll fails — sanity
+	// check that the error path is non-fatal.
+	tmpFile := filepath.Join(t.TempDir(), "not-a-dir")
+	require.NoError(t, os.WriteFile(tmpFile, []byte("x"), 0o644))
+
 	assert.NotPanics(t, func() {
-		orch.WriteMCPConfigForTest(engAgent, "/nonexistent/path/that/does/not/exist")
+		orch.EnsureAgentMCPConfigForTest(engAgent, tmpFile)
 	})
 
-	// MCPConfigPath should NOT have been set because the write failed.
+	// MCPConfigPath should NOT have been set because MkdirAll failed.
 	assert.Empty(t, engAgent.MCPConfigPath)
 }
 

@@ -434,9 +434,6 @@ func (orch *Orchestrator) startFixUp(ctx context.Context, prURL, ticket string, 
 	}
 	defer fixUpSession.Cleanup(ctx)
 
-	orch.writeMCPConfig(engineerAgent, workDir)
-	defer func() { _ = agent.RemoveMCPConfig(workDir) }()
-
 	handoffCtx := BuildHandoffContext(ctx, orch.handoffStore, ticket)
 	checklist := FormatFixUpChecklist(comments)
 	prompt := handoffCtx + BuildFixUpPrompt(prURL, ticket) + checklist

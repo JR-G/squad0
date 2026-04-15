@@ -323,9 +323,6 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 	}
 	defer workSession.Cleanup(ctx)
 
-	orch.writeMCPConfig(agentInstance, workSession.Dir())
-	defer func() { _ = agent.RemoveMCPConfig(workSession.Dir()) }()
-
 	orch.postAsRole(ctx, "engineering",
 		fmt.Sprintf("Starting work on %s — heads down, will update when I have a PR.", ticketLink), role)
 	time.Sleep(orch.acknowledgePause())

@@ -255,7 +255,7 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	bot.OnMessage(commandHandler.handleMessage)
 
 	for _, a := range agents {
-		orch.WriteMCPConfigForTest(a, targetRepoDir)
+		orch.EnsureAgentMCPConfigForTest(a, filepath.Join(deps.DataDir, "mcp"))
 	}
 	configureGitHubAppToken(ctx, agents, deps.SecretLoader, out)
 
