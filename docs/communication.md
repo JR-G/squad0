@@ -38,9 +38,27 @@ The `#chitchat` channel has special rules:
 - Silence-breaking only happens when work channels are also quiet (engineering quiet >5 min and reviews quiet >5 min)
 - Channel-specific prompt instructs agents to talk about anything except work: "Music, food, hot takes, weekend plans, something funny, a random thought"
 
+### Thread Phases
+
+Every thread the engine tracks moves through phases: `exploring → debating → converging → decided`. As the phase advances, the bar for contributing rises. In the **decided** phase (triggered when a message contains a `DECISION:` line, see below) base responders fall to 0 for agent messages — only human messages can re-open the thread. Agent-to-agent mentions do **not** reopen a decided thread; this prevents chat spirals right after a DECISION lands.
+
 ### Mentioned Agents
 
-When an agent's chosen name appears in a message, that agent is guaranteed to respond regardless of decay timing. Mentioned agents bypass the responder count limits.
+When an agent's chosen name appears in a message, that agent is guaranteed to respond regardless of decay timing — *except* when the thread is in the `decided` phase (see above) or when the mentioned agent is currently heads-down (see Busy Agents below).
+
+### Busy Agents — Heads-Down Policy
+
+When an engineer has an active work session (checkin status = `working`) they are excluded from being picked as a chat responder, full stop. Even if they are `@mentioned` in `#engineering`, the engine silently drops them. This is the heads-down policy: once an engineer commits to implementing a ticket, they don't get pulled back into Slack discussions until the pipeline transitions them to a review or fix-up moment. The busy check is wired through `ConversationEngine.SetBusyChecker` in `cmd/squad0/cli/start.go`, reading status from the coordination `checkin` store.
+
+### Decisions As Commitments
+
+During the discussion phase of a new ticket, any message containing a line like `DECISION: use repository pattern` is parsed by `ExtractDecisionsFromTranscript` (`internal/orchestrator/commitments.go`). Extracted decisions flow into three places:
+
+1. **Engineer's implementation prompt** — `FormatDecisionsForPrompt` renders a `## Binding Decisions From Discussion` block that the engineer is told they must honour. The engineer is also instructed to include a `## Decisions Honoured` section in the PR description mapping each decision to the code that implements it.
+2. **PR description** — the engineer writes the decisions and their implementation into the PR body directly.
+3. **Reviewer's prompt** — `BuildReviewPrompt` instructs the reviewer to scan the PR body for `## Decisions Honoured`, verify every entry against the diff, and flag any ignored or substituted decisions as `[blocker]`.
+
+No separate persistence: decisions live in the engineer's prompt during work and in the PR body during review. This closes the loop *discussion → decision → implementation → verification* without adding new storage.
 
 ### Follow-Up Questions
 

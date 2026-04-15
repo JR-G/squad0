@@ -94,7 +94,11 @@ The PM queries Linear for unstarted/backlog tickets via a `DirectSession` that r
 
 ### 2. Discussion Phase
 
-Before implementation, the engineer posts a plan to `#engineering` via `QuickChat`. The Tech Lead always weighs in with architectural guidance. The conversation engine lets other agents respond. The orchestrator waits for the thread to go quiet (polling `IsQuiet`, max 3 minutes), then the PM breaks any ties with a `Decision:` statement that is stored as a belief.
+Before implementation, the engineer posts a plan to `#engineering` via `QuickChat`. The Tech Lead always weighs in with architectural guidance. The conversation engine lets other agents respond. The orchestrator waits for the thread to go quiet (polling `IsQuiet`, max 3 minutes), then the PM breaks any ties with a `DECISION:` statement.
+
+Any message containing a `DECISION:` line moves the thread's phase to `decided`, which drops the responder count to zero for agent messages (see [communication.md](communication.md) for the full phase model). This is the hard cap on discussion sprawl — once a decision lands, agents stop piling on.
+
+All `DECISION:` lines in the completed thread are extracted via `ExtractDecisionsFromTranscript` and threaded forward as `Assignment.Decisions`. They become **binding commitments** the engineer must honour.
 
 ### 3. Implementation
 
@@ -103,8 +107,11 @@ A `WorkSession` creates a git worktree at `{target_repo}/.worktrees/{role}` on a
 - Loads the base personality from `agents/{role}.md`
 - Runs mandatory memory retrieval (hybrid search + graph traversal)
 - Injects seance context (prior work on this ticket by other agents, cross-agent beliefs, handoff history)
-- Injects discussion context from the planning thread
+- Injects the raw discussion transcript from the planning thread
+- **Injects a `## Binding Decisions From Discussion` block** rendered by `FormatDecisionsForPrompt` — the engineer is instructed to honour each decision and to include a `## Decisions Honoured` section in the final PR body
 - Runs the Claude Code session with `--dangerously-skip-permissions`
+
+While the engineer's check-in status is `working`, the conversation engine's `BusyChecker` excludes them from being picked as a chat responder even if they are `@mentioned` — heads-down policy. They only re-enter chat when the orchestrator drives a state transition (PR opened, review feedback, fix-up).
 
 ### 4. Post-Implementation
 
@@ -121,6 +128,8 @@ After the session completes:
 ### 5. Review
 
 The Reviewer reads the diff, PR description, and existing comments via `gh` CLI in a `DirectSession`. It posts detailed findings as a PR comment and submits an official GitHub review. The outcome is classified from the transcript.
+
+The reviewer prompt explicitly tells the Reviewer to **look for a `## Decisions Honoured` section in the PR body**. Each bullet there is a pre-implementation decision the engineer committed to. The Reviewer must verify every listed decision is actually implemented in the diff — an ignored or silently-substituted decision is a `[blocker]`. This closes the `discussion → decision → implementation → verification` loop without needing a separate decisions store.
 
 On approval:
 - Force-submit the GitHub approval
