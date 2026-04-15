@@ -15,27 +15,33 @@ tasks:
       - security unlock-keychain ~/Library/Keychains/login.keychain-db
 
   start:
-    desc: Build and start squad0
+    desc: Build, kill any existing instance, and start squad0 in a detached tmux session so it survives terminal close, lock, and sleep
     deps: [build, unlock]
     cmds:
-      - pgrep -x ollama > /dev/null || (ollama serve &)
-      - ./bin/squad0 start
-
-  restart:
-    desc: Rebuild, kill existing process, and start fresh
-    deps: [unlock]
-    cmds:
-      - go build -tags sqlite_fts5 -o bin/squad0 ./cmd/squad0
-      - go build -tags sqlite_fts5 -o bin/squad0-memory-mcp ./cmd/squad0-memory-mcp
-      - pkill squad0 2>/dev/null || true
+      - tmux kill-session -t squad0 2>/dev/null || true
+      - pkill -x squad0 2>/dev/null || true
       - sleep 1
       - pgrep -x ollama > /dev/null || (ollama serve &)
-      - ./bin/squad0 start
+      - tmux new-session -d -s squad0 './bin/squad0 start'
+      - echo ""
+      - echo "squad0 running in tmux session 'squad0'."
+      - echo "  task logs   — attach and watch (Ctrl+B then D to detach)"
+      - echo "  task stop   — stop the process"
+
+  restart:
+    desc: Alias for start — rebuild, kill, relaunch in detached tmux
+    deps: [start]
+
+  logs:
+    desc: Attach to the running squad0 tmux session (Ctrl+B then D to detach)
+    cmds:
+      - tmux attach -t squad0
 
   stop:
-    desc: Stop the running squad0 process
+    desc: Stop the running squad0 process and kill its tmux session
     cmds:
-      - pkill squad0 2>/dev/null || true
+      - tmux kill-session -t squad0 2>/dev/null || true
+      - pkill -x squad0 2>/dev/null || true
 
   status:
     desc: Show agent statuses
