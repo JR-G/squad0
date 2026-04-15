@@ -26,30 +26,22 @@ func (runner *fakeMCPRunner) Run(_ context.Context, _, _, name string, args ...s
 	return nil, runner.err
 }
 
-func TestEnsureCodexMCPServers_RegistersLinear(t *testing.T) {
+func TestEnsureCodexMCPServers_NoMemory_NoCalls(t *testing.T) {
 	t.Parallel()
 
+	// Linear is intentionally not in the codex server list (see
+	// BuildCodexMCPServers doc). With no memory path set there are
+	// no servers to register, so the runner is never called.
 	runner := &fakeMCPRunner{}
 	servers := agent.BuildCodexMCPServers(agent.MCPOptions{})
 
 	err := agent.EnsureCodexMCPServers(context.Background(), runner, servers)
 
 	require.NoError(t, err)
-	require.Len(t, runner.calls, 2) // remove + add
-
-	// First call: remove
-	assert.Equal(t, "codex", runner.calls[0].name)
-	assert.Contains(t, runner.calls[0].args, "remove")
-	assert.Contains(t, runner.calls[0].args, "linear")
-
-	// Second call: add
-	assert.Equal(t, "codex", runner.calls[1].name)
-	assert.Contains(t, runner.calls[1].args, "add")
-	assert.Contains(t, runner.calls[1].args, "linear")
-	assert.Contains(t, runner.calls[1].args, "bunx")
+	assert.Empty(t, runner.calls)
 }
 
-func TestEnsureCodexMCPServers_WithMemory_RegistersBoth(t *testing.T) {
+func TestEnsureCodexMCPServers_WithMemory_RegistersOnlyMemory(t *testing.T) {
 	t.Parallel()
 
 	runner := &fakeMCPRunner{}
@@ -61,11 +53,11 @@ func TestEnsureCodexMCPServers_WithMemory_RegistersBoth(t *testing.T) {
 	err := agent.EnsureCodexMCPServers(context.Background(), runner, servers)
 
 	require.NoError(t, err)
-	// 2 servers × 2 calls each (remove + add) = 4
-	require.Len(t, runner.calls, 4)
+	// 1 server (memory) × 2 calls (remove + add) = 2
+	require.Len(t, runner.calls, 2)
 
 	// Memory server add should include the binary and db path.
-	addMemoryCall := runner.calls[3]
+	addMemoryCall := runner.calls[1]
 	joined := strings.Join(addMemoryCall.args, " ")
 	assert.Contains(t, joined, "memory")
 	assert.Contains(t, joined, "/usr/local/bin/memory-mcp")
@@ -75,20 +67,19 @@ func TestEnsureCodexMCPServers_WithMemory_RegistersBoth(t *testing.T) {
 func TestEnsureCodexMCPServers_AddError_ReturnsError(t *testing.T) {
 	t.Parallel()
 
-	callCount := 0
 	runner := &fakeMCPRunner{}
-	// Fail on the second call (the add).
-	runner.err = nil
-	original := runner
-	wrapper := &conditionalFailRunner{base: original, failOnCall: 1}
+	// Fail on the second call (the add) for the memory server.
+	wrapper := &conditionalFailRunner{base: runner, failOnCall: 1}
 
-	servers := agent.BuildCodexMCPServers(agent.MCPOptions{})
+	servers := agent.BuildCodexMCPServers(agent.MCPOptions{
+		MemoryBinaryPath: "/usr/local/bin/memory-mcp",
+		AgentDBPath:      "/data/agents/engineer-1.db",
+	})
 
 	err := agent.EnsureCodexMCPServers(context.Background(), wrapper, servers)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "linear")
-	_ = callCount
+	assert.Contains(t, err.Error(), "memory")
 }
 
 type conditionalFailRunner struct {
@@ -105,14 +96,24 @@ func (runner *conditionalFailRunner) Run(ctx context.Context, stdin, workDir, na
 	return runner.base.Run(ctx, stdin, workDir, name, args...)
 }
 
-func TestBuildCodexMCPServers_NoMemory_OnlyLinear(t *testing.T) {
+func TestBuildCodexMCPServers_NoMemory_Empty(t *testing.T) {
 	t.Parallel()
 
+	// No memory + no Linear = empty.
 	servers := agent.BuildCodexMCPServers(agent.MCPOptions{})
+	assert.Empty(t, servers)
+}
+
+func TestBuildCodexMCPServers_WithMemory_OnlyMemory(t *testing.T) {
+	t.Parallel()
+
+	servers := agent.BuildCodexMCPServers(agent.MCPOptions{
+		MemoryBinaryPath: "/usr/local/bin/memory-mcp",
+		AgentDBPath:      "/data/agents/engineer-1.db",
+	})
 
 	require.Len(t, servers, 1)
-	assert.Equal(t, "linear", servers[0].Name)
-	assert.Equal(t, "bunx", servers[0].Command)
+	assert.Equal(t, "memory", servers[0].Name)
 }
 
 func TestBuildCodexMCPServers_WithEnv_PassesEnv(t *testing.T) {

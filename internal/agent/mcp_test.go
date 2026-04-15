@@ -11,17 +11,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDefaultMCPConfig_HasLinearHTTPServer(t *testing.T) {
+func TestDefaultMCPConfig_OmitsLinear(t *testing.T) {
 	t.Parallel()
 
+	// Linear is intentionally absent — Claude Code provides the
+	// built-in "claude.ai Linear" managed MCP via the user's main
+	// OAuth token. Writing a Linear entry here makes every spawned
+	// session crash trying to OAuth the raw Linear MCP URL.
 	cfg := agent.DefaultMCPConfig()
-
-	linear, ok := cfg.MCPServers["linear"]
-	require.True(t, ok, "linear server should be present")
-	assert.Equal(t, "http", linear.Type)
-	assert.Equal(t, "https://mcp.linear.app/mcp", linear.URL)
-	assert.Empty(t, linear.Command, "http servers do not use Command")
-	assert.Empty(t, linear.Args, "http servers do not use Args")
+	_, ok := cfg.MCPServers["linear"]
+	assert.False(t, ok, "linear must NOT be in the generated .mcp.json")
 }
 
 func TestDefaultMCPConfig_NeverUsesNpx(t *testing.T) {
@@ -38,10 +37,12 @@ func TestWriteMCPConfig_CreatesFile(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	cfg := agent.DefaultMCPConfig()
+	cfg := agent.BuildMCPConfig(agent.MCPOptions{
+		MemoryBinaryPath: "/usr/local/bin/squad0-memory-mcp",
+		AgentDBPath:      "/data/agents/engineer-1.db",
+	})
 
 	err := agent.WriteMCPConfig(dir, cfg)
-
 	require.NoError(t, err)
 
 	path := filepath.Join(dir, ".mcp.json")
@@ -49,13 +50,12 @@ func TestWriteMCPConfig_CreatesFile(t *testing.T) {
 	require.NoError(t, err)
 
 	var parsed agent.MCPConfig
-	err = json.Unmarshal(data, &parsed)
-	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(data, &parsed))
 
-	linear, ok := parsed.MCPServers["linear"]
-	require.True(t, ok)
-	assert.Equal(t, "http", linear.Type)
-	assert.Equal(t, "https://mcp.linear.app/mcp", linear.URL)
+	memory, ok := parsed.MCPServers["memory"]
+	require.True(t, ok, "memory server should be present")
+	assert.Equal(t, "/usr/local/bin/squad0-memory-mcp", memory.Command)
+	assert.Contains(t, memory.Args, "/data/agents/engineer-1.db")
 }
 
 func TestWriteMCPConfig_InvalidDir_ReturnsError(t *testing.T) {

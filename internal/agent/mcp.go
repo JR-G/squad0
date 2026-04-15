@@ -30,19 +30,28 @@ type MCPOptions struct {
 	AgentDBPath      string
 }
 
-// BuildMCPConfig returns the MCP configuration for an agent session,
-// including the Linear MCP server and the agent's personal memory
-// server. Linear is configured as Claude Code's native HTTP MCP
-// type — Claude Code handles OAuth itself against the user's
-// ~/.claude credential cache, so the spawned subprocess doesn't need
-// any auth header passed through the .mcp.json.
+// BuildMCPConfig returns the MCP configuration for an agent session.
+//
+// Linear MCP is DELIBERATELY NOT configured here. Claude Code ships
+// a built-in "claude.ai Linear" managed MCP that is available to
+// every `claude` subprocess for free, authenticated via the user's
+// main OAuth token in ~/.claude/.credentials.json (scope
+// user:mcp_servers). The tools come through as
+// mcp__claude_ai_Linear__* — get_issue, save_issue, list_teams,
+// list_issues, etc. — and the agent can use them without any
+// per-agent authorisation flow.
+//
+// A previous implementation wrote a second Linear entry to
+// .mcp.json pointing at the raw https://mcp.linear.app/mcp URL.
+// That caused every spawned session to crash because Claude Code
+// tried to OAuth the unmanaged endpoint, failed, and refused to
+// start the session at all. The managed proxy is the only sane
+// path on a user account.
+//
+// Only the per-agent memory MCP is written here, and only when the
+// binary path and DB path are both set.
 func BuildMCPConfig(opts MCPOptions) MCPConfig {
-	servers := map[string]MCPServerConfig{
-		"linear": {
-			Type: "http",
-			URL:  "https://mcp.linear.app/mcp",
-		},
-	}
+	servers := map[string]MCPServerConfig{}
 
 	if opts.MemoryBinaryPath != "" && opts.AgentDBPath != "" {
 		servers["memory"] = MCPServerConfig{

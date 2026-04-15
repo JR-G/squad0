@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestBuildMCPConfig_WithBothPaths_IncludesMemoryServer(t *testing.T) {
+func TestBuildMCPConfig_WithBothPaths_IncludesMemoryServerOnly(t *testing.T) {
 	t.Parallel()
 
 	cfg := agent.BuildMCPConfig(agent.MCPOptions{
@@ -16,10 +16,10 @@ func TestBuildMCPConfig_WithBothPaths_IncludesMemoryServer(t *testing.T) {
 		AgentDBPath:      "/data/agents/engineer-1.db",
 	})
 
-	linear, ok := cfg.MCPServers["linear"]
-	require.True(t, ok, "linear server should be present")
-	assert.Equal(t, "http", linear.Type)
-	assert.Equal(t, "https://mcp.linear.app/mcp", linear.URL)
+	// Linear is NOT in the .mcp.json — Claude Code provides it via
+	// the built-in claude.ai Linear managed MCP.
+	_, linearOK := cfg.MCPServers["linear"]
+	assert.False(t, linearOK, "linear must NOT be in the generated .mcp.json")
 
 	mem, ok := cfg.MCPServers["memory"]
 	require.True(t, ok, "memory server should be present when both paths set")
@@ -49,12 +49,12 @@ func TestBuildMCPConfig_OnlyDBPath_NoMemoryServer(t *testing.T) {
 	assert.False(t, ok, "memory server should not be present without MemoryBinaryPath")
 }
 
-func TestBuildMCPConfig_BothEmpty_OnlyLinear(t *testing.T) {
+func TestBuildMCPConfig_BothEmpty_NoServers(t *testing.T) {
 	t.Parallel()
 
+	// With no memory binary + DB, there are no servers at all —
+	// Claude Code still exposes the claude.ai Linear managed MCP
+	// to the spawned subprocess for free.
 	cfg := agent.BuildMCPConfig(agent.MCPOptions{})
-
-	assert.Len(t, cfg.MCPServers, 1)
-	_, ok := cfg.MCPServers["linear"]
-	assert.True(t, ok)
+	assert.Empty(t, cfg.MCPServers)
 }

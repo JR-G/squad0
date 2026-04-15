@@ -49,20 +49,15 @@ func registerCodexMCPServer(ctx context.Context, runner ProcessRunner, server Co
 
 // BuildCodexMCPServers returns the list of MCP servers that should be
 // registered with Codex, matching what Claude gets via .mcp.json.
+//
+// Linear is not registered here for the same reason it is not
+// registered in BuildMCPConfig — see the docstring on BuildMCPConfig.
+// Codex on a ChatGPT account does not currently have an equivalent
+// managed Linear proxy, so the Codex fallback path simply runs
+// without Linear tools. A rate-limit fallback session that can't
+// touch Linear is better than no fallback at all.
 func BuildCodexMCPServers(opts MCPOptions) []CodexMCPServer {
-	servers := []CodexMCPServer{
-		{
-			Name:    "linear",
-			Command: "bunx",
-			Args: []string{
-				"-y",
-				"mcp-remote",
-				"https://mcp.linear.app/mcp",
-				"--header",
-				"Authorization:${LINEAR_AUTH_HEADER}",
-			},
-		},
-	}
+	servers := []CodexMCPServer{}
 
 	if opts.MemoryBinaryPath != "" && opts.AgentDBPath != "" {
 		servers = append(servers, CodexMCPServer{
