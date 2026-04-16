@@ -4,7 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/JR-G/squad0/internal/agent"
@@ -40,12 +43,23 @@ type CheckIn struct {
 // CheckInStore provides CRUD operations for agent check-ins.
 type CheckInStore struct {
 	db *sql.DB
+	// writeMu serialises Upsert calls so concurrent writers from
+	// multiple session goroutines can't race on the
+	// INSERT…ON CONFLICT UPDATE path. SQLite's busy-timeout handles
+	// cross-process races, but in-process the cheaper guarantee is
+	// a mutex.
+	writeMu sync.Mutex
 }
 
 // NewCheckInStore creates a CheckInStore backed by the given database.
 func NewCheckInStore(db *sql.DB) *CheckInStore {
 	return &CheckInStore{db: db}
 }
+
+// upsertMaxAttempts caps retries for transient SQLite locking errors.
+// 3 attempts with backoff comfortably covers the WAL checkpoint window
+// without holding the calling goroutine for long.
+const upsertMaxAttempts = 3
 
 // InitSchema creates the check-in table if it does not exist.
 func (store *CheckInStore) InitSchema(ctx context.Context) error {
@@ -65,29 +79,67 @@ func (store *CheckInStore) InitSchema(ctx context.Context) error {
 	return nil
 }
 
-// Upsert creates or updates a check-in for the given agent.
+// Upsert creates or updates a check-in for the given agent. Retries
+// transient SQLite "database is locked"/"busy" errors so a contending
+// writer doesn't leave the agent's status stale, and treats a
+// cancelled context as a clean exit (paused agents trigger this on
+// purpose).
 func (store *CheckInStore) Upsert(ctx context.Context, checkIn CheckIn) error {
 	filesJSON, err := json.Marshal(checkIn.FilesTouching)
 	if err != nil {
 		return fmt.Errorf("marshalling files: %w", err)
 	}
 
-	_, err = store.db.ExecContext(ctx, `
-		INSERT INTO checkin (agent, ticket, status, files_touching, message, updated_at)
-		VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-		ON CONFLICT(agent) DO UPDATE SET
-			ticket = excluded.ticket,
-			status = excluded.status,
-			files_touching = excluded.files_touching,
-			message = excluded.message,
-			updated_at = CURRENT_TIMESTAMP`,
-		string(checkIn.Agent), checkIn.Ticket, string(checkIn.Status), string(filesJSON), checkIn.Message,
-	)
-	if err != nil {
-		return fmt.Errorf("upserting checkin for %s: %w", checkIn.Agent, err)
+	store.writeMu.Lock()
+	defer store.writeMu.Unlock()
+
+	var lastErr error
+	for attempt := 1; attempt <= upsertMaxAttempts; attempt++ {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+
+		_, lastErr = store.db.ExecContext(ctx, `
+			INSERT INTO checkin (agent, ticket, status, files_touching, message, updated_at)
+			VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+			ON CONFLICT(agent) DO UPDATE SET
+				ticket = excluded.ticket,
+				status = excluded.status,
+				files_touching = excluded.files_touching,
+				message = excluded.message,
+				updated_at = CURRENT_TIMESTAMP`,
+			string(checkIn.Agent), checkIn.Ticket, string(checkIn.Status), string(filesJSON), checkIn.Message,
+		)
+		if lastErr == nil {
+			return nil
+		}
+		if !isSQLiteBusy(lastErr) {
+			return fmt.Errorf("upserting checkin for %s: %w", checkIn.Agent, lastErr)
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Duration(attempt) * 50 * time.Millisecond):
+		}
 	}
 
-	return nil
+	return fmt.Errorf("upserting checkin for %s after %d attempts: %w", checkIn.Agent, upsertMaxAttempts, lastErr)
+}
+
+// isSQLiteBusy reports whether err looks like a SQLite locking
+// failure that benefits from a retry. We match on the message rather
+// than the driver error type to avoid pulling sqlite3 imports into
+// this package.
+func isSQLiteBusy(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "database is locked") || strings.Contains(msg, "database table is locked") || strings.Contains(msg, "sqlite_busy")
 }
 
 // GetByAgent returns the current check-in for the given agent.

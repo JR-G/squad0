@@ -3,6 +3,8 @@ package coordination_test
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/JR-G/squad0/internal/agent"
@@ -78,6 +80,51 @@ func TestCheckInStore_Upsert_UpdatesExisting(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "SQ-2", checkIn.Ticket)
 	assert.Equal(t, coordination.StatusBlocked, checkIn.Status)
+}
+
+func TestCheckInStore_Upsert_CancelledContext_ReturnsContextErr(t *testing.T) {
+	t.Parallel()
+
+	store := setupStore(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := store.Upsert(ctx, coordination.CheckIn{
+		Agent: agent.RoleEngineer1, Status: coordination.StatusIdle, FilesTouching: []string{},
+	})
+
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestCheckInStore_Upsert_ConcurrentWriters_NoErrors(t *testing.T) {
+	t.Parallel()
+
+	store := setupStore(t)
+	ctx := context.Background()
+
+	const writers = 8
+	const writes = 25
+	errCh := make(chan error, writers*writes)
+
+	var wg sync.WaitGroup
+	for writer := range writers {
+		wg.Add(1)
+		go func(role agent.Role, writerIdx int) {
+			defer wg.Done()
+			for j := range writes {
+				ticket := fmt.Sprintf("SQ-%d-%d", writerIdx, j)
+				errCh <- store.Upsert(ctx, coordination.CheckIn{
+					Agent: role, Ticket: ticket, Status: coordination.StatusWorking, FilesTouching: []string{},
+				})
+			}
+		}(agent.AllRoles()[writer%len(agent.AllRoles())], writer)
+	}
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		require.NoError(t, err)
+	}
 }
 
 func TestCheckInStore_GetByAgent_NotFound_ReturnsError(t *testing.T) {
