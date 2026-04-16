@@ -73,11 +73,14 @@ func (emb *Embedder) Embed(ctx context.Context, text string) ([]float32, error) 
 }
 
 // CosineSimilarity computes the cosine similarity between two vectors.
-// Returns a value between -1 and 1. Panics if the vectors have different
-// lengths.
+// Returns a value between -1 and 1, or 0 when the inputs cannot be
+// compared (mismatched lengths or a zero-magnitude vector). The
+// mismatch case happens after an embedding-model swap leaves cached
+// vectors of a different dimension in the database — returning 0
+// lets recall degrade gracefully instead of crashing the agent.
 func CosineSimilarity(vecA, vecB []float32) float32 {
-	if len(vecA) != len(vecB) {
-		panic(fmt.Sprintf("vector length mismatch: %d vs %d", len(vecA), len(vecB)))
+	if len(vecA) != len(vecB) || len(vecA) == 0 {
+		return 0
 	}
 
 	var dot, magA, magB float32

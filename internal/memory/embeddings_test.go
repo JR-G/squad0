@@ -56,12 +56,20 @@ func TestCosineSimilarity_ZeroVector_ReturnsZero(t *testing.T) {
 	assert.Equal(t, float32(0), result)
 }
 
-func TestCosineSimilarity_DifferentLengths_Panics(t *testing.T) {
+func TestCosineSimilarity_DifferentLengths_ReturnsZero(t *testing.T) {
 	t.Parallel()
 
-	assert.Panics(t, func() {
-		memory.CosineSimilarity([]float32{1.0}, []float32{1.0, 2.0})
-	})
+	result := memory.CosineSimilarity([]float32{1.0}, []float32{1.0, 2.0})
+
+	assert.Equal(t, float32(0), result)
+}
+
+func TestCosineSimilarity_EmptyVectors_ReturnsZero(t *testing.T) {
+	t.Parallel()
+
+	result := memory.CosineSimilarity([]float32{}, []float32{})
+
+	assert.Equal(t, float32(0), result)
 }
 
 func TestSerialiseVector_RoundTrip(t *testing.T) {
