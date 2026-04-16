@@ -211,22 +211,33 @@ func registerMemoryMCP(ctx context.Context, out io.Writer) {
 	_, _ = fmt.Fprint(out, tui.StepDone("Memory MCP registered (user scope)"))
 }
 
+// claudeMCPRunner runs `claude mcp …` subcommands. Exposed as an
+// interface so tests can drive ensureUserScopeMemoryMCP without
+// spawning a real claude binary.
+type claudeMCPRunner interface {
+	Run(ctx context.Context, args ...string) ([]byte, error)
+}
+
+type execClaudeMCPRunner struct{}
+
+func (execClaudeMCPRunner) Run(ctx context.Context, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, "claude", args...).CombinedOutput()
+}
+
 // ensureUserScopeMemoryMCP makes sure `claude mcp` knows about
 // `squad0-memory`. Idempotent: lists current registrations first and
-// only adds when missing. Re-running on every startup keeps the
-// command path correct after a `task build` produces a new binary.
+// re-adds so the command path is always current after rebuilds.
 func ensureUserScopeMemoryMCP(ctx context.Context, binaryPath string) error {
-	listCmd := exec.CommandContext(ctx, "claude", "mcp", "list")
-	listOutput, _ := listCmd.CombinedOutput()
+	return ensureUserScopeMemoryMCPWith(ctx, execClaudeMCPRunner{}, binaryPath)
+}
+
+func ensureUserScopeMemoryMCPWith(ctx context.Context, runner claudeMCPRunner, binaryPath string) error {
+	listOutput, _ := runner.Run(ctx, "mcp", "list")
 	if strings.Contains(string(listOutput), "squad0-memory:") {
-		// Already registered — re-add so the path always points at
-		// the current binary even after rebuilds.
-		removeCmd := exec.CommandContext(ctx, "claude", "mcp", "remove", "squad0-memory", "--scope", "user")
-		_, _ = removeCmd.CombinedOutput()
+		_, _ = runner.Run(ctx, "mcp", "remove", "squad0-memory", "--scope", "user")
 	}
 
-	addCmd := exec.CommandContext(ctx, "claude", "mcp", "add", "--scope", "user", "squad0-memory", binaryPath)
-	if output, err := addCmd.CombinedOutput(); err != nil {
+	if output, err := runner.Run(ctx, "mcp", "add", "--scope", "user", "squad0-memory", binaryPath); err != nil {
 		return fmt.Errorf("claude mcp add: %s: %w", strings.TrimSpace(string(output)), err)
 	}
 	return nil

@@ -120,3 +120,65 @@ func TestWireSituations_ReturnsBothStores(t *testing.T) {
 	assert.NotNil(t, queue)
 	assert.NotNil(t, tracker)
 }
+
+type fakeClaudeMCPRunner struct {
+	calls   [][]string
+	listOut []byte
+	addErr  error
+	addOut  []byte
+}
+
+func (runner *fakeClaudeMCPRunner) Run(_ context.Context, args ...string) ([]byte, error) {
+	cp := append([]string(nil), args...)
+	runner.calls = append(runner.calls, cp)
+
+	if len(args) >= 2 && args[0] == "mcp" && args[1] == "list" {
+		return runner.listOut, nil
+	}
+	if len(args) >= 2 && args[0] == "mcp" && args[1] == "add" {
+		return runner.addOut, runner.addErr
+	}
+	return nil, nil
+}
+
+func TestEnsureUserScopeMemoryMCPWith_NotRegistered_AddsOnly(t *testing.T) {
+	t.Parallel()
+
+	runner := &fakeClaudeMCPRunner{listOut: []byte("claude.ai Linear: ...")}
+
+	err := ensureUserScopeMemoryMCPWith(context.Background(), runner, "/path/to/binary")
+
+	require.NoError(t, err)
+	assert.Len(t, runner.calls, 2) // list + add (no remove)
+	assert.Equal(t, []string{"mcp", "list"}, runner.calls[0])
+	assert.Equal(t, []string{"mcp", "add", "--scope", "user", "squad0-memory", "/path/to/binary"}, runner.calls[1])
+}
+
+func TestEnsureUserScopeMemoryMCPWith_AlreadyRegistered_RemovesAndReadds(t *testing.T) {
+	t.Parallel()
+
+	runner := &fakeClaudeMCPRunner{listOut: []byte("squad0-memory: /old/path")}
+
+	err := ensureUserScopeMemoryMCPWith(context.Background(), runner, "/new/path")
+
+	require.NoError(t, err)
+	assert.Len(t, runner.calls, 3) // list + remove + add
+	assert.Equal(t, []string{"mcp", "remove", "squad0-memory", "--scope", "user"}, runner.calls[1])
+	assert.Equal(t, []string{"mcp", "add", "--scope", "user", "squad0-memory", "/new/path"}, runner.calls[2])
+}
+
+func TestEnsureUserScopeMemoryMCPWith_AddFails_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	runner := &fakeClaudeMCPRunner{
+		listOut: []byte(""),
+		addOut:  []byte("permission denied"),
+		addErr:  assert.AnError,
+	}
+
+	err := ensureUserScopeMemoryMCPWith(context.Background(), runner, "/path/to/binary")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "claude mcp add")
+	assert.Contains(t, err.Error(), "permission denied")
+}

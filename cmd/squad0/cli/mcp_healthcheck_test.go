@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"context"
 	"testing"
 
+	"github.com/JR-G/squad0/internal/agent"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -81,4 +83,107 @@ func TestMCPSetupHint_ReturnsNonEmpty(t *testing.T) {
 	hint := mcpSetupHint()
 	assert.Contains(t, hint, "Linear MCP")
 	assert.Contains(t, hint, "squad0-memory-mcp")
+}
+
+func TestAssertLinearHealthy_NotAdvertised_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	err := assertLinearHealthy(mcpInitMessage{})
+
+	assert.ErrorContains(t, err, "not advertised")
+}
+
+func TestAssertLinearHealthy_NotConnected_ReturnsStatusError(t *testing.T) {
+	t.Parallel()
+
+	init := mcpInitMessage{
+		MCPServers: []mcpServerStatus{{Name: "claude.ai Linear", Status: "failed"}},
+	}
+
+	err := assertLinearHealthy(init)
+
+	assert.ErrorContains(t, err, "status=\"failed\"")
+}
+
+func TestAssertLinearHealthy_ConnectedNoTools_ReturnsToolError(t *testing.T) {
+	t.Parallel()
+
+	init := mcpInitMessage{
+		MCPServers: []mcpServerStatus{{Name: "claude.ai Linear", Status: "connected"}},
+		Tools:      []string{"Bash", "Read", "Grep"},
+	}
+
+	err := assertLinearHealthy(init)
+
+	assert.ErrorContains(t, err, "no mcp__claude_ai_Linear__")
+}
+
+func TestAssertLinearHealthy_ConnectedWithTools_ReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	init := mcpInitMessage{
+		MCPServers: []mcpServerStatus{{Name: "claude.ai Linear", Status: "connected"}},
+		Tools:      []string{"Bash", "mcp__claude_ai_Linear__list_issues"},
+	}
+
+	assert.NoError(t, assertLinearHealthy(init))
+}
+
+func TestAssertMemoryHealthy_NotAdvertised_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	err := assertMemoryHealthy(mcpInitMessage{})
+
+	assert.ErrorContains(t, err, "not advertised")
+}
+
+func TestAssertMemoryHealthy_UserScopeConnected_ReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	init := mcpInitMessage{
+		MCPServers: []mcpServerStatus{{Name: "squad0-memory", Status: "connected"}},
+	}
+
+	assert.NoError(t, assertMemoryHealthy(init))
+}
+
+func TestAssertMemoryHealthy_LegacyNameConnected_ReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	init := mcpInitMessage{
+		MCPServers: []mcpServerStatus{{Name: "memory", Status: "connected"}},
+	}
+
+	assert.NoError(t, assertMemoryHealthy(init))
+}
+
+func TestAssertMemoryHealthy_FailedStatus_ReturnsErrorWithName(t *testing.T) {
+	t.Parallel()
+
+	init := mcpInitMessage{
+		MCPServers: []mcpServerStatus{{Name: "squad0-memory", Status: "failed"}},
+	}
+
+	err := assertMemoryHealthy(init)
+
+	assert.ErrorContains(t, err, "squad0-memory")
+	assert.ErrorContains(t, err, "status=\"failed\"")
+}
+
+func TestRealVerifyMCPHealth_NilAgent_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	err := realVerifyMCPHealth(context.Background(), nil, "claude-sonnet-4-6", "")
+
+	assert.ErrorContains(t, err, "no PM agent")
+}
+
+func TestRealVerifyMCPHealth_EmptyModel_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	pmAgent := agent.NewAgent(agent.RolePM, "model", nil, nil, nil, nil, nil, nil)
+
+	err := realVerifyMCPHealth(context.Background(), pmAgent, "", "")
+
+	assert.ErrorContains(t, err, "model is empty")
 }
