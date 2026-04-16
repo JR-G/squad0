@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/JR-G/squad0/internal/agent"
 	"github.com/JR-G/squad0/internal/config"
 	slack "github.com/JR-G/squad0/internal/integrations/slack"
 	"github.com/JR-G/squad0/internal/orchestrator"
@@ -39,6 +40,23 @@ func durationUntilHour(hour int, now time.Time) time.Duration {
 		target = target.Add(24 * time.Hour)
 	}
 	return target.Sub(now)
+}
+
+// assertMemoryStoresWired fails startup if any agent is missing the
+// stores required by the post-session memory flush. Without this, a
+// constructor mistake silently drops learnings on every session and
+// the only visible symptom is degraded recall weeks later.
+func assertMemoryStoresWired(agents map[agent.Role]*agent.Agent) error {
+	var missing []string
+	for role, instance := range agents {
+		if instance == nil || !instance.HasMemoryStores() {
+			missing = append(missing, string(role))
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return fmt.Errorf("agents missing memory stores: %v", missing)
 }
 
 // seedConversationHistory loads recent messages from Slack channels

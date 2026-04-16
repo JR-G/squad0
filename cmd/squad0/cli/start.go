@@ -114,6 +114,10 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	if err != nil {
 		return fmt.Errorf("creating agents: %w", err)
 	}
+	if err := assertMemoryStoresWired(agents); err != nil {
+		_, _ = fmt.Fprint(out, tui.StepFail("Agent memory not wired"))
+		return err
+	}
 	_, _ = fmt.Fprint(out, tui.StepDone(fmt.Sprintf("%d agents created", len(agents))))
 
 	if err := wireAgentMCP(ctx, out, agents, modelMap, deps.DataDir, targetRepoDir); err != nil {

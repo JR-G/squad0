@@ -108,6 +108,14 @@ func (agent *Agent) EpisodeStore() *memory.EpisodeStore {
 	return agent.episodeStore
 }
 
+// HasMemoryStores reports whether all stores required by the post-
+// session memory flush are wired. Used by startup to fail fast on a
+// configuration mistake instead of silently dropping learnings every
+// session.
+func (agent *Agent) HasMemoryStores() bool {
+	return agent.graphStore != nil && agent.factStore != nil && agent.episodeStore != nil
+}
+
 // Embedder returns the agent's text embedder.
 func (agent *Agent) Embedder() *memory.Embedder {
 	return agent.embedder
