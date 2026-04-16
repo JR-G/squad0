@@ -131,11 +131,11 @@ func (agent *Agent) ExecuteTask(ctx context.Context, taskDescription string, fil
 	}
 
 	cfg := SessionConfig{
-		Role:          agent.role,
-		Model:         agent.model,
-		Prompt:        prompt,
-		WorkingDir:    workingDir,
-		MCPConfigPath: agent.MCPConfigPath,
+		Role:       agent.role,
+		Model:      agent.model,
+		Prompt:     prompt,
+		WorkingDir: workingDir,
+		Env:        agent.sessionEnv(),
 	}
 
 	result, sessionErr := agent.session.Run(ctx, cfg)
@@ -184,6 +184,7 @@ func (agent *Agent) QuickChat(ctx context.Context, prompt string) (string, error
 		Prompt:       prompt,
 		SystemPrompt: chatCtx.SystemPrompt(),
 		WorkingDir:   chatCtx.Dir(),
+		Env:          agent.sessionEnv(),
 	}
 
 	result, runErr := agent.session.Run(ctx, cfg)
@@ -245,22 +246,33 @@ func (agent *Agent) SetDefaultWorkDir(dir string) {
 // be buried in other context.
 func (agent *Agent) DirectSession(ctx context.Context, prompt string) (SessionResult, error) {
 	cfg := SessionConfig{
-		Role:          agent.role,
-		Model:         agent.model,
-		Prompt:        prompt,
-		WorkingDir:    agent.defaultWorkDir,
-		MCPConfigPath: agent.MCPConfigPath,
-		Env:           agent.envWithGHToken(),
+		Role:       agent.role,
+		Model:      agent.model,
+		Prompt:     prompt,
+		WorkingDir: agent.defaultWorkDir,
+		Env:        agent.sessionEnv(),
 	}
 
 	return agent.session.Run(ctx, cfg)
 }
 
-func (agent *Agent) envWithGHToken() map[string]string {
-	if agent.ghToken == "" {
+// sessionEnv returns the env vars every spawned claude subprocess
+// needs: GH_TOKEN if set, and SQUAD0_MEMORY_DB pointing at this
+// agent's SQLite file. The memory env var is the bridge between the
+// single user-scope MCP registration and per-agent DBs — without it
+// the squad0-memory binary refuses to start.
+func (agent *Agent) sessionEnv() map[string]string {
+	env := map[string]string{}
+	if agent.ghToken != "" {
+		env["GH_TOKEN"] = agent.ghToken
+	}
+	if agent.dbPath != "" {
+		env["SQUAD0_MEMORY_DB"] = agent.dbPath
+	}
+	if len(env) == 0 {
 		return nil
 	}
-	return map[string]string{"GH_TOKEN": agent.ghToken}
+	return env
 }
 
 func (agent *Agent) assemblePrompt(ctx context.Context, taskDescription string, filePaths []string) (string, error) {

@@ -11,19 +11,35 @@ import (
 	"github.com/JR-G/squad0/internal/memory"
 )
 
+// envDBPath is the env var the orchestrator sets per agent so a single
+// user-scope MCP registration can serve every agent with its own DB.
+// Env wins over --db because user-scope registration uses fixed argv;
+// the orchestrator can only vary the env on each spawn.
+const envDBPath = "SQUAD0_MEMORY_DB"
+
 func main() {
-	dbPath := flag.String("db", "", "path to the agent's SQLite database")
+	dbPath := flag.String("db", "", "path to the agent's SQLite database (overridden by "+envDBPath+" env var)")
 	flag.Parse()
 
-	if *dbPath == "" {
-		fmt.Fprintln(os.Stderr, "error: --db flag is required")
+	resolved := resolveDBPath(*dbPath, os.Getenv(envDBPath))
+	if resolved == "" {
+		fmt.Fprintf(os.Stderr, "error: set %s env var or pass --db\n", envDBPath)
 		os.Exit(1)
 	}
 
-	if err := run(*dbPath); err != nil {
+	if err := run(resolved); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// resolveDBPath returns whichever of envValue or flagValue is set,
+// preferring envValue. Exposed for testing.
+func resolveDBPath(flagValue, envValue string) string {
+	if envValue != "" {
+		return envValue
+	}
+	return flagValue
 }
 
 func run(dbPath string) error {

@@ -7,7 +7,9 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/JR-G/squad0/internal/agent"
 	"github.com/JR-G/squad0/internal/config"
@@ -165,29 +167,68 @@ func resolveTargetRepo(targetRepo string) string {
 	return filepath.Join(home, "repos", repoName)
 }
 
-// wireAgentMCP writes each agent's .mcp.json (memory MCP only — the
-// Linear connector is user-scope, not configured by squad0) and then
-// runs the startup MCP smoke test. Must happen BEFORE wireBridges so
-// agents have MCPConfigPath populated when their runtime spawns
-// claude. Returns an error with an actionable setup hint if the
-// smoke test trips — never silently boot with a broken MCP.
+// wireAgentMCP registers the memory MCP at user scope so every claude
+// subprocess sees it alongside the managed claude.ai Linear connector,
+// then runs the startup smoke test. Per-agent DB selection happens at
+// spawn time via the SQUAD0_MEMORY_DB env var; the MCP binary reads
+// that env var to pick which agent's database to open.
+//
+// User scope (rather than per-agent --mcp-config) is load-bearing:
+// passing --mcp-config to `claude -p` causes the managed Linear
+// connector's tools to be excluded from the session even though the
+// connector itself reports status=connected. With no --mcp-config and
+// memory registered user-scope, every spawn inherits the full set
+// (Linear + memory) the way the interactive `claude` does.
 func wireAgentMCP(
 	ctx context.Context,
 	out io.Writer,
 	agents map[agent.Role]*agent.Agent,
 	modelMap map[agent.Role]string,
-	dataDir, targetRepoDir string,
+	_ /* dataDir */, targetRepoDir string,
 ) error {
-	memoryBinaryPath := resolveMemoryBinaryPath()
-	mcpBaseDir := filepath.Join(dataDir, "mcp")
-	for _, agentInstance := range agents {
-		orchestrator.EnsureAgentMCPConfig(agentInstance, mcpBaseDir, memoryBinaryPath)
-	}
+	registerMemoryMCP(ctx, out)
 
 	if err := verifyMCPHealth(ctx, agents[agent.RolePM], modelMap[agent.RolePM], targetRepoDir); err != nil {
 		return fmt.Errorf("MCP smoke test: %w\n\n%s", err, mcpSetupHint())
 	}
 	_, _ = fmt.Fprint(out, tui.StepDone("MCP servers verified (Linear connected, memory connected)"))
+	return nil
+}
+
+// registerMemoryMCP wires up squad0-memory at user scope, surfacing
+// any issue as a TUI warning instead of failing the whole startup —
+// the smoke test will still trip if Linear/memory aren't reachable.
+func registerMemoryMCP(ctx context.Context, out io.Writer) {
+	memoryBinaryPath := resolveMemoryBinaryPath()
+	if memoryBinaryPath == "" {
+		_, _ = fmt.Fprint(out, tui.StepWarn("squad0-memory-mcp binary not found next to squad0 — memory MCP will not register"))
+		return
+	}
+	if err := ensureUserScopeMemoryMCP(ctx, memoryBinaryPath); err != nil {
+		_, _ = fmt.Fprint(out, tui.StepWarn(fmt.Sprintf("user-scope memory MCP registration failed: %v", err)))
+		return
+	}
+	_, _ = fmt.Fprint(out, tui.StepDone("Memory MCP registered (user scope)"))
+}
+
+// ensureUserScopeMemoryMCP makes sure `claude mcp` knows about
+// `squad0-memory`. Idempotent: lists current registrations first and
+// only adds when missing. Re-running on every startup keeps the
+// command path correct after a `task build` produces a new binary.
+func ensureUserScopeMemoryMCP(ctx context.Context, binaryPath string) error {
+	listCmd := exec.CommandContext(ctx, "claude", "mcp", "list")
+	listOutput, _ := listCmd.CombinedOutput()
+	if strings.Contains(string(listOutput), "squad0-memory:") {
+		// Already registered — re-add so the path always points at
+		// the current binary even after rebuilds.
+		removeCmd := exec.CommandContext(ctx, "claude", "mcp", "remove", "squad0-memory", "--scope", "user")
+		_, _ = removeCmd.CombinedOutput()
+	}
+
+	addCmd := exec.CommandContext(ctx, "claude", "mcp", "add", "--scope", "user", "squad0-memory", binaryPath)
+	if output, err := addCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("claude mcp add: %s: %w", strings.TrimSpace(string(output)), err)
+	}
 	return nil
 }
 

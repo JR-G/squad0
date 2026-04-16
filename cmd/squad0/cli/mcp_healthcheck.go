@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -25,6 +26,7 @@ type mcpInitMessage struct {
 	Type       string            `json:"type"`
 	SubType    string            `json:"subtype"`
 	MCPServers []mcpServerStatus `json:"mcp_servers"`
+	Tools      []string          `json:"tools"`
 }
 
 // verifyMCPHealth is the startup smoke-test hook. Overridable so
@@ -32,31 +34,29 @@ type mcpInitMessage struct {
 // realVerifyMCPHealth which actually spawns `claude -p`.
 var verifyMCPHealth = realVerifyMCPHealth
 
-// realVerifyMCPHealth spawns a one-shot claude subprocess using the
-// PM agent's MCP config, parses the init line, and asserts that the
-// two load-bearing MCP servers are both reachable:
+// realVerifyMCPHealth spawns a one-shot claude subprocess (NO
+// --mcp-config — that flag suppresses managed-connector tool exposure
+// even though the connector itself reports connected) and asserts:
 //
-//   - "claude.ai Linear" must be status=="connected". Without it
-//     every ticket-state transition and Linear query falls on the
-//     floor, producing the failure loop that has defined every
-//     Linear-MCP outage in this project's history.
-//   - "memory" must be status=="connected". A relative --db path or
-//     a missing binary causes status=="failed" silently, and every
-//     recall/store tool call errors out with an unhelpful message.
+//   - "claude.ai Linear" is connected AND its tools are exposed in
+//     the session's tools list. The connection alone is not enough —
+//     the smoke test caught this regression in the wild: status
+//     reads "connected" while every ticket session errors with
+//     "Linear MCP tools are not available". We assert tool presence
+//     to catch that class of failure at startup.
+//   - the user-scope memory MCP ("squad0-memory") is connected. The
+//     SQUAD0_MEMORY_DB env var is set to the PM's DB so the smoke
+//     test exercises the same env-driven path real sessions use.
 //
 // If either server is unhealthy the error includes the exact status
-// string claude reported so the operator can act on it instead of
-// guessing. The prompt is the cheapest claude call we can make so the
-// smoke test adds negligible startup latency.
+// string claude reported. The prompt is the cheapest claude call we
+// can make so the smoke test adds negligible startup latency.
 func realVerifyMCPHealth(ctx context.Context, pmAgent *agent.Agent, model, workDir string) error {
 	if pmAgent == nil {
 		return fmt.Errorf("no PM agent to smoke-test MCP with")
 	}
 	if model == "" {
 		return fmt.Errorf("PM model is empty — cannot spawn smoke-test subprocess")
-	}
-	if pmAgent.MCPConfigPath == "" {
-		return fmt.Errorf("PM MCPConfigPath is empty — EnsureAgentMCPConfig did not run")
 	}
 
 	smokeCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
@@ -68,13 +68,16 @@ func realVerifyMCPHealth(ctx context.Context, pmAgent *agent.Agent, model, workD
 		"--output-format", "stream-json",
 		"--verbose",
 		"--dangerously-skip-permissions",
-		"--mcp-config", pmAgent.MCPConfigPath,
 	}
 
 	cmd := exec.CommandContext(smokeCtx, "claude", args...)
 	cmd.Stdin = strings.NewReader("ok")
 	if workDir != "" {
 		cmd.Dir = workDir
+	}
+
+	if dbPath := pmAgent.DBPath(); dbPath != "" {
+		cmd.Env = append(os.Environ(), "SQUAD0_MEMORY_DB="+dbPath)
 	}
 
 	output, err := cmd.Output()
@@ -87,6 +90,15 @@ func realVerifyMCPHealth(ctx context.Context, pmAgent *agent.Agent, model, workD
 		return fmt.Errorf("no MCP init line in claude smoke-test output")
 	}
 
+	if err := assertLinearHealthy(init); err != nil {
+		return err
+	}
+	return assertMemoryHealthy(init)
+}
+
+// assertLinearHealthy checks both the connection state and that
+// Linear tools are actually exposed in the session.
+func assertLinearHealthy(init mcpInitMessage) error {
 	linear := findServer(init, "claude.ai Linear")
 	if linear == nil {
 		return fmt.Errorf("claude.ai Linear MCP not advertised — the managed connector is not enabled on this machine")
@@ -95,15 +107,29 @@ func realVerifyMCPHealth(ctx context.Context, pmAgent *agent.Agent, model, workD
 		return fmt.Errorf("claude.ai Linear MCP status=%q, want \"connected\"", linear.Status)
 	}
 
-	memory := findServer(init, "memory")
-	if memory == nil {
-		return fmt.Errorf("memory MCP not advertised — check MemoryBinaryPath and EnsureAgentMCPConfig")
+	for _, name := range init.Tools {
+		if strings.HasPrefix(name, "mcp__claude_ai_Linear__") {
+			return nil
+		}
 	}
-	if memory.Status != "connected" {
-		return fmt.Errorf("memory MCP status=%q, want \"connected\" (check --db path is absolute and the file is writable)", memory.Status)
-	}
+	return fmt.Errorf("claude.ai Linear is connected but no mcp__claude_ai_Linear__* tools are exposed — sessions will not see Linear (likely --mcp-config is being passed somewhere it shouldn't be)")
+}
 
-	return nil
+// assertMemoryHealthy accepts either the user-scope name
+// (squad0-memory) or the legacy file-scope name (memory) so a
+// half-migrated machine still surfaces a useful error.
+func assertMemoryHealthy(init mcpInitMessage) error {
+	for _, name := range []string{"squad0-memory", "memory"} {
+		entry := findServer(init, name)
+		if entry == nil {
+			continue
+		}
+		if entry.Status != "connected" {
+			return fmt.Errorf("memory MCP %q status=%q, want \"connected\" (check SQUAD0_MEMORY_DB env var and that the binary is on PATH)", name, entry.Status)
+		}
+		return nil
+	}
+	return fmt.Errorf("memory MCP not advertised — run startup again so squad0 can register it user-scope, or check that bin/squad0-memory-mcp exists")
 }
 
 func parseMCPInit(raw string) (mcpInitMessage, bool) {
@@ -134,15 +160,14 @@ func findServer(init mcpInitMessage, name string) *mcpServerStatus {
 }
 
 // mcpSetupHint is appended to the smoke-test error so the operator
-// knows exactly which one-time setup step fixes it, instead of
-// reinventing the config generator for the sixth time.
+// knows exactly which one-time setup step fixes it.
 func mcpSetupHint() string {
 	return strings.Join([]string{
-		"Linear MCP is a user-scope managed connector — it is NOT configured by squad0.",
-		"Set it up once by running:",
+		"Linear MCP is a user-scope managed connector — squad0 does not configure it.",
+		"If it shows as not connected, set it up once by running:",
 		"  claude  # interactive, then /mcp to authorise claude.ai Linear",
-		"or visit the Linear connector settings at claude.ai and approve access.",
-		"Memory MCP is configured by squad0 (data/mcp/<role>/.mcp.json); if it is failing,",
-		"check that bin/squad0-memory-mcp exists and the agent DB path is absolute.",
+		"Memory MCP is now registered at user scope on every squad0 start.",
+		"If it is failing, check that bin/squad0-memory-mcp exists and that",
+		"`claude mcp list` shows squad0-memory pointing at the right binary.",
 	}, "\n")
 }
