@@ -115,10 +115,15 @@ func (ws *WorkSession) Dir() string {
 	return ws.worktreeDir
 }
 
-// Cleanup removes the worktree and prunes stale references.
+// Cleanup removes the worktree and prunes stale references. Both
+// errors are logged but not returned — Cleanup is called from defer
+// and there's nothing the caller can do — but a final unrecoverable
+// state is logged at WARN so leaks surface in the console.
 func (ws *WorkSession) Cleanup(ctx context.Context) {
 	logWorktreeRemoval(ctx, ws.repoDir, ws.worktreeDir)
-	_, _ = gitCommand(ctx, ws.repoDir, "worktree", "prune")
+	if pruneOut, pruneErr := gitCommand(ctx, ws.repoDir, "worktree", "prune"); pruneErr != nil {
+		log.Printf("WARN: worktree prune after cleanup of %s failed: %s: %v", ws.worktreeDir, strings.TrimSpace(string(pruneOut)), pruneErr)
+	}
 }
 
 func logWorktreeRemoval(ctx context.Context, repoDir, worktreeDir string) {
@@ -131,14 +136,23 @@ func logWorktreeRemoval(ctx context.Context, repoDir, worktreeDir string) {
 	// "not a working tree" and "No such file or directory" mean the
 	// worktree is already gone — the cleanup ran twice, or someone
 	// pruned it first. That's the desired end state, not a failure.
-	// Silently accept it and prune stale refs so the next create
-	// doesn't trip over the ghost.
+	// Prune stale refs so the next create doesn't trip over the
+	// ghost; if even prune fails, log loudly because a stale ref
+	// will trip the next agent into a worktree-locked error.
 	if isAlreadyCleanWorktreeError(string(output)) {
-		_, _ = gitCommand(ctx, repoDir, "worktree", "prune")
+		pruneStaleWorktreeRef(ctx, repoDir, worktreeDir)
 		return
 	}
 
-	log.Printf("failed to remove worktree %s: %s: %v", worktreeDir, string(output), err)
+	log.Printf("WARN: failed to remove worktree %s: %s: %v", worktreeDir, string(output), err)
+}
+
+func pruneStaleWorktreeRef(ctx context.Context, repoDir, worktreeDir string) {
+	pruneOut, pruneErr := gitCommand(ctx, repoDir, "worktree", "prune")
+	if pruneErr == nil {
+		return
+	}
+	log.Printf("WARN: worktree prune of stale ref %s failed: %s: %v", worktreeDir, strings.TrimSpace(string(pruneOut)), pruneErr)
 }
 
 func isAlreadyCleanWorktreeError(output string) bool {
@@ -156,18 +170,35 @@ func createWorktree(ctx context.Context, repoDir, worktreeDir, branch string, ro
 		return &WorkSession{repoDir: repoDir, worktreeDir: worktreeDir}, nil
 	}
 
+	// If git refuses because the directory is already in use by
+	// another worktree, do NOT retry with --force. That would race
+	// a live agent into the same tree. Bail with a clear error so
+	// the orchestrator can pick a different role or wait.
+	if isWorktreeLockedOutput(string(output)) {
+		return nil, fmt.Errorf("worktree locked for %s at %s: %s", role, worktreeDir, strings.TrimSpace(string(output)))
+	}
+
 	// Branch already exists (e.g. open PR) — check it out instead.
 	if !branchExists(ctx, repoDir, branch) {
 		return nil, fmt.Errorf("%s: %w", string(output), err)
 	}
 
 	output, err = gitCommand(ctx, repoDir, "worktree", "add", "--force", worktreeDir, branch)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", string(output), err)
+	if err == nil {
+		log.Printf("created worktree for %s at %s (existing branch %s)", role, worktreeDir, branch)
+		return &WorkSession{repoDir: repoDir, worktreeDir: worktreeDir}, nil
 	}
+	if isWorktreeLockedOutput(string(output)) {
+		return nil, fmt.Errorf("worktree locked for %s at %s: %s", role, worktreeDir, strings.TrimSpace(string(output)))
+	}
+	return nil, fmt.Errorf("%s: %w", string(output), err)
+}
 
-	log.Printf("created worktree for %s at %s (existing branch %s)", role, worktreeDir, branch)
-	return &WorkSession{repoDir: repoDir, worktreeDir: worktreeDir}, nil
+func isWorktreeLockedOutput(output string) bool {
+	lower := strings.ToLower(output)
+	return strings.Contains(lower, "is already used by worktree") ||
+		strings.Contains(lower, "already locked") ||
+		strings.Contains(lower, "is already checked out at")
 }
 
 // cleanupStaleWorktree removes the worktree directory and prunes git

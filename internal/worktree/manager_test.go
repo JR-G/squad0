@@ -76,7 +76,26 @@ func TestManager_Create_GitError_ReturnsError(t *testing.T) {
 	_, err := mgr.Create(context.Background(), agent.RoleEngineer1, "feat/sq-42")
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "creating worktree")
+	assert.ErrorIs(t, err, worktree.ErrBranchExists)
+}
+
+func TestManager_Create_LockedWorktree_ReturnsErrWorktreeLocked(t *testing.T) {
+	t.Parallel()
+
+	git := newFakeGitRunner()
+	mgr := worktree.NewManager(git, t.TempDir())
+	expectedPath := mgr.PathForRole(agent.RoleEngineer1)
+
+	git.On(
+		fmt.Sprintf("worktree add %s feat/sq-42", expectedPath),
+		[]byte("fatal: '"+expectedPath+"' is already used by worktree at '/elsewhere'\n"),
+		fmt.Errorf("exit status 128"),
+	)
+
+	_, err := mgr.Create(context.Background(), agent.RoleEngineer1, "feat/sq-42")
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, worktree.ErrWorktreeLocked)
 }
 
 func TestManager_Remove_CallsGitWorktreeRemove(t *testing.T) {

@@ -2,6 +2,7 @@ package worktree
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,6 +11,18 @@ import (
 
 	"github.com/JR-G/squad0/internal/agent"
 )
+
+// ErrWorktreeLocked is returned when git reports the target directory
+// is already in use by another worktree. Distinct from ErrBranchExists
+// so callers can decide to wait/abort rather than blindly retry — a
+// retry on a lock just produces another lock error and risks two
+// agents racing into the same tree.
+var ErrWorktreeLocked = errors.New("worktree directory is locked by another worktree")
+
+// ErrBranchExists is returned when git refuses to create a worktree
+// because the branch already exists locally. Callers should fall back
+// to checking out the existing branch rather than creating a new one.
+var ErrBranchExists = errors.New("branch already exists")
 
 // GitRunner executes git commands. This interface exists so tests can
 // avoid real git operations.
@@ -51,6 +64,11 @@ func NewManager(git GitRunner, baseDir string) *Manager {
 
 // Create creates a new git worktree for the given agent and branch name.
 // Returns the absolute path to the worktree directory.
+//
+// Errors are wrapped with ErrWorktreeLocked when the target directory
+// is already in use by another worktree — callers should not retry
+// with -b in that case, since it'd just race a live agent into the
+// same tree.
 func (mgr *Manager) Create(ctx context.Context, role agent.Role, branchName string) (string, error) {
 	worktreeDir := filepath.Join(mgr.baseDir, string(role))
 
@@ -61,14 +79,37 @@ func (mgr *Manager) Create(ctx context.Context, role agent.Role, branchName stri
 	// Try creating with existing branch first. If the branch doesn't
 	// exist, fall back to creating a new one with -b.
 	output, err := mgr.git.Run(ctx, "worktree", "add", worktreeDir, branchName)
-	if err != nil {
-		output, err = mgr.git.Run(ctx, "worktree", "add", "-b", branchName, worktreeDir)
+	if err == nil {
+		return worktreeDir, nil
 	}
-	if err != nil {
-		return "", fmt.Errorf("creating worktree for %s: %s: %w", role, string(output), err)
+	if isWorktreeLockedOutput(string(output)) {
+		return "", fmt.Errorf("%w: %s", ErrWorktreeLocked, strings.TrimSpace(string(output)))
 	}
 
-	return worktreeDir, nil
+	output, err = mgr.git.Run(ctx, "worktree", "add", "-b", branchName, worktreeDir)
+	if err == nil {
+		return worktreeDir, nil
+	}
+	if isWorktreeLockedOutput(string(output)) {
+		return "", fmt.Errorf("%w: %s", ErrWorktreeLocked, strings.TrimSpace(string(output)))
+	}
+	if isBranchExistsOutput(string(output)) {
+		return "", fmt.Errorf("%w: %s", ErrBranchExists, strings.TrimSpace(string(output)))
+	}
+
+	return "", fmt.Errorf("creating worktree for %s: %s: %w", role, string(output), err)
+}
+
+func isWorktreeLockedOutput(output string) bool {
+	lower := strings.ToLower(output)
+	return strings.Contains(lower, "is already used by worktree") ||
+		strings.Contains(lower, "already locked") ||
+		strings.Contains(lower, "is already checked out at")
+}
+
+func isBranchExistsOutput(output string) bool {
+	lower := strings.ToLower(output)
+	return strings.Contains(lower, "already exists") && strings.Contains(lower, "branch")
 }
 
 // Remove cleans up a worktree for the given agent.
