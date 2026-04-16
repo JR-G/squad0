@@ -90,6 +90,20 @@ func newBot(cfg BotConfig, client *slackapi.Client) *Bot {
 	}
 }
 
+// postTimeout caps how long a single Slack post can block on the
+// rate-limiter queue + Slack HTTP round trip. Long enough to absorb
+// normal 2s-spacing + a slow Slack response, short enough that a
+// degraded API can't wedge the orchestrator on shutdown.
+const postTimeout = 20 * time.Second
+
+// boundedPostContext returns a child context that inherits ctx's
+// cancellation but also expires after postTimeout, whichever fires
+// first. Callers still get ctx.Err() semantics for cancellation
+// without needing to remember to wrap every call site.
+func boundedPostContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, postTimeout)
+}
+
 // OnMessage registers a handler for incoming messages.
 func (bot *Bot) OnMessage(handler MessageHandler) {
 	bot.onMessage = handler
@@ -108,13 +122,16 @@ func (bot *Bot) PostMessage(ctx context.Context, channel, text string, persona P
 		return err
 	}
 
-	if err := bot.limiter.Wait(ctx); err != nil {
+	postCtx, cancel := boundedPostContext(ctx)
+	defer cancel()
+
+	if err := bot.limiter.Wait(postCtx); err != nil {
 		return fmt.Errorf("rate limiter wait: %w", err)
 	}
 
 	opts := buildMessageOpts(text, persona)
 
-	_, _, err = bot.client.PostMessageContext(ctx, channelID, opts...)
+	_, _, err = bot.client.PostMessageContext(postCtx, channelID, opts...)
 	if err != nil {
 		return fmt.Errorf("posting to %s: %w", channel, err)
 	}
@@ -129,14 +146,17 @@ func (bot *Bot) PostThreadReply(ctx context.Context, channel, threadTS, text str
 		return err
 	}
 
-	if err := bot.limiter.Wait(ctx); err != nil {
+	postCtx, cancel := boundedPostContext(ctx)
+	defer cancel()
+
+	if err := bot.limiter.Wait(postCtx); err != nil {
 		return fmt.Errorf("rate limiter wait: %w", err)
 	}
 
 	opts := buildMessageOpts(text, persona)
 	opts = append(opts, slackapi.MsgOptionTS(threadTS))
 
-	_, _, err = bot.client.PostMessageContext(ctx, channelID, opts...)
+	_, _, err = bot.client.PostMessageContext(postCtx, channelID, opts...)
 	if err != nil {
 		return fmt.Errorf("posting thread reply to %s: %w", channel, err)
 	}
@@ -160,13 +180,16 @@ func (bot *Bot) PostAsRoleWithTS(ctx context.Context, channel, text string, role
 		return "", err
 	}
 
-	if err := bot.limiter.Wait(ctx); err != nil {
+	postCtx, cancel := boundedPostContext(ctx)
+	defer cancel()
+
+	if err := bot.limiter.Wait(postCtx); err != nil {
 		return "", fmt.Errorf("rate limiter wait: %w", err)
 	}
 
 	opts := buildMessageOpts(text, persona)
 
-	_, ts, err := bot.client.PostMessageContext(ctx, channelID, opts...)
+	_, ts, err := bot.client.PostMessageContext(postCtx, channelID, opts...)
 	if err != nil {
 		return "", fmt.Errorf("posting to %s: %w", channel, err)
 	}
