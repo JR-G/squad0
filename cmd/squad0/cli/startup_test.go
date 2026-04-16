@@ -136,3 +136,51 @@ func TestSeedConversationHistory_BothNil_DoesNotPanic(t *testing.T) {
 		cli.SeedConversationHistory(context.Background(), nil, nil, config.DefaultConfig())
 	})
 }
+
+func TestAssertMemoryStoresWired_AllWired_ReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	embedder := memory.NewEmbedder("http://localhost:1", "test")
+	episodeStore := memory.NewEpisodeStore(db)
+	wired := agent.NewAgent(agent.RoleEngineer1, "test-model", nil, nil, nil, db, episodeStore, embedder)
+	wired.SetMemoryStores(memory.NewGraphStore(db), memory.NewFactStore(db))
+
+	agents := map[agent.Role]*agent.Agent{agent.RoleEngineer1: wired}
+
+	assert.NoError(t, cli.AssertMemoryStoresWired(agents))
+}
+
+func TestAssertMemoryStoresWired_MissingStores_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	embedder := memory.NewEmbedder("http://localhost:1", "test")
+	episodeStore := memory.NewEpisodeStore(db)
+	missing := agent.NewAgent(agent.RoleEngineer2, "test-model", nil, nil, nil, db, episodeStore, embedder)
+	// Deliberately do NOT call SetMemoryStores.
+
+	agents := map[agent.Role]*agent.Agent{agent.RoleEngineer2: missing}
+
+	gotErr := cli.AssertMemoryStoresWired(agents)
+	require.Error(t, gotErr)
+	assert.Contains(t, gotErr.Error(), "engineer-2")
+}
+
+func TestAssertMemoryStoresWired_NilAgent_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	agents := map[agent.Role]*agent.Agent{agent.RolePM: nil}
+
+	gotErr := cli.AssertMemoryStoresWired(agents)
+	require.Error(t, gotErr)
+	assert.Contains(t, gotErr.Error(), "pm")
+}

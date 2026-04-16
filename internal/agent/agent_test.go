@@ -215,6 +215,23 @@ func TestAgent_SetMemoryStores_And_Accessors(t *testing.T) {
 	assert.NotNil(t, agentInstance.Embedder())
 }
 
+func TestAgent_HasMemoryStores_FalseUntilSet(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := memory.Open(ctx, ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	agentInstance, _ := setupAgentTest(t)
+
+	assert.False(t, agentInstance.HasMemoryStores())
+
+	agentInstance.SetMemoryStores(memory.NewGraphStore(db), memory.NewFactStore(db))
+
+	assert.True(t, agentInstance.HasMemoryStores())
+}
+
 func TestSession_Run_WorkingDir_PassedToRunner(t *testing.T) {
 	t.Parallel()
 

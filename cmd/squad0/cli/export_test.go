@@ -268,3 +268,8 @@ func SeedConversationHistory(
 ) {
 	seedConversationHistory(ctx, bot, conversation, cfg)
 }
+
+// AssertMemoryStoresWired exports assertMemoryStoresWired for testing.
+func AssertMemoryStoresWired(agents map[agent.Role]*agent.Agent) error {
+	return assertMemoryStoresWired(agents)
+}

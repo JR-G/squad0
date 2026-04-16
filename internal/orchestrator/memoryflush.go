@@ -19,8 +19,9 @@ import (
 const extractionMaxAttempts = 3
 
 // extractionRetryDelay is the base backoff between extraction
-// attempts. Doubles each retry.
-const extractionRetryDelay = 2 * time.Second
+// attempts. Doubles each retry. Declared as var so tests can shrink
+// it without spending real wall-clock time on retries.
+var extractionRetryDelay = 2 * time.Second
 
 const extractionPromptTemplate = `Extract learnings from this agent's work session transcript.
 

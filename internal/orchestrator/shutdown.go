@@ -39,6 +39,10 @@ func (orch *Orchestrator) runPostSessionAsync(ctx context.Context, agentInstance
 // pre-exit memory flushes — without this, learnings from sessions still
 // running at shutdown are silently dropped.
 func (orch *Orchestrator) drainSessions() {
+	orch.drainSessionsFor(shutdownGrace)
+}
+
+func (orch *Orchestrator) drainSessionsFor(grace time.Duration) {
 	done := make(chan struct{})
 	go func() {
 		orch.wg.Wait()
@@ -48,7 +52,7 @@ func (orch *Orchestrator) drainSessions() {
 	select {
 	case <-done:
 		log.Println("orchestrator: all sessions drained cleanly")
-	case <-time.After(shutdownGrace):
-		log.Printf("orchestrator: shutdown grace (%s) elapsed with sessions still running — exiting anyway", shutdownGrace)
+	case <-time.After(grace):
+		log.Printf("orchestrator: shutdown grace (%s) elapsed with sessions still running — exiting anyway", grace)
 	}
 }

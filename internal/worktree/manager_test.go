@@ -98,6 +98,72 @@ func TestManager_Create_LockedWorktree_ReturnsErrWorktreeLocked(t *testing.T) {
 	assert.ErrorIs(t, err, worktree.ErrWorktreeLocked)
 }
 
+func TestManager_Create_ExistingBranchSucceeds_NoFallback(t *testing.T) {
+	t.Parallel()
+
+	git := newFakeGitRunner()
+	mgr := worktree.NewManager(git, t.TempDir())
+	expectedPath := mgr.PathForRole(agent.RoleEngineer1)
+
+	git.On(
+		fmt.Sprintf("worktree add %s feat/sq-42", expectedPath),
+		[]byte("Preparing worktree (existing branch)\n"),
+		nil,
+	)
+
+	path, err := mgr.Create(context.Background(), agent.RoleEngineer1, "feat/sq-42")
+
+	require.NoError(t, err)
+	assert.Equal(t, expectedPath, path)
+}
+
+func TestManager_Create_UnrelatedGitError_ReturnsWrappedError(t *testing.T) {
+	t.Parallel()
+
+	git := newFakeGitRunner()
+	mgr := worktree.NewManager(git, t.TempDir())
+	expectedPath := mgr.PathForRole(agent.RoleEngineer1)
+
+	git.On(
+		fmt.Sprintf("worktree add %s feat/sq-42", expectedPath),
+		[]byte("fatal: something unexpected\n"), fmt.Errorf("exit status 128"),
+	)
+	git.On(
+		fmt.Sprintf("worktree add -b feat/sq-42 %s", expectedPath),
+		[]byte("fatal: disk full\n"), fmt.Errorf("exit status 128"),
+	)
+
+	_, err := mgr.Create(context.Background(), agent.RoleEngineer1, "feat/sq-42")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "creating worktree")
+	assert.NotErrorIs(t, err, worktree.ErrWorktreeLocked)
+	assert.NotErrorIs(t, err, worktree.ErrBranchExists)
+}
+
+func TestManager_Create_LockedOnFallback_ReturnsErrWorktreeLocked(t *testing.T) {
+	t.Parallel()
+
+	git := newFakeGitRunner()
+	mgr := worktree.NewManager(git, t.TempDir())
+	expectedPath := mgr.PathForRole(agent.RoleEngineer1)
+
+	git.On(
+		fmt.Sprintf("worktree add %s feat/sq-42", expectedPath),
+		[]byte("fatal: invalid reference\n"), fmt.Errorf("exit status 128"),
+	)
+	git.On(
+		fmt.Sprintf("worktree add -b feat/sq-42 %s", expectedPath),
+		[]byte("fatal: '"+expectedPath+"' is already used by worktree at '/elsewhere'\n"),
+		fmt.Errorf("exit status 128"),
+	)
+
+	_, err := mgr.Create(context.Background(), agent.RoleEngineer1, "feat/sq-42")
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, worktree.ErrWorktreeLocked)
+}
+
 func TestManager_Remove_CallsGitWorktreeRemove(t *testing.T) {
 	t.Parallel()
 

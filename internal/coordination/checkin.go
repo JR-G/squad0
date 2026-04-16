@@ -93,13 +93,8 @@ func (store *CheckInStore) Upsert(ctx context.Context, checkIn CheckIn) error {
 	store.writeMu.Lock()
 	defer store.writeMu.Unlock()
 
-	var lastErr error
-	for attempt := 1; attempt <= upsertMaxAttempts; attempt++ {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return ctxErr
-		}
-
-		_, lastErr = store.db.ExecContext(ctx, `
+	exec := func(ctx context.Context) error {
+		_, execErr := store.db.ExecContext(ctx, `
 			INSERT INTO checkin (agent, ticket, status, files_touching, message, updated_at)
 			VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 			ON CONFLICT(agent) DO UPDATE SET
@@ -110,21 +105,48 @@ func (store *CheckInStore) Upsert(ctx context.Context, checkIn CheckIn) error {
 				updated_at = CURRENT_TIMESTAMP`,
 			string(checkIn.Agent), checkIn.Ticket, string(checkIn.Status), string(filesJSON), checkIn.Message,
 		)
+		return execErr
+	}
+
+	if err := retryOnBusy(ctx, exec, upsertMaxAttempts, busyBackoff); err != nil {
+		return fmt.Errorf("upserting checkin for %s: %w", checkIn.Agent, err)
+	}
+	return nil
+}
+
+// busyBackoff returns the backoff duration for the Nth retry attempt
+// (1-indexed). Exposed as a var so tests can replace it with a near-
+// zero value rather than burning real wall-clock time.
+var busyBackoff = func(attempt int) time.Duration {
+	return time.Duration(attempt) * 50 * time.Millisecond
+}
+
+// retryOnBusy runs exec, retrying transient SQLite locking errors up
+// to maxAttempts times with the given backoff. Honours ctx
+// cancellation and returns ctx.Err() unwrapped on cancel.
+func retryOnBusy(ctx context.Context, exec func(context.Context) error, maxAttempts int, backoff func(int) time.Duration) error {
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+
+		lastErr = exec(ctx)
 		if lastErr == nil {
 			return nil
 		}
 		if !isSQLiteBusy(lastErr) {
-			return fmt.Errorf("upserting checkin for %s: %w", checkIn.Agent, lastErr)
+			return lastErr
 		}
 
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(time.Duration(attempt) * 50 * time.Millisecond):
+		case <-time.After(backoff(attempt)):
 		}
 	}
 
-	return fmt.Errorf("upserting checkin for %s after %d attempts: %w", checkIn.Agent, upsertMaxAttempts, lastErr)
+	return fmt.Errorf("after %d attempts: %w", maxAttempts, lastErr)
 }
 
 // isSQLiteBusy reports whether err looks like a SQLite locking

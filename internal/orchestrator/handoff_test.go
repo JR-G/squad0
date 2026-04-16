@@ -141,6 +141,45 @@ func TestBuildHandoffContext_MinimalHandoff_NoOptionalFields(t *testing.T) {
 	assert.NotContains(t, result, "Branch:")
 }
 
+func TestWriteHandoff_StoreClosed_LogsErrorAndReturns(t *testing.T) {
+	t.Parallel()
+
+	engRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"done"}` + "\n")}
+	orch, _ := setupHandoffOrch(t, engRunner)
+
+	// Use a separately-opened DB and immediately close it so every
+	// Create call surfaces an error — this exercises the retry loop's
+	// final give-up path without hanging on real backoff.
+	closedDB, err := sql.Open("sqlite3", ":memory:")
+	require.NoError(t, err)
+	closedStore := pipeline.NewHandoffStore(closedDB)
+	require.NoError(t, closedStore.InitSchema(context.Background()))
+	require.NoError(t, closedDB.Close())
+
+	orch.SetHandoffStore(closedStore)
+
+	// Should NOT panic and should NOT block — the retry loop bounds
+	// its waits and the function logs-and-returns rather than
+	// propagating the error.
+	assert.NotPanics(t, func() {
+		orch.WriteHandoffForTest(context.Background(), "JAM-7", agent.RoleEngineer1, "failed", "summary", "feat/jam-7")
+	})
+}
+
+func TestWriteHandoff_CancelledContext_AbandonsCleanly(t *testing.T) {
+	t.Parallel()
+
+	engRunner := &fakeProcessRunner{output: []byte(`{"type":"result","result":"done"}` + "\n")}
+	orch, _ := setupHandoffOrch(t, engRunner)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	assert.NotPanics(t, func() {
+		orch.WriteHandoffForTest(ctx, "JAM-8", agent.RoleEngineer1, "failed", "summary", "feat/jam-8")
+	})
+}
+
 func TestSetHandoffStore_WiresCorrectly(t *testing.T) {
 	t.Parallel()
 
