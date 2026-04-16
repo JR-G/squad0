@@ -93,7 +93,8 @@ func (orch *Orchestrator) SetHealthMonitor(monitor *health.Monitor) {
 	orch.monitor = monitor
 }
 
-// Run starts the main orchestration loop. Blocks until ctx is cancelled.
+// Run starts the main orchestration loop. Blocks until ctx is cancelled
+// and any in-flight session goroutines drain (bounded by shutdownGrace).
 func (orch *Orchestrator) Run(ctx context.Context) error {
 	orch.running = true
 	defer func() { orch.running = false }()
@@ -114,7 +115,8 @@ func (orch *Orchestrator) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("orchestrator stopping")
+			log.Println("orchestrator stopping — draining in-flight sessions")
+			orch.drainSessions()
 			return ctx.Err()
 		case <-ticker.C:
 			orch.tick(ctx)
@@ -368,13 +370,7 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 	orch.announceSessionResult(ctx, prURL, ticketLink, assignment.WorkItemID, role)
 
 	orch.storeProjectEpisode(ctx, role, assignment.Ticket, result.Transcript)
-
-	go orch.PersistFindings(ctx, assignment.Ticket, result.Transcript)
-
-	pmAgent := orch.agents[agent.RolePM]
-	if pmAgent != nil {
-		go FlushSessionMemory(ctx, pmAgent, agentInstance, assignment.Ticket, result.Transcript)
-	}
+	orch.runPostSessionAsync(ctx, agentInstance, assignment.Ticket, result.Transcript)
 
 	if prURL != "" {
 		go MoveTicketState(ctx, orch.agents[agent.RolePM], assignment.Ticket, "In Review")
