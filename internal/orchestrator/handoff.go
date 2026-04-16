@@ -7,10 +7,20 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/JR-G/squad0/internal/agent"
 	"github.com/JR-G/squad0/internal/pipeline"
 )
+
+// handoffMaxAttempts caps retries for transient handoff write
+// failures (locked DB, connection blip). The next session for the
+// same ticket is starved of context if this drops, so try harder
+// than the default.
+const handoffMaxAttempts = 3
+
+// handoffRetryDelay is the base backoff between handoff retries.
+const handoffRetryDelay = 100 * time.Millisecond
 
 // SetHandoffStore connects the handoff store for session continuity.
 func (orch *Orchestrator) SetHandoffStore(store *pipeline.HandoffStore) {
@@ -43,10 +53,33 @@ func (orch *Orchestrator) writeHandoff(ctx context.Context, ticket string, role 
 		GitState:  gitState,
 	}
 
-	_, err := orch.handoffStore.Create(ctx, handoff)
-	if err != nil {
-		log.Printf("failed to write handoff for %s: %v", ticket, err)
+	var lastErr error
+	for attempt := 1; attempt <= handoffMaxAttempts; attempt++ {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			log.Printf("WARN: handoff write abandoned for %s: %v", ticket, ctxErr)
+			return
+		}
+
+		_, lastErr = orch.handoffStore.Create(ctx, handoff)
+		if lastErr == nil {
+			return
+		}
+
+		log.Printf("handoff write attempt %d/%d failed for %s: %v", attempt, handoffMaxAttempts, ticket, lastErr)
+
+		if attempt == handoffMaxAttempts {
+			break
+		}
+
+		select {
+		case <-ctx.Done():
+			log.Printf("WARN: handoff write abandoned for %s: %v", ticket, ctx.Err())
+			return
+		case <-time.After(time.Duration(attempt) * handoffRetryDelay):
+		}
 	}
+
+	log.Printf("ERROR: handoff write gave up for %s after %d attempts: %v (next session will lack predecessor context)", ticket, handoffMaxAttempts, lastErr)
 }
 
 // BuildHandoffContext loads the latest handoff for a ticket and
