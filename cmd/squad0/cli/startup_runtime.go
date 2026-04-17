@@ -231,10 +231,13 @@ func registerLinearMCP(ctx context.Context, out io.Writer, apiKey string) {
 		_, _ = fmt.Fprint(out, tui.StepWarn("squad0-linear-mcp binary not found next to squad0 — Linear MCP will not register"))
 		return
 	}
-	if err := ensureUserScopeLinearMCP(ctx, binaryPath, apiKey); err != nil {
+	if err := ensureUserScopeLinearMCP(ctx, binaryPath); err != nil {
 		_, _ = fmt.Fprint(out, tui.StepWarn(fmt.Sprintf("user-scope Linear MCP registration failed: %v", err)))
 		return
 	}
+	// LINEAR_API_KEY is already in os.Environ via start.go; it
+	// inherits into claude subprocesses and on into squad0-linear-mcp.
+	_ = apiKey
 	_, _ = fmt.Fprint(out, tui.StepDone("Linear MCP registered (user scope)"))
 }
 
@@ -286,23 +289,29 @@ func ensureUserScopeMemoryMCPWith(ctx context.Context, runner claudeMCPRunner, b
 	return nil
 }
 
-// ensureUserScopeLinearMCP registers squad0-linear at user scope with
-// LINEAR_API_KEY injected at spawn time. Avoiding --mcp-config is
-// still load-bearing (the managed Linear connector only exposes its
-// tools to sessions without --mcp-config); user-scope registration
-// is the supported way to add our own stdio MCP alongside it.
-func ensureUserScopeLinearMCP(ctx context.Context, binaryPath, apiKey string) error {
-	return ensureUserScopeLinearMCPWith(ctx, execClaudeMCPRunner{}, binaryPath, apiKey)
+// ensureUserScopeLinearMCP registers squad0-linear at user scope.
+// The Linear API key is NOT passed via --env: squad0 already sets
+// LINEAR_API_KEY in its process env (start.go), which inherits to
+// claude subprocesses and on into the stdio MCP binary. Trying to
+// pass --env to `claude mcp add` confuses the CLI's positional
+// parser ("missing required argument 'name'") because of how its
+// flag ordering works.
+//
+// Avoiding --mcp-config is still load-bearing (the managed Linear
+// connector only exposes its tools to sessions without --mcp-config);
+// user-scope registration is the supported way to add our own stdio
+// MCP alongside it.
+func ensureUserScopeLinearMCP(ctx context.Context, binaryPath string) error {
+	return ensureUserScopeLinearMCPWith(ctx, execClaudeMCPRunner{}, binaryPath)
 }
 
-func ensureUserScopeLinearMCPWith(ctx context.Context, runner claudeMCPRunner, binaryPath, apiKey string) error {
+func ensureUserScopeLinearMCPWith(ctx context.Context, runner claudeMCPRunner, binaryPath string) error {
 	listOutput, _ := runner.Run(ctx, "mcp", "list")
 	if strings.Contains(string(listOutput), "squad0-linear:") {
 		_, _ = runner.Run(ctx, "mcp", "remove", "squad0-linear", "--scope", "user")
 	}
 
-	args := []string{"mcp", "add", "--scope", "user", "--env", "LINEAR_API_KEY=" + apiKey, "squad0-linear", binaryPath}
-	if output, err := runner.Run(ctx, args...); err != nil {
+	if output, err := runner.Run(ctx, "mcp", "add", "--scope", "user", "squad0-linear", binaryPath); err != nil {
 		return fmt.Errorf("claude mcp add: %s: %w", strings.TrimSpace(string(output)), err)
 	}
 	return nil
