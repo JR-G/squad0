@@ -78,7 +78,7 @@ func TestResumePendingWork_ChangesRequested_TriggersFixUp(t *testing.T) {
 	itemID, createErr := pipeStore.Create(ctx, pipeline.WorkItem{
 		Ticket:   "JAM-CR1",
 		Engineer: agent.RoleEngineer1,
-		Stage:    pipeline.StageWorking,
+		Stage:    pipeline.StageReviewing,
 		Branch:   "feat/jam-cr1",
 	})
 	require.NoError(t, createErr)
@@ -232,7 +232,7 @@ func TestResumePendingWork_Approved_TriggersMerge(t *testing.T) {
 	itemID, createErr := pipeStore.Create(ctx, pipeline.WorkItem{
 		Ticket:   "JAM-AP1",
 		Engineer: agent.RolePM,
-		Stage:    pipeline.StageWorking,
+		Stage:    pipeline.StageReviewing,
 		Branch:   "feat/jam-ap1",
 	})
 	require.NoError(t, createErr)

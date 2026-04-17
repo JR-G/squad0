@@ -115,7 +115,7 @@ func (orch *Orchestrator) reconcileMerged(ctx context.Context, item pipeline.Wor
 		return
 	}
 	log.Printf("reconcile: %s is merged on GitHub — advancing pipeline", item.Ticket)
-	orch.advancePipeline(ctx, item.ID, pipeline.StageMerged)
+	orch.forceAdvancePipeline(ctx, item.ID, pipeline.StageMerged, "github reports merged")
 
 	pmAgent := orch.agents[agent.RolePM]
 	if pmAgent != nil {
@@ -128,7 +128,7 @@ func (orch *Orchestrator) reconcileClosed(ctx context.Context, item pipeline.Wor
 		return
 	}
 	log.Printf("reconcile: %s PR was closed without merge — marking failed", item.Ticket)
-	orch.advancePipeline(ctx, item.ID, pipeline.StageFailed)
+	orch.forceAdvancePipeline(ctx, item.ID, pipeline.StageFailed, "github PR closed without merge")
 }
 
 func (orch *Orchestrator) reconcileOpen(ctx context.Context, item pipeline.WorkItem, ghState PRState) {
@@ -136,7 +136,7 @@ func (orch *Orchestrator) reconcileOpen(ctx context.Context, item pipeline.WorkI
 
 	if item.Stage == pipeline.StageApproved && decision != approvalStatusApproved {
 		log.Printf("reconcile: %s pipeline says approved but GitHub says %q — reverting to reviewing", item.Ticket, decision)
-		orch.advancePipeline(ctx, item.ID, pipeline.StageReviewing)
+		orch.forceAdvancePipeline(ctx, item.ID, pipeline.StageReviewing, "github review decision drift: "+decision)
 		return
 	}
 
@@ -147,11 +147,11 @@ func (orch *Orchestrator) reconcileOpen(ctx context.Context, item pipeline.WorkI
 	switch {
 	case decision == approvalStatusApproved && item.Stage != pipeline.StageApproved:
 		log.Printf("reconcile: %s is approved on GitHub — advancing", item.Ticket)
-		orch.advancePipeline(ctx, item.ID, pipeline.StageApproved)
+		orch.forceAdvancePipeline(ctx, item.ID, pipeline.StageApproved, "github reports approved")
 
 	case decision == "CHANGES_REQUESTED" && item.Stage != pipeline.StageChangesRequested:
 		log.Printf("reconcile: %s has changes requested — advancing", item.Ticket)
-		orch.advancePipeline(ctx, item.ID, pipeline.StageChangesRequested)
+		orch.forceAdvancePipeline(ctx, item.ID, pipeline.StageChangesRequested, "github reports changes requested")
 
 	case strings.ToUpper(ghState.Mergeable) == "CONFLICTING":
 		log.Printf("reconcile: %s has conflicts", item.Ticket)
@@ -183,7 +183,7 @@ func (orch *Orchestrator) blockedByOutstandingComments(ctx context.Context, item
 	}
 	log.Printf("reconcile: %s is approved but has unaddressed review comments — staying in reviewing", item.Ticket)
 	if item.Stage != pipeline.StageReviewing {
-		orch.advancePipeline(ctx, item.ID, pipeline.StageReviewing)
+		orch.forceAdvancePipeline(ctx, item.ID, pipeline.StageReviewing, "outstanding review comments after approval")
 	}
 	return true
 }

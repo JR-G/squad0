@@ -60,7 +60,7 @@ func TestCheckStaleWork_ApprovedItem_NudgesAfterThreshold(t *testing.T) {
 	itemID, createErr := pipeStore.Create(ctx, pipeline.WorkItem{
 		Ticket:   "JAM-STALE-AP",
 		Engineer: agent.RoleEngineer1,
-		Stage:    pipeline.StageWorking,
+		Stage:    pipeline.StageReviewing,
 		Branch:   "feat/jam-stale-ap",
 	})
 	require.NoError(t, createErr)
@@ -115,7 +115,7 @@ func TestCheckStaleWork_RecentApproved_DoesNotNudge(t *testing.T) {
 	itemID, createErr := pipeStore.Create(ctx, pipeline.WorkItem{
 		Ticket:   "JAM-RECENT-AP",
 		Engineer: agent.RoleEngineer1,
-		Stage:    pipeline.StageWorking,
+		Stage:    pipeline.StageReviewing,
 		Branch:   "feat/jam-recent-ap",
 	})
 	require.NoError(t, createErr)

@@ -85,6 +85,22 @@ func (orch *Orchestrator) advancePipeline(ctx context.Context, itemID int64, sta
 	}
 }
 
+// forceAdvancePipeline bypasses the lifecycle validator. Reserved
+// for reconciliation paths that must match externally-observed state
+// (e.g. GitHub already shows a PR as merged on restart). Logs the
+// reason so operators can spot when the lifecycle is being
+// short-circuited.
+func (orch *Orchestrator) forceAdvancePipeline(ctx context.Context, itemID int64, stage pipeline.Stage, reason string) {
+	if orch.pipelineStore == nil || itemID == 0 {
+		return
+	}
+
+	log.Printf("force-advancing pipeline item %d to %s: %s", itemID, stage, reason)
+	if err := orch.pipelineStore.AdvanceForce(ctx, itemID, stage, reason); err != nil {
+		log.Printf("failed to force-advance pipeline item %d to %s: %v", itemID, stage, err)
+	}
+}
+
 func (orch *Orchestrator) shouldEscalate(ctx context.Context, workItemID int64, ticket string) bool {
 	if orch.pipelineStore == nil || workItemID == 0 {
 		return false
@@ -234,7 +250,7 @@ func (orch *Orchestrator) resumeWithGitHubState(ctx context.Context, item pipeli
 	// Check if the PR is already merged on GitHub.
 	if orch.verifyMerged(ctx, pmAgent, item.PRURL) {
 		log.Printf("resume: %s is already merged on GitHub — advancing pipeline", item.Ticket)
-		orch.advancePipeline(ctx, item.ID, pipeline.StageMerged)
+		orch.forceAdvancePipeline(ctx, item.ID, pipeline.StageMerged, "resume: github already merged")
 		go MoveTicketState(ctx, pmAgent, item.Ticket, "Done")
 		return
 	}
@@ -246,12 +262,12 @@ func (orch *Orchestrator) resumeWithGitHubState(ctx context.Context, item pipeli
 	case approvalStatusApproved:
 		if HasOutstandingReviewComments(ctx, orch.cfg.TargetRepoDir, item.PRURL) {
 			log.Printf("resume: %s is approved but has unaddressed review comments — reverting to reviewing", item.Ticket)
-			orch.advancePipeline(ctx, item.ID, pipeline.StageReviewing)
+			orch.forceAdvancePipeline(ctx, item.ID, pipeline.StageReviewing, "resume: outstanding review comments")
 			orch.startReview(ctx, item.PRURL, item.Ticket, item.ID, item.Engineer)
 			return
 		}
 		log.Printf("resume: %s is approved on GitHub — sending engineer to merge", item.Ticket)
-		orch.advancePipeline(ctx, item.ID, pipeline.StageApproved)
+		orch.forceAdvancePipeline(ctx, item.ID, pipeline.StageApproved, "resume: github reports approved")
 		orch.wg.Add(1)
 		go func() {
 			defer orch.wg.Done()

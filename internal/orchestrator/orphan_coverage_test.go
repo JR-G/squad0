@@ -94,7 +94,7 @@ func TestHasPipelineItem_AllTerminal_ReturnsFalse(t *testing.T) {
 
 	// Create items that are both terminal.
 	id1, _ := pipeStore.Create(ctx, pipeline.WorkItem{
-		Ticket: "JAM-TERM", Engineer: agent.RoleEngineer1, Stage: pipeline.StageWorking,
+		Ticket: "JAM-TERM", Engineer: agent.RoleEngineer1, Stage: pipeline.StageApproved,
 	})
 	require.NoError(t, pipeStore.Advance(ctx, id1, pipeline.StageMerged))
 

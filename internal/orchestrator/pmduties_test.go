@@ -114,7 +114,7 @@ func TestPostDailySummary_WithPipeline_BuildsSummary(t *testing.T) {
 	itemID, err := pipeStore.Create(ctx, pipeline.WorkItem{
 		Ticket:   "JAM-50",
 		Engineer: agent.RoleEngineer1,
-		Stage:    pipeline.StageWorking,
+		Stage:    pipeline.StageApproved,
 		Branch:   "feat/jam-50",
 	})
 	require.NoError(t, err)

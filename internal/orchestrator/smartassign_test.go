@@ -331,7 +331,7 @@ func TestSmartAssigner_FilterAndRank_DepsMetViaCompletedTickets(t *testing.T) {
 
 	// Mark JAM-7 as done.
 	itemID, _ := store.Create(ctx, pipeline.WorkItem{
-		Ticket: "JAM-7", Engineer: agent.RoleEngineer1, Stage: pipeline.StageWorking,
+		Ticket: "JAM-7", Engineer: agent.RoleEngineer1, Stage: pipeline.StageApproved,
 	})
 	require.NoError(t, store.Advance(ctx, itemID, pipeline.StageMerged))
 

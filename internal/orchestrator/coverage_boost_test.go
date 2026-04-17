@@ -22,13 +22,15 @@ func TestPostDailySummary_WithOpenItems_IncludesReviewAndBlocked(t *testing.T) {
 	ctx := context.Background()
 	orch, pipeStore := setupPMDutiesOrch(t)
 
-	// Create items in different stages.
+	// Create items in different stages — fixture uses AdvanceForce
+	// so the test doesn't have to walk every legitimate intermediate
+	// stage just to set up state.
 	createItem := func(ticket string, stage pipeline.Stage) {
 		itemID, err := pipeStore.Create(ctx, pipeline.WorkItem{
 			Ticket: ticket, Engineer: agent.RoleEngineer1, Stage: pipeline.StageWorking, Branch: "feat/" + ticket,
 		})
 		require.NoError(t, err)
-		require.NoError(t, pipeStore.Advance(ctx, itemID, stage))
+		require.NoError(t, pipeStore.AdvanceForce(ctx, itemID, stage, "test fixture"))
 	}
 
 	createItem("JAM-10", pipeline.StageMerged)

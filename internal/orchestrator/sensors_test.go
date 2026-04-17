@@ -59,7 +59,7 @@ func TestSenseUnmergedApproved_StaleApprovedPR_PushesSituation(t *testing.T) {
 	orch, pipeStore, queue := newSensorOrchestrator(t)
 
 	itemID, err := pipeStore.Create(ctx, pipeline.WorkItem{
-		Ticket: "JAM-AP1", Engineer: agent.RoleEngineer1, Stage: pipeline.StageWorking,
+		Ticket: "JAM-AP1", Engineer: agent.RoleEngineer1, Stage: pipeline.StageReviewing,
 	})
 	require.NoError(t, err)
 	require.NoError(t, pipeStore.SetPRURL(ctx, itemID, "https://github.com/test/repo/pull/1"))
