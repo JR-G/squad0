@@ -110,6 +110,34 @@ func TestClient_Reviews_BadJSON_ReturnsError(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestClient_Comments_GhFails_ReturnsError(t *testing.T) {
+	t.Parallel()
+	runner := &fakeRunner{err: errors.New("boom")}
+	_, err := ghcli.NewClientWithRunner(runner).Comments(context.Background(), "https://e/pr/1")
+	assert.Error(t, err)
+}
+
+func TestClient_Commits_GhFails_ReturnsError(t *testing.T) {
+	t.Parallel()
+	runner := &fakeRunner{err: errors.New("boom")}
+	_, err := ghcli.NewClientWithRunner(runner).Commits(context.Background(), "https://e/pr/1")
+	assert.Error(t, err)
+}
+
+func TestClient_List_GhFails_ReturnsError(t *testing.T) {
+	t.Parallel()
+	runner := &fakeRunner{err: errors.New("boom")}
+	_, err := ghcli.NewClientWithRunner(runner).List(context.Background(), ports.PRListFilter{})
+	assert.Error(t, err)
+}
+
+func TestClient_Reviews_GhFails_ReturnsError(t *testing.T) {
+	t.Parallel()
+	runner := &fakeRunner{err: errors.New("boom")}
+	_, err := ghcli.NewClientWithRunner(runner).Reviews(context.Background(), "https://e/pr/1")
+	assert.Error(t, err)
+}
+
 func TestClient_Comments_ParsesAuthorAndBody(t *testing.T) {
 	t.Parallel()
 
