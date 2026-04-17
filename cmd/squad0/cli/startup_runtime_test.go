@@ -151,7 +151,7 @@ func TestEnsureUserScopeMemoryMCPWith_NotRegistered_AddsOnly(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, runner.calls, 2) // list + add (no remove)
 	assert.Equal(t, []string{"mcp", "list"}, runner.calls[0])
-	assert.Equal(t, []string{"mcp", "add", "--scope", "user", "squad0-memory", "/path/to/binary"}, runner.calls[1])
+	assert.Equal(t, []string{"mcp", "add", "--scope", "user", "squad0-memory", "--", "/path/to/binary"}, runner.calls[1])
 }
 
 func TestEnsureUserScopeMemoryMCPWith_AlreadyRegistered_RemovesAndReadds(t *testing.T) {
@@ -164,7 +164,7 @@ func TestEnsureUserScopeMemoryMCPWith_AlreadyRegistered_RemovesAndReadds(t *test
 	require.NoError(t, err)
 	assert.Len(t, runner.calls, 3) // list + remove + add
 	assert.Equal(t, []string{"mcp", "remove", "squad0-memory", "--scope", "user"}, runner.calls[1])
-	assert.Equal(t, []string{"mcp", "add", "--scope", "user", "squad0-memory", "/new/path"}, runner.calls[2])
+	assert.Equal(t, []string{"mcp", "add", "--scope", "user", "squad0-memory", "--", "/new/path"}, runner.calls[2])
 }
 
 func TestEnsureUserScopeMemoryMCP_RealRunner_ExecutesClaudeCmd(t *testing.T) {
@@ -196,16 +196,18 @@ func TestEnsureUserScopeMemoryMCPWith_AddFails_ReturnsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "permission denied")
 }
 
-func TestEnsureUserScopeLinearMCPWith_NotRegistered_AddsPositionalArgs(t *testing.T) {
+func TestEnsureUserScopeLinearMCPWith_NotRegistered_UsesDocumentedSyntax(t *testing.T) {
 	t.Parallel()
 
 	runner := &fakeClaudeMCPRunner{listOut: []byte("claude.ai Linear: ...")}
-	err := ensureUserScopeLinearMCPWith(context.Background(), runner, "/path/to/linear")
+	err := ensureUserScopeLinearMCPWith(context.Background(), runner, "/path/to/linear", "lin_secret")
 	require.NoError(t, err)
 	assert.Len(t, runner.calls, 2)
 	assert.Equal(t, []string{"mcp", "list"}, runner.calls[0])
+	// Per Claude Code docs: options (--scope, --env) before name,
+	// then `--` separator, then command. See code.claude.com/docs/en/mcp.
 	assert.Equal(t,
-		[]string{"mcp", "add", "--scope", "user", "squad0-linear", "/path/to/linear"},
+		[]string{"mcp", "add", "--scope", "user", "--env", "LINEAR_API_KEY=lin_secret", "squad0-linear", "--", "/path/to/linear"},
 		runner.calls[1],
 	)
 }
@@ -214,7 +216,7 @@ func TestEnsureUserScopeLinearMCPWith_AlreadyRegistered_RemovesAndReadds(t *test
 	t.Parallel()
 
 	runner := &fakeClaudeMCPRunner{listOut: []byte("squad0-linear: /old")}
-	err := ensureUserScopeLinearMCPWith(context.Background(), runner, "/new")
+	err := ensureUserScopeLinearMCPWith(context.Background(), runner, "/new", "key")
 	require.NoError(t, err)
 	require.Len(t, runner.calls, 3)
 	assert.Equal(t, []string{"mcp", "remove", "squad0-linear", "--scope", "user"}, runner.calls[1])
@@ -223,7 +225,7 @@ func TestEnsureUserScopeLinearMCPWith_AlreadyRegistered_RemovesAndReadds(t *test
 func TestEnsureUserScopeLinearMCPWith_AddFails_ReturnsError(t *testing.T) {
 	t.Parallel()
 	runner := &fakeClaudeMCPRunner{addOut: []byte("oops"), addErr: assert.AnError}
-	err := ensureUserScopeLinearMCPWith(context.Background(), runner, "/bin")
+	err := ensureUserScopeLinearMCPWith(context.Background(), runner, "/bin", "k")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "claude mcp add")
 	assert.Contains(t, err.Error(), "oops")
@@ -231,5 +233,5 @@ func TestEnsureUserScopeLinearMCPWith_AddFails_ReturnsError(t *testing.T) {
 
 func TestEnsureUserScopeLinearMCP_RealRunner_ExecutesClaudeCmd(t *testing.T) {
 	t.Parallel()
-	_ = ensureUserScopeLinearMCP(context.Background(), "/nonexistent/squad0-linear-mcp-test")
+	_ = ensureUserScopeLinearMCP(context.Background(), "/nonexistent/squad0-linear-mcp-test", "key")
 }
