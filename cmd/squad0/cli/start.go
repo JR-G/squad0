@@ -108,6 +108,7 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	_, _ = fmt.Fprint(out, tui.StepDone("Databases opened"))
 
 	embedder := memory.NewEmbedder(cfg.Embeddings.OllamaURL, cfg.Embeddings.Model)
+	checkOllamaHealth(ctx, cfg.Embeddings.OllamaURL, cfg.Embeddings.Model, out)
 	modelMap := buildModelMap(cfg)
 	targetRepoDir := resolveTargetRepo(cfg.Project.TargetRepo)
 	agents, err := createAgents(agentDBs, embedder, modelMap, deps.PersonalityDir, deps.DataDir, targetRepoDir, cfg.Agents.CodexFallbackModel)
