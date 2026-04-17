@@ -18,7 +18,7 @@ const implementationPromptTemplate = `You are working on ticket %s.
 
 ## Workflow
 Step 1: CONTEXT — Read the full ticket from Linear using your MCP tools. Use recall to check memory for anything relevant.
-Step 2: EXPLORE — Read the codebase to understand the existing code and patterns.
+Step 2: EXPLORE — Read the codebase to understand the existing code and patterns. Use working_set to capture intermediate findings (e.g. "files I've identified as relevant", "patterns I've spotted") so you can refer back to them later in this session without re-reading.
 Step 3: PLAN — Before writing any code, write a 3-5 line plan in your output explaining:
    - the files you'll touch and why
    - the tests you'll add
@@ -36,6 +36,13 @@ Steps 3 and 4 are not optional — write them out as plain prose before
 starting the implementation. The point is to think before acting, not
 to follow a checklist after the fact. If your plan changes during
 implementation, note the change in your output before continuing.
+
+## Working memory tools (session-scoped)
+- working_set(key, value): jot down something you want to remember later in this session
+- working_get(key): read it back
+- working_keys(): list everything you've jotted down
+
+These are cleared at session end. For permanent storage use remember_fact / store_belief instead.
 
 Your session is not complete until a PR exists on GitHub. If a step fails, fix it and continue.
 `

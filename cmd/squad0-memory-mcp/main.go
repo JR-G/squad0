@@ -17,6 +17,8 @@ import (
 // the orchestrator can only vary the env on each spawn.
 const envDBPath = "SQUAD0_MEMORY_DB"
 
+const envSessionID = "SQUAD0_SESSION_ID"
+
 // fallbackDBPath is what we open when neither --db nor SQUAD0_MEMORY_DB
 // is provided. It keeps the server connectable in interactive
 // `claude` sessions where the env var isn't set — without it, the
@@ -69,7 +71,11 @@ func run(dbPath string) error {
 	hybridSearcher := memory.NewHybridSearcher(ftsStore, episodeStore, embedder, 0.5, 0.5)
 	retriever := memory.NewRetriever(graphStore, factStore, episodeStore, hybridSearcher, ftsStore, 2, 20)
 
-	handler := mcp.NewMemoryHandler(graphStore, factStore, episodeStore, retriever)
+	workingStore := memory.NewWorkingStore(memDB)
+	sessionID := os.Getenv(envSessionID)
+
+	handler := mcp.NewMemoryHandler(graphStore, factStore, episodeStore, retriever).
+		WithWorkingMemory(workingStore, sessionID)
 	server := mcp.NewServer(handler)
 
 	return server.Run(ctx)

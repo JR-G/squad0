@@ -62,7 +62,7 @@ func TestMemoryHandler_HandleToolsList_ReturnsAllTools(t *testing.T) {
 	require.True(t, ok)
 	tools, ok := result["tools"].([]mcp.ToolDefinition)
 	require.True(t, ok)
-	assert.Len(t, tools, 5)
+	assert.Len(t, tools, 8)
 }
 
 func TestMemoryHandler_RememberFact_StoresAndRecalls(t *testing.T) {
@@ -177,4 +177,114 @@ func TestMemoryHandler_UnknownTool_ReturnsError(t *testing.T) {
 	result := toolResult(t, resp)
 	assert.True(t, result.IsError)
 	assert.Contains(t, result.Content[0].Text, "unknown tool")
+}
+
+func newTestHandlerWithWorkingMemory(t *testing.T, sessionID string) *mcp.MemoryHandler {
+	t.Helper()
+	db := openTestDB(t)
+	graphStore := memory.NewGraphStore(db)
+	factStore := memory.NewFactStore(db)
+	episodeStore := memory.NewEpisodeStore(db)
+	ftsStore := memory.NewFTSStore(db)
+	embedder := &fakeTestEmbedder{vector: []float32{0.1}}
+	hybridSearcher := memory.NewHybridSearcher(ftsStore, episodeStore, embedder, 0.5, 0.5)
+	retriever := memory.NewRetriever(graphStore, factStore, episodeStore, hybridSearcher, ftsStore, 2, 20)
+	workingStore := memory.NewWorkingStore(db)
+	return mcp.NewMemoryHandler(graphStore, factStore, episodeStore, retriever).
+		WithWorkingMemory(workingStore, sessionID)
+}
+
+func TestMemoryHandler_WorkingSet_Get_RoundTrips(t *testing.T) {
+	t.Parallel()
+	handler := newTestHandlerWithWorkingMemory(t, "JAM-42")
+
+	setResp := handler.HandleToolsCall(1, mcp.ToolCallParams{
+		Name: "working_set", Arguments: map[string]interface{}{"key": "plan", "value": "fix the bug"},
+	})
+	assert.False(t, toolResult(t, setResp).IsError)
+
+	getResp := handler.HandleToolsCall(2, mcp.ToolCallParams{
+		Name: "working_get", Arguments: map[string]interface{}{"key": "plan"},
+	})
+	got := toolResult(t, getResp)
+	assert.False(t, got.IsError)
+	assert.Equal(t, "fix the bug", got.Content[0].Text)
+}
+
+func TestMemoryHandler_WorkingGet_MissingKey_ReportsClearly(t *testing.T) {
+	t.Parallel()
+	handler := newTestHandlerWithWorkingMemory(t, "JAM-1")
+
+	resp := handler.HandleToolsCall(1, mcp.ToolCallParams{
+		Name: "working_get", Arguments: map[string]interface{}{"key": "never_set"},
+	})
+
+	result := toolResult(t, resp)
+	assert.False(t, result.IsError)
+	assert.Contains(t, result.Content[0].Text, "no entry")
+}
+
+func TestMemoryHandler_WorkingKeys_ListsStoredKeys(t *testing.T) {
+	t.Parallel()
+	handler := newTestHandlerWithWorkingMemory(t, "JAM-1")
+
+	for k, v := range map[string]string{"a": "1", "b": "2"} {
+		handler.HandleToolsCall(1, mcp.ToolCallParams{
+			Name: "working_set", Arguments: map[string]interface{}{"key": k, "value": v},
+		})
+	}
+
+	resp := handler.HandleToolsCall(2, mcp.ToolCallParams{Name: "working_keys", Arguments: map[string]interface{}{}})
+	result := toolResult(t, resp)
+
+	assert.False(t, result.IsError)
+	assert.Contains(t, result.Content[0].Text, "a")
+	assert.Contains(t, result.Content[0].Text, "b")
+}
+
+func TestMemoryHandler_WorkingKeys_NoEntries_ReportsClearly(t *testing.T) {
+	t.Parallel()
+	handler := newTestHandlerWithWorkingMemory(t, "JAM-1")
+
+	resp := handler.HandleToolsCall(1, mcp.ToolCallParams{Name: "working_keys", Arguments: map[string]interface{}{}})
+	result := toolResult(t, resp)
+
+	assert.False(t, result.IsError)
+	assert.Contains(t, result.Content[0].Text, "no working memory")
+}
+
+func TestMemoryHandler_WorkingTools_NoSessionContext_ReturnError(t *testing.T) {
+	t.Parallel()
+
+	// Default handler has no working store wired — every working_*
+	// tool should return a clear "unavailable" error.
+	handler := newTestHandler(t)
+
+	for _, name := range []string{"working_set", "working_get", "working_keys"} {
+		args := map[string]interface{}{"key": "k", "value": "v"}
+		resp := handler.HandleToolsCall(1, mcp.ToolCallParams{Name: name, Arguments: args})
+		result := toolResult(t, resp)
+		assert.True(t, result.IsError, "%s should error without session context", name)
+		assert.Contains(t, result.Content[0].Text, "unavailable")
+	}
+}
+
+func TestMemoryHandler_WorkingSet_MissingArgs_ReturnsError(t *testing.T) {
+	t.Parallel()
+	handler := newTestHandlerWithWorkingMemory(t, "JAM-1")
+
+	resp := handler.HandleToolsCall(1, mcp.ToolCallParams{
+		Name: "working_set", Arguments: map[string]interface{}{"key": "k"}, // no value
+	})
+	assert.True(t, toolResult(t, resp).IsError)
+
+	resp = handler.HandleToolsCall(2, mcp.ToolCallParams{
+		Name: "working_set", Arguments: map[string]interface{}{"value": "v"}, // no key
+	})
+	assert.True(t, toolResult(t, resp).IsError)
+
+	resp = handler.HandleToolsCall(3, mcp.ToolCallParams{
+		Name: "working_get", Arguments: map[string]interface{}{}, // no key
+	})
+	assert.True(t, toolResult(t, resp).IsError)
 }

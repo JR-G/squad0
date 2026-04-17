@@ -215,6 +215,24 @@ func TestAgent_SetMemoryStores_And_Accessors(t *testing.T) {
 	assert.NotNil(t, agentInstance.Embedder())
 }
 
+func TestAgent_SetCurrentSession_PropagatesToSessionEnv(t *testing.T) {
+	t.Parallel()
+
+	agentInstance, _ := setupAgentTest(t)
+	agentInstance.SetDBPath("/tmp/agent.db")
+
+	agentInstance.SetCurrentSession("JAM-99")
+	t.Cleanup(func() { agentInstance.SetCurrentSession("") })
+
+	env := agent.SessionEnvForTest(agentInstance)
+	assert.Equal(t, "JAM-99", env["SQUAD0_SESSION_ID"])
+
+	agentInstance.SetCurrentSession("")
+	env = agent.SessionEnvForTest(agentInstance)
+	_, present := env["SQUAD0_SESSION_ID"]
+	assert.False(t, present)
+}
+
 func TestAgent_HasMemoryStores_FalseUntilSet(t *testing.T) {
 	t.Parallel()
 

@@ -2,7 +2,9 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/JR-G/squad0/internal/memory"
 )
@@ -13,9 +15,15 @@ type MemoryHandler struct {
 	factStore    *memory.FactStore
 	episodeStore *memory.EpisodeStore
 	retriever    *memory.Retriever
+	workingStore *memory.WorkingStore
+	sessionID    string
 }
 
 // NewMemoryHandler creates a MemoryHandler with the given stores.
+// workingStore and sessionID are optional — passing nil/"" disables
+// the working_set/get/keys tools (the handler still serves them but
+// returns a clear "no session context" error). Used by the
+// stand-alone memory binary in interactive mode.
 func NewMemoryHandler(
 	graphStore *memory.GraphStore,
 	factStore *memory.FactStore,
@@ -28,6 +36,15 @@ func NewMemoryHandler(
 		episodeStore: episodeStore,
 		retriever:    retriever,
 	}
+}
+
+// WithWorkingMemory wires the session-scoped scratchpad. Returns the
+// handler for chaining. Pass an empty sessionID to leave the tools
+// disabled (they'll return a clear error if called).
+func (handler *MemoryHandler) WithWorkingMemory(store *memory.WorkingStore, sessionID string) *MemoryHandler {
+	handler.workingStore = store
+	handler.sessionID = sessionID
+	return handler
 }
 
 // HandleInitialize returns the server capabilities.
@@ -76,6 +93,12 @@ func (handler *MemoryHandler) HandleToolsCall(id interface{}, params ToolCallPar
 		result = handler.handleNoteEntity(ctx, params.Arguments)
 	case "recall_entity":
 		result = handler.handleRecallEntity(ctx, params.Arguments)
+	case "working_set":
+		result = handler.handleWorkingSet(ctx, params.Arguments)
+	case "working_get":
+		result = handler.handleWorkingGet(ctx, params.Arguments)
+	case "working_keys":
+		result = handler.handleWorkingKeys(ctx, params.Arguments)
 	default:
 		result = toolError(fmt.Sprintf("unknown tool: %s", params.Name))
 	}
@@ -200,6 +223,56 @@ func (handler *MemoryHandler) handleRecallEntity(ctx context.Context, args map[s
 	return toolText(formatEntityKnowledge(entity, facts, related))
 }
 
+func (handler *MemoryHandler) handleWorkingSet(ctx context.Context, args map[string]interface{}) ToolResult {
+	if handler.workingStore == nil || handler.sessionID == "" {
+		return toolError("working memory unavailable: no session context")
+	}
+	key, ok := stringArg(args, "key")
+	if !ok {
+		return toolError("missing required argument: key")
+	}
+	value, ok := stringArg(args, "value")
+	if !ok {
+		return toolError("missing required argument: value")
+	}
+	if err := handler.workingStore.Set(ctx, handler.sessionID, key, value); err != nil {
+		return toolError(fmt.Sprintf("set failed: %v", err))
+	}
+	return toolText(fmt.Sprintf("stored %q in working memory", key))
+}
+
+func (handler *MemoryHandler) handleWorkingGet(ctx context.Context, args map[string]interface{}) ToolResult {
+	if handler.workingStore == nil || handler.sessionID == "" {
+		return toolError("working memory unavailable: no session context")
+	}
+	key, ok := stringArg(args, "key")
+	if !ok {
+		return toolError("missing required argument: key")
+	}
+	value, err := handler.workingStore.Get(ctx, handler.sessionID, key)
+	if errors.Is(err, memory.ErrNoEntry) {
+		return toolText(fmt.Sprintf("no entry for %q", key))
+	}
+	if err != nil {
+		return toolError(fmt.Sprintf("get failed: %v", err))
+	}
+	return toolText(value)
+}
+
+func (handler *MemoryHandler) handleWorkingKeys(ctx context.Context, _ map[string]interface{}) ToolResult {
+	if handler.workingStore == nil || handler.sessionID == "" {
+		return toolError("working memory unavailable: no session context")
+	}
+	keys, err := handler.workingStore.Keys(ctx, handler.sessionID)
+	if err != nil {
+		return toolError(fmt.Sprintf("keys failed: %v", err))
+	}
+	if len(keys) == 0 {
+		return toolText("(no working memory entries)")
+	}
+	return toolText(strings.Join(keys, "\n"))
+}
+
 func (handler *MemoryHandler) recordAccessForResults(ctx context.Context, memCtx memory.RetrievalContext) {
 	for _, fact := range memCtx.Facts {
 		_ = handler.factStore.RecordFactAccess(ctx, fact.ID)
@@ -252,6 +325,26 @@ func memoryTools() []ToolDefinition {
 				"name": prop("Entity name to look up"),
 				"type": prop("One of: module, file, pattern, tool, concept"),
 			}, "name"),
+		},
+		{
+			Name:        "working_set",
+			Description: "Store a key/value in your working memory for THIS session only. Use for in-progress state, intermediate findings, things to revisit later in the same session. Cleared at session end — for permanent storage use remember_fact/store_belief instead.",
+			InputSchema: schemaWithRequired(map[string]interface{}{
+				"key":   prop("Short identifier for what you're storing"),
+				"value": prop("The value to store"),
+			}, "key", "value"),
+		},
+		{
+			Name:        "working_get",
+			Description: "Read a value you previously stored with working_set in this session. Returns 'no entry' if the key wasn't set.",
+			InputSchema: schemaWithRequired(map[string]interface{}{
+				"key": prop("The identifier you used with working_set"),
+			}, "key"),
+		},
+		{
+			Name:        "working_keys",
+			Description: "List every key you've stored in working memory this session. Use to remember what scratch you left for yourself.",
+			InputSchema: schemaWithRequired(map[string]interface{}{}),
 		},
 	}
 }

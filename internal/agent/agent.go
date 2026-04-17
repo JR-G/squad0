@@ -44,6 +44,7 @@ type Agent struct {
 	chatBeliefs    []string
 	chatVoice      string
 	chatBridge     ChatBridge
+	currentSession string
 }
 
 // NewAgent creates an Agent with all dependencies injected.
@@ -257,10 +258,11 @@ func (agent *Agent) DirectSession(ctx context.Context, prompt string) (SessionRe
 }
 
 // sessionEnv returns the env vars every spawned claude subprocess
-// needs: GH_TOKEN if set, and SQUAD0_MEMORY_DB pointing at this
-// agent's SQLite file. The memory env var is the bridge between the
-// single user-scope MCP registration and per-agent DBs — without it
-// the squad0-memory binary refuses to start.
+// needs: GH_TOKEN if set, SQUAD0_MEMORY_DB pointing at this agent's
+// SQLite file, and SQUAD0_SESSION_ID for the current task (if set
+// via SetCurrentSession). The session ID scopes working memory so
+// the agent's scratchpad is unique per ticket and decays at
+// session end.
 func (agent *Agent) sessionEnv() map[string]string {
 	env := map[string]string{}
 	if agent.ghToken != "" {
@@ -269,10 +271,30 @@ func (agent *Agent) sessionEnv() map[string]string {
 	if agent.dbPath != "" {
 		env["SQUAD0_MEMORY_DB"] = agent.dbPath
 	}
+	if sid := agent.currentSessionID(); sid != "" {
+		env["SQUAD0_SESSION_ID"] = sid
+	}
 	if len(env) == 0 {
 		return nil
 	}
 	return env
+}
+
+// SetCurrentSession sets the session ID propagated as
+// SQUAD0_SESSION_ID to the spawned MCP server. Use the ticket ID
+// (or any per-task identifier) so the agent's working memory
+// scratchpad is scoped to one task at a time. Pass "" to clear
+// (e.g. between sessions).
+func (agent *Agent) SetCurrentSession(sessionID string) {
+	agent.chatMu.Lock()
+	defer agent.chatMu.Unlock()
+	agent.currentSession = sessionID
+}
+
+func (agent *Agent) currentSessionID() string {
+	agent.chatMu.Lock()
+	defer agent.chatMu.Unlock()
+	return agent.currentSession
 }
 
 func (agent *Agent) assemblePrompt(ctx context.Context, taskDescription string, filePaths []string) (string, error) {

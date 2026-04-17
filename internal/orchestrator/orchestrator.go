@@ -326,6 +326,10 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 	seanceCtx := BuildSeanceContextFull(ctx, orch.projectEpisodeStore, orch.agentFactStores(), orch.handoffStore, assignment.Ticket, role)
 	prompt := seanceCtx + discussion + FormatDecisionsForPrompt(decisions) + BuildImplementationPrompt(assignment.Ticket, assignment.Description)
 	branch := fmt.Sprintf("feat/%s", assignment.Ticket)
+
+	agentInstance.SetCurrentSession(assignment.Ticket)
+	defer agentInstance.SetCurrentSession("")
+
 	result, err := agentInstance.ExecuteTask(ctx, prompt, nil, workSession.Dir())
 	if err != nil {
 		log.Printf("session error for %s on %s: %v", role, assignment.Ticket, err)
