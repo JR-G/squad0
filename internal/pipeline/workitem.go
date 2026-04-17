@@ -91,7 +91,43 @@ func (store *WorkItemStore) Create(ctx context.Context, item WorkItem) (int64, e
 }
 
 // Advance moves a work item to the given stage.
+// Advance moves a work item to the given stage if the lifecycle
+// state machine allows it. Illegal transitions return an error
+// wrapping ErrIllegalTransition; callers can handle that case
+// distinctly from DB errors.
+//
+// The validator reads the item's current stage via GetByID before
+// updating. The two queries are NOT in a transaction — concurrent
+// transitions are protected by the write mutex inside callers
+// (orchestrator's per-ticket gating) and by SQLite's serialised
+// writer. The validator is best-effort idempotency protection, not
+// strict serialisability.
 func (store *WorkItemStore) Advance(ctx context.Context, itemID int64, stage Stage) error {
+	current, err := store.GetByID(ctx, itemID)
+	if err != nil {
+		return fmt.Errorf("loading current stage for work item %d: %w", itemID, err)
+	}
+
+	if err := CanTransition(current.Stage, stage); err != nil {
+		return fmt.Errorf("advancing work item %d (%s) to %s: %w", itemID, current.Stage, stage, err)
+	}
+
+	return store.advanceUnchecked(ctx, itemID, stage)
+}
+
+// AdvanceForce bypasses the lifecycle validator. Reserved for
+// reconciliation paths that need to fast-forward to match externally-
+// observed state (e.g. squad0 restart noticing a PR is already merged
+// on GitHub). Logs the override so operators can spot it. Use Advance
+// for everything else.
+func (store *WorkItemStore) AdvanceForce(ctx context.Context, itemID int64, stage Stage, reason string) error {
+	if reason == "" {
+		return fmt.Errorf("AdvanceForce requires a reason for the bypass")
+	}
+	return store.advanceUnchecked(ctx, itemID, stage)
+}
+
+func (store *WorkItemStore) advanceUnchecked(ctx context.Context, itemID int64, stage Stage) error {
 	query := `UPDATE work_items SET stage = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
 	if stage.IsTerminal() {
 		query = `UPDATE work_items SET stage = ?, updated_at = CURRENT_TIMESTAMP, finished_at = CURRENT_TIMESTAMP WHERE id = ?`

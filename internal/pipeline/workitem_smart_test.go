@@ -68,7 +68,7 @@ func TestCompletedTickets_ReturnsDistinctMerged(t *testing.T) {
 	require.NoError(t, store.InitSchema(ctx))
 
 	id1, _ := store.Create(ctx, pipeline.WorkItem{
-		Ticket: "JAM-1", Engineer: agent.RoleEngineer1, Stage: pipeline.StageWorking,
+		Ticket: "JAM-1", Engineer: agent.RoleEngineer1, Stage: pipeline.StageApproved,
 	})
 	require.NoError(t, store.Advance(ctx, id1, pipeline.StageMerged))
 
@@ -78,7 +78,7 @@ func TestCompletedTickets_ReturnsDistinctMerged(t *testing.T) {
 	require.NoError(t, store.Advance(ctx, id2, pipeline.StageFailed))
 
 	id3, _ := store.Create(ctx, pipeline.WorkItem{
-		Ticket: "JAM-3", Engineer: agent.RoleEngineer3, Stage: pipeline.StageWorking,
+		Ticket: "JAM-3", Engineer: agent.RoleEngineer3, Stage: pipeline.StageApproved,
 	})
 	require.NoError(t, store.Advance(ctx, id3, pipeline.StageMerged))
 

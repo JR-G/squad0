@@ -229,12 +229,12 @@ func TestCompletedTickets_DuplicateMergedTicket_ReturnsDistinct(t *testing.T) {
 
 	// Create two merged items for the same ticket.
 	id1, _ := store.Create(ctx, pipeline.WorkItem{
-		Ticket: "JAM-DUP", Engineer: agent.RoleEngineer1, Stage: pipeline.StageWorking,
+		Ticket: "JAM-DUP", Engineer: agent.RoleEngineer1, Stage: pipeline.StageApproved,
 	})
 	require.NoError(t, store.Advance(ctx, id1, pipeline.StageMerged))
 
 	id2, _ := store.Create(ctx, pipeline.WorkItem{
-		Ticket: "JAM-DUP", Engineer: agent.RoleEngineer2, Stage: pipeline.StageWorking,
+		Ticket: "JAM-DUP", Engineer: agent.RoleEngineer2, Stage: pipeline.StageApproved,
 	})
 	require.NoError(t, store.Advance(ctx, id2, pipeline.StageMerged))
 
