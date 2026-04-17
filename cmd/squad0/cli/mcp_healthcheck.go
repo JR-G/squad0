@@ -66,29 +66,33 @@ type smokeStreamLine struct {
 // realVerifyMCPHealth which actually spawns `claude -p`.
 var verifyMCPHealth = realVerifyMCPHealth
 
+// MCPHealthResult splits smoke-test failures by component so the
+// caller can treat them independently: a broken memory MCP must hard-
+// fail startup (no fallback), but a broken Linear MCP is tolerable
+// when the GraphQL API path is available.
+type MCPHealthResult struct {
+	LinearErr  error
+	MemoryErr  error
+	OverallErr error // Transport-level failures (no init, subprocess error).
+}
+
+// HasIssues reports whether any check failed.
+func (result MCPHealthResult) HasIssues() bool {
+	return result.LinearErr != nil || result.MemoryErr != nil || result.OverallErr != nil
+}
+
 // realVerifyMCPHealth spawns a one-shot claude subprocess (NO
 // --mcp-config — that flag suppresses managed-connector tool exposure
-// even though the connector itself reports connected) and asserts:
-//
-//   - "claude.ai Linear" is connected AND its tools are exposed in
-//     the session's tools list. The connection alone is not enough —
-//     the smoke test caught this regression in the wild: status
-//     reads "connected" while every ticket session errors with
-//     "Linear MCP tools are not available". We assert tool presence
-//     to catch that class of failure at startup.
-//   - the user-scope memory MCP ("squad0-memory") is connected. The
-//     SQUAD0_MEMORY_DB env var is set to the PM's DB so the smoke
-//     test exercises the same env-driven path real sessions use.
-//
-// If either server is unhealthy the error includes the exact status
-// string claude reported. The prompt is the cheapest claude call we
-// can make so the smoke test adds negligible startup latency.
-func realVerifyMCPHealth(ctx context.Context, pmAgent *agent.Agent, model, workDir string) error {
+// even though the connector itself reports connected) and returns a
+// split result: Linear-side issues and Memory-side issues separately.
+// The caller decides which are fatal — Linear is optional when the
+// GraphQL API path is configured, Memory never is.
+func realVerifyMCPHealth(ctx context.Context, pmAgent *agent.Agent, model, workDir string) MCPHealthResult {
 	if pmAgent == nil {
-		return fmt.Errorf("no PM agent to smoke-test MCP with")
+		return MCPHealthResult{OverallErr: fmt.Errorf("no PM agent to smoke-test MCP with")}
 	}
 	if model == "" {
-		return fmt.Errorf("PM model is empty — cannot spawn smoke-test subprocess")
+		return MCPHealthResult{OverallErr: fmt.Errorf("PM model is empty — cannot spawn smoke-test subprocess")}
 	}
 
 	smokeCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
@@ -114,22 +118,25 @@ func realVerifyMCPHealth(ctx context.Context, pmAgent *agent.Agent, model, workD
 
 	output, err := cmd.Output()
 	if err != nil {
-		return fmt.Errorf("running claude smoke test: %w", err)
+		return MCPHealthResult{OverallErr: fmt.Errorf("running claude smoke test: %w", err)}
 	}
 
 	raw := string(output)
 	init, found := parseMCPInit(raw)
 	if !found {
-		return fmt.Errorf("no MCP init line in claude smoke-test output")
+		return MCPHealthResult{OverallErr: fmt.Errorf("no MCP init line in claude smoke-test output")}
 	}
 
-	if err := assertLinearHealthy(init); err != nil {
-		return err
+	result := MCPHealthResult{
+		LinearErr: assertLinearHealthy(init),
+		MemoryErr: assertMemoryHealthy(init),
 	}
-	if err := assertMemoryHealthy(init); err != nil {
-		return err
+
+	if result.LinearErr == nil {
+		result.LinearErr = assertLinearToolInvoked(raw)
 	}
-	return assertLinearToolInvoked(raw)
+
+	return result
 }
 
 // assertLinearToolInvoked scans the stream-json transcript for a

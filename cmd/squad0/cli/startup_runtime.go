@@ -185,13 +185,33 @@ func wireAgentMCP(
 	agents map[agent.Role]*agent.Agent,
 	modelMap map[agent.Role]string,
 	_ /* dataDir */, targetRepoDir string,
+	linearAPIConfigured bool,
 ) error {
 	registerMemoryMCP(ctx, out)
 
-	if err := verifyMCPHealth(ctx, agents[agent.RolePM], modelMap[agent.RolePM], targetRepoDir); err != nil {
-		return fmt.Errorf("MCP smoke test: %w\n\n%s", err, mcpSetupHint())
+	result := verifyMCPHealth(ctx, agents[agent.RolePM], modelMap[agent.RolePM], targetRepoDir)
+
+	if result.OverallErr != nil {
+		return fmt.Errorf("MCP smoke test: %w\n\n%s", result.OverallErr, mcpSetupHint())
 	}
+
+	if result.MemoryErr != nil {
+		return fmt.Errorf("MCP smoke test: memory MCP unhealthy: %w\n\n%s", result.MemoryErr, mcpSetupHint())
+	}
+
+	if result.LinearErr != nil {
+		return handleLinearErr(out, result.LinearErr, linearAPIConfigured)
+	}
+
 	_, _ = fmt.Fprint(out, tui.StepDone("MCP servers verified (Linear connected, memory connected)"))
+	return nil
+}
+
+func handleLinearErr(out io.Writer, linearErr error, linearAPIConfigured bool) error {
+	if !linearAPIConfigured {
+		return fmt.Errorf("MCP smoke test: Linear MCP unhealthy and no LINEAR_API_KEY fallback: %w\n\n%s", linearErr, mcpSetupHint())
+	}
+	_, _ = fmt.Fprint(out, tui.StepWarn(fmt.Sprintf("Linear MCP degraded (%v) — using direct GraphQL API for ticket operations", linearErr)))
 	return nil
 }
 

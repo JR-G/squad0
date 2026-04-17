@@ -121,7 +121,7 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 	}
 	_, _ = fmt.Fprint(out, tui.StepDone(fmt.Sprintf("%d agents created", len(agents))))
 
-	if err := wireAgentMCP(ctx, out, agents, modelMap, deps.DataDir, targetRepoDir); err != nil {
+	if err := wireAgentMCP(ctx, out, agents, modelMap, deps.DataDir, targetRepoDir, slackSecrets.LinearAPIKey != ""); err != nil {
 		return err
 	}
 

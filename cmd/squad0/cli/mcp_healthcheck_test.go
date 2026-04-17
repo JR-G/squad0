@@ -6,6 +6,7 @@ import (
 
 	"github.com/JR-G/squad0/internal/agent"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseMCPInit_ValidInit_ReturnsServers(t *testing.T) {
@@ -222,9 +223,10 @@ func TestAssertLinearToolInvoked_TopLevelContent_AlsoInspected(t *testing.T) {
 func TestRealVerifyMCPHealth_NilAgent_ReturnsError(t *testing.T) {
 	t.Parallel()
 
-	err := realVerifyMCPHealth(context.Background(), nil, "claude-sonnet-4-6", "")
+	result := realVerifyMCPHealth(context.Background(), nil, "claude-sonnet-4-6", "")
 
-	assert.ErrorContains(t, err, "no PM agent")
+	require.Error(t, result.OverallErr)
+	assert.ErrorContains(t, result.OverallErr, "no PM agent")
 }
 
 func TestRealVerifyMCPHealth_EmptyModel_ReturnsError(t *testing.T) {
@@ -232,7 +234,30 @@ func TestRealVerifyMCPHealth_EmptyModel_ReturnsError(t *testing.T) {
 
 	pmAgent := agent.NewAgent(agent.RolePM, "model", nil, nil, nil, nil, nil, nil)
 
-	err := realVerifyMCPHealth(context.Background(), pmAgent, "", "")
+	result := realVerifyMCPHealth(context.Background(), pmAgent, "", "")
 
-	assert.ErrorContains(t, err, "model is empty")
+	require.Error(t, result.OverallErr)
+	assert.ErrorContains(t, result.OverallErr, "model is empty")
+}
+
+func TestMCPHealthResult_HasIssues(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		result MCPHealthResult
+		want   bool
+	}{
+		{"all clear", MCPHealthResult{}, false},
+		{"linear err only", MCPHealthResult{LinearErr: assert.AnError}, true},
+		{"memory err only", MCPHealthResult{MemoryErr: assert.AnError}, true},
+		{"overall err only", MCPHealthResult{OverallErr: assert.AnError}, true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tc.want, tc.result.HasIssues())
+		})
+	}
 }

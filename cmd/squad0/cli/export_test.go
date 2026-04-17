@@ -33,10 +33,33 @@ func BuildModelMap(cfg config.Config) map[agent.Role]string {
 // the smoke-test itself.
 func StubVerifyMCPHealth() func() {
 	previous := verifyMCPHealth
-	verifyMCPHealth = func(_ context.Context, _ *agent.Agent, _, _ string) error {
-		return nil
+	verifyMCPHealth = func(_ context.Context, _ *agent.Agent, _, _ string) MCPHealthResult {
+		return MCPHealthResult{}
 	}
 	return func() { verifyMCPHealth = previous }
+}
+
+// StubVerifyMCPHealthWithResult lets tests drive wireAgentMCP through
+// specific result shapes — linear-only failure, memory-only failure,
+// overall failure, and the all-clear path.
+func StubVerifyMCPHealthWithResult(result MCPHealthResult) func() {
+	previous := verifyMCPHealth
+	verifyMCPHealth = func(_ context.Context, _ *agent.Agent, _, _ string) MCPHealthResult {
+		return result
+	}
+	return func() { verifyMCPHealth = previous }
+}
+
+// WireAgentMCP exports wireAgentMCP for testing branch behaviour.
+func WireAgentMCP(
+	ctx context.Context,
+	out io.Writer,
+	agents map[agent.Role]*agent.Agent,
+	modelMap map[agent.Role]string,
+	dataDir, targetRepoDir string,
+	linearAPIConfigured bool,
+) error {
+	return wireAgentMCP(ctx, out, agents, modelMap, dataDir, targetRepoDir, linearAPIConfigured)
 }
 
 // ParseCronToInterval exports parseCronToInterval for testing.
