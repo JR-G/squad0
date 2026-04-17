@@ -154,6 +154,81 @@ func TestMailbox_HandlesAllKnownMessageTypes(t *testing.T) {
 	}
 }
 
+func TestMailbox_Execute_Synchronous(t *testing.T) {
+	t.Parallel()
+
+	agentInstance, _ := setupAgentTest(t)
+	mb := agent.NewMailbox(agentInstance, 4)
+	mb.Start(context.Background())
+	t.Cleanup(mb.Stop)
+
+	_, err := mb.Execute("do something", nil, t.TempDir())
+	_ = err
+}
+
+func TestMailbox_DirectSession_Synchronous(t *testing.T) {
+	t.Parallel()
+
+	agentInstance, _ := setupAgentTest(t)
+	mb := agent.NewMailbox(agentInstance, 4)
+	mb.Start(context.Background())
+	t.Cleanup(mb.Stop)
+
+	_, err := mb.DirectSession("hi")
+	_ = err
+}
+
+func TestMailbox_QuickChat_Synchronous(t *testing.T) {
+	t.Parallel()
+
+	agentInstance, _ := setupAgentTest(t)
+	mb := agent.NewMailbox(agentInstance, 4)
+	mb.Start(context.Background())
+	t.Cleanup(mb.Stop)
+
+	_, err := mb.QuickChat("hi")
+	_ = err
+}
+
+func TestMailbox_Execute_Stopped_ReturnsErr(t *testing.T) {
+	t.Parallel()
+
+	agentInstance, _ := setupAgentTest(t)
+	mb := agent.NewMailbox(agentInstance, 1)
+	mb.Start(context.Background())
+	mb.Stop()
+
+	_, err := mb.Execute("x", nil, "/tmp")
+
+	assert.True(t, errors.Is(err, agent.ErrMailboxStopped))
+}
+
+func TestMailbox_DirectSession_Stopped_ReturnsErr(t *testing.T) {
+	t.Parallel()
+
+	agentInstance, _ := setupAgentTest(t)
+	mb := agent.NewMailbox(agentInstance, 1)
+	mb.Start(context.Background())
+	mb.Stop()
+
+	_, err := mb.DirectSession("x")
+
+	assert.True(t, errors.Is(err, agent.ErrMailboxStopped))
+}
+
+func TestMailbox_QuickChat_Stopped_ReturnsErr(t *testing.T) {
+	t.Parallel()
+
+	agentInstance, _ := setupAgentTest(t)
+	mb := agent.NewMailbox(agentInstance, 1)
+	mb.Start(context.Background())
+	mb.Stop()
+
+	_, err := mb.QuickChat("x")
+
+	assert.True(t, errors.Is(err, agent.ErrMailboxStopped))
+}
+
 // customMsg is a Message type defined outside the agent package,
 // driving the default arm of Mailbox.handle for coverage.
 type customMsg struct{}

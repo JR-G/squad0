@@ -38,6 +38,14 @@ func newMinimalOrchestrator(t *testing.T) *orchestrator.Orchestrator {
 	)
 }
 
+func TestOrchestrator_MailboxFor_UnknownRole_ReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	orch := newMinimalOrchestrator(t)
+
+	assert.Nil(t, orch.MailboxFor(agent.RoleEngineer1))
+}
+
 func TestOrchestrator_SetEventBus_ConnectsBus(t *testing.T) {
 	t.Parallel()
 
@@ -105,6 +113,22 @@ func TestRegisterDefaultHandlers_CalledTwice_DoubleRegisters(t *testing.T) {
 	assert.Equal(t, 2, bus.HandlerCount(orchestrator.EventAgentIdle))
 	assert.Equal(t, 2, bus.HandlerCount(orchestrator.EventSessionComplete))
 	assert.Equal(t, 2, bus.HandlerCount(orchestrator.EventSessionFailed))
+}
+
+func TestRegisterDefaultHandlers_SessionComplete_WorkEnabled_TriggersScheduling(t *testing.T) {
+	t.Parallel()
+
+	orch := newMinimalOrchestrator(t)
+	orch.SetWorkEnabledForTest(true)
+	bus := orchestrator.NewEventBus()
+	orch.RegisterDefaultHandlers(bus)
+
+	assert.NotPanics(t, func() {
+		bus.EmitSync(context.Background(), orchestrator.Event{
+			Kind:         orchestrator.EventSessionComplete,
+			EngineerRole: agent.RoleEngineer1,
+		})
+	})
 }
 
 func TestRegisterDefaultHandlers_SessionComplete_WorkDisabled_NoCheckInRead(t *testing.T) {

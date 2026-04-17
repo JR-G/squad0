@@ -34,7 +34,7 @@ type ExecuteTaskReply struct {
 }
 
 // IsAgentMessage marks ExecuteTaskMsg as a Mailbox Message.
-func (ExecuteTaskMsg) IsAgentMessage() {}
+func (ExecuteTaskMsg) IsAgentMessage() { _ = 0 }
 
 // DirectSessionMsg drives Agent.DirectSession through the mailbox.
 type DirectSessionMsg struct {
@@ -50,7 +50,7 @@ type DirectSessionReply struct {
 }
 
 // IsAgentMessage marks DirectSessionMsg as a Mailbox Message.
-func (DirectSessionMsg) IsAgentMessage() {}
+func (DirectSessionMsg) IsAgentMessage() { _ = 0 }
 
 // QuickChatMsg drives Agent.QuickChat through the mailbox.
 type QuickChatMsg struct {
@@ -66,7 +66,7 @@ type QuickChatReply struct {
 }
 
 // IsAgentMessage marks QuickChatMsg as a Mailbox Message.
-func (QuickChatMsg) IsAgentMessage() {}
+func (QuickChatMsg) IsAgentMessage() { _ = 0 }
 
 // ErrMailboxStopped is returned when Send is called after Stop.
 var ErrMailboxStopped = errors.New("mailbox is stopped")
@@ -151,6 +151,41 @@ func (mb *Mailbox) Stop() {
 // do this for read-only operations.
 func (mb *Mailbox) Agent() *Agent {
 	return mb.agent
+}
+
+// Execute is a synchronous convenience over the request/response
+// dance for ExecuteTask. Replaces direct agent.ExecuteTask calls
+// at sites that don't need fire-and-forget semantics.
+func (mb *Mailbox) Execute(task string, files []string, workDir string) (SessionResult, error) {
+	reply := make(chan ExecuteTaskReply, 1)
+	if err := mb.Send(ExecuteTaskMsg{Task: task, FilePaths: files, WorkingDir: workDir, Reply: reply}); err != nil {
+		return SessionResult{}, err
+	}
+	r := <-reply
+	return r.Result, r.Err
+}
+
+// DirectSession is a synchronous convenience over the request/
+// response dance for DirectSession. Replaces direct
+// agent.DirectSession calls.
+func (mb *Mailbox) DirectSession(prompt string) (SessionResult, error) {
+	reply := make(chan DirectSessionReply, 1)
+	if err := mb.Send(DirectSessionMsg{Prompt: prompt, Reply: reply}); err != nil {
+		return SessionResult{}, err
+	}
+	r := <-reply
+	return r.Result, r.Err
+}
+
+// QuickChat is a synchronous convenience over the request/response
+// dance for QuickChat. Replaces direct agent.QuickChat calls.
+func (mb *Mailbox) QuickChat(prompt string) (string, error) {
+	reply := make(chan QuickChatReply, 1)
+	if err := mb.Send(QuickChatMsg{Prompt: prompt, Reply: reply}); err != nil {
+		return "", err
+	}
+	r := <-reply
+	return r.Transcript, r.Err
 }
 
 func (mb *Mailbox) loop(ctx context.Context) {

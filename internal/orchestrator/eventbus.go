@@ -136,6 +136,13 @@ func (orch *Orchestrator) SetEventBus(bus *EventBus) {
 	orch.eventBus = bus
 }
 
+// SetWorkEnabledForTest flips the WorkEnabled config flag so tests
+// can drive the event-driven scheduling path without standing up a
+// full Linear-backed assigner.
+func (orch *Orchestrator) SetWorkEnabledForTest(enabled bool) {
+	orch.cfg.WorkEnabled = enabled
+}
+
 // EventBus returns the orchestrator's event bus, or nil if not set.
 func (orch *Orchestrator) EventBus() *EventBus {
 	return orch.eventBus

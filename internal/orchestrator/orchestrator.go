@@ -22,6 +22,7 @@ import (
 type Orchestrator struct {
 	cfg          Config
 	agents       map[agent.Role]*agent.Agent
+	mailboxes    map[agent.Role]*agent.Mailbox
 	checkIns     *coordination.CheckInStore
 	bot          *slack.Bot
 	assigner     *Assigner
@@ -74,9 +75,17 @@ func NewOrchestrator(
 	bot *slack.Bot,
 	assigner *Assigner,
 ) *Orchestrator {
+	mailboxes := make(map[agent.Role]*agent.Mailbox, len(agents))
+	for role, instance := range agents {
+		mailbox := agent.NewMailbox(instance, mailboxCapacity)
+		mailbox.Start(context.Background())
+		mailboxes[role] = mailbox
+	}
+
 	return &Orchestrator{
 		cfg:            cfg,
 		agents:         agents,
+		mailboxes:      mailboxes,
 		checkIns:       checkIns,
 		bot:            bot,
 		assigner:       assigner,
@@ -89,6 +98,8 @@ func NewOrchestrator(
 	}
 }
 
+const mailboxCapacity = 16
+
 // SetHealthMonitor connects the health monitor.
 func (orch *Orchestrator) SetHealthMonitor(monitor *health.Monitor) {
 	orch.health = NewHealthSupervisor(monitor)
@@ -99,6 +110,8 @@ func (orch *Orchestrator) SetHealthMonitor(monitor *health.Monitor) {
 func (orch *Orchestrator) Run(ctx context.Context) error {
 	orch.running = true
 	defer func() { orch.running = false }()
+
+	defer orch.stopMailboxes()
 
 	if err := orch.initialiseCheckIns(ctx); err != nil {
 		return fmt.Errorf("initialising check-ins: %w", err)
@@ -123,6 +136,31 @@ func (orch *Orchestrator) Run(ctx context.Context) error {
 			orch.tick(ctx)
 		}
 	}
+}
+
+func (orch *Orchestrator) stopMailboxes() {
+	for _, mailbox := range orch.mailboxes {
+		mailbox.Stop()
+	}
+}
+
+// MailboxFor returns the mailbox wrapping the given agent role,
+// or nil if no mailbox exists. Returned mailbox is already started
+// when Run is in progress.
+func (orch *Orchestrator) MailboxFor(role agent.Role) *agent.Mailbox {
+	return orch.mailboxes[role]
+}
+
+// executeViaMailbox routes ExecuteTask through the per-agent mailbox
+// when one is available, falling back to a direct call otherwise so
+// tests that build orchestrators without Run() (and therefore without
+// started mailboxes) still work.
+func (orch *Orchestrator) executeViaMailbox(ctx context.Context, role agent.Role, prompt, workDir string) (agent.SessionResult, error) {
+	mailbox := orch.mailboxes[role]
+	if mailbox == nil {
+		return orch.agents[role].ExecuteTask(ctx, prompt, nil, workDir)
+	}
+	return mailbox.Execute(prompt, nil, workDir)
 }
 
 // IsRunning returns whether the orchestrator loop is active.
@@ -330,7 +368,7 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 	agentInstance.SetCurrentSession(assignment.Ticket)
 	defer agentInstance.SetCurrentSession("")
 
-	result, err := agentInstance.ExecuteTask(ctx, prompt, nil, workSession.Dir())
+	result, err := orch.executeViaMailbox(ctx, role, prompt, workSession.Dir())
 	if err != nil {
 		log.Printf("session error for %s on %s: %v", role, assignment.Ticket, err)
 		orch.recordSessionEnd(role, assignment.Ticket, false)
