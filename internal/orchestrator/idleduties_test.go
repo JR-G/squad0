@@ -248,7 +248,7 @@ func TestRunIdleDuties_NoOpenPRs_DoesNothing(t *testing.T) {
 	assert.Equal(t, beforeCount, afterCount, "no PRs means no idle duty calls")
 }
 
-func TestFilterIdleDutyRoles_ExcludesPMAndReviewer(t *testing.T) {
+func TestFilterIdleDutyRoles_AllRolesEligible(t *testing.T) {
 	t.Parallel()
 
 	roles := []agent.Role{
@@ -258,11 +258,9 @@ func TestFilterIdleDutyRoles_ExcludesPMAndReviewer(t *testing.T) {
 
 	filtered := orchestrator.FilterIdleDutyRolesForTest(roles)
 
-	assert.Len(t, filtered, 4)
-	for _, role := range filtered {
-		assert.NotEqual(t, agent.RolePM, role)
-		assert.NotEqual(t, agent.RoleReviewer, role)
-	}
+	assert.Len(t, filtered, len(roles))
+	assert.Contains(t, filtered, agent.RolePM)
+	assert.Contains(t, filtered, agent.RoleReviewer)
 }
 
 func TestFilterIdleDutyRoles_EmptyInput(t *testing.T) {

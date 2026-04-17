@@ -187,10 +187,11 @@ func TestWriteHandoff_FailedSetsDirty(t *testing.T) {
 	assert.Equal(t, "dirty", h.GitState)
 }
 
-func TestFilterIdleDutyRoles_PMReviewerFiltered(t *testing.T) {
+func TestFilterIdleDutyRoles_PassthroughIncludesPM(t *testing.T) {
 	t.Parallel()
 	result := orchestrator.FilterIdleDutyRolesForTest(
 		[]agent.Role{agent.RolePM, agent.RoleReviewer, agent.RoleEngineer1, agent.RoleTechLead})
-	assert.NotContains(t, result, agent.RolePM)
-	assert.Len(t, result, 2)
+	assert.Contains(t, result, agent.RolePM)
+	assert.Contains(t, result, agent.RoleReviewer)
+	assert.Len(t, result, 4)
 }

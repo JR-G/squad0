@@ -166,6 +166,20 @@ func buildIdleReviewPrompt(role agent.Role, item *pipeline.WorkItem, engineerNam
 			"Post an architectural observation about module boundaries, " +
 			"dependency direction, or patterns:\n" + action + "\n\n" + rules
 
+	case role == agent.RolePM:
+		return base +
+			"From a delivery angle: is this PR small enough to merge confidently, " +
+			"or is it growing past the original ticket scope? Post one observation:\n" +
+			action + "\n" +
+			"If it's well-scoped and on track, respond with PASS.\n" + rules
+
+	case role == agent.RoleReviewer:
+		return base +
+			"Quality-gate angle: missing tests, untested error paths, or " +
+			"obvious regressions in nearby code. Post one observation:\n" +
+			action + "\n" +
+			"If quality coverage looks solid already, respond with PASS.\n" + rules
+
 	default:
 		return ""
 	}
@@ -258,15 +272,14 @@ func FilterIdleDutyRolesForTest(roles []agent.Role) []agent.Role {
 	return filterIdleDutyRoles(roles)
 }
 
+// filterIdleDutyRoles returns the roles eligible to volunteer
+// observations on others' PRs while idle. Every role qualifies — the
+// previous exclusion of PM and Reviewer left them stalled with
+// nothing to do for minutes at a time during quiet periods, even
+// when open PRs were waiting on attention. Per-role prompt shaping
+// happens in buildIdleReviewPrompt.
 func filterIdleDutyRoles(roles []agent.Role) []agent.Role {
 	eligible := make([]agent.Role, 0, len(roles))
-	for _, role := range roles {
-		switch role { //nolint:exhaustive // only excluding specific roles
-		case agent.RolePM, agent.RoleReviewer:
-			continue
-		default:
-			eligible = append(eligible, role)
-		}
-	}
+	eligible = append(eligible, roles...)
 	return eligible
 }
