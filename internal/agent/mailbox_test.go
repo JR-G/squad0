@@ -154,6 +154,25 @@ func TestMailbox_HandlesAllKnownMessageTypes(t *testing.T) {
 	}
 }
 
+// customMsg is a Message type defined outside the agent package,
+// driving the default arm of Mailbox.handle for coverage.
+type customMsg struct{}
+
+func (customMsg) IsAgentMessage() {}
+
+func TestMailbox_UnknownMessageType_LoggedAndIgnored(t *testing.T) {
+	t.Parallel()
+
+	agentInstance, _ := setupAgentTest(t)
+	mb := agent.NewMailbox(agentInstance, 1)
+	mb.Start(context.Background())
+	t.Cleanup(mb.Stop)
+
+	// Unknown type goes through the default arm; loop must not crash.
+	require.NoError(t, mb.Send(customMsg{}))
+	time.Sleep(50 * time.Millisecond)
+}
+
 func TestMailbox_MessageMarkerMethods_AreNoOps(t *testing.T) {
 	t.Parallel()
 
