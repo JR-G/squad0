@@ -103,6 +103,64 @@ func TestParseLiveBotReview_InvalidJSON_ReturnsFalse(t *testing.T) {
 	assert.False(t, orchestrator.ParseLiveBotReviewForTest([]byte(`not json`)))
 }
 
+// Regression: JAM-24 stuck in a permanent revert loop because Devin
+// posted a COMMENTED review after the engineer's last commit, and no
+// later commit ever happened (engineer addressed feedback in earlier
+// work). Without supersession the bot review blocks merge forever.
+// A later human-side APPROVED review should clear the block.
+func TestParseLiveBotReview_HumanApprovedAfterBotComment_ReturnsFalse(t *testing.T) {
+	t.Parallel()
+
+	data := []byte(`{
+		"reviews": [
+			{"author": {"login": "devin-ai-integration"}, "state": "COMMENTED", "submittedAt": "2026-04-15T18:36:00Z"},
+			{"author": {"login": "squad0-reviewer"}, "state": "APPROVED", "submittedAt": "2026-04-16T20:09:00Z"}
+		],
+		"commits": [
+			{"committedDate": "2026-04-15T18:10:00Z"}
+		]
+	}`)
+
+	assert.False(t, orchestrator.ParseLiveBotReviewForTest(data))
+}
+
+func TestParseLiveBotReview_HumanApprovedBeforeBotComment_StillBlocks(t *testing.T) {
+	t.Parallel()
+
+	// Approval came BEFORE the bot's later comment — the comment is
+	// still a fresh signal that needs addressing.
+	data := []byte(`{
+		"reviews": [
+			{"author": {"login": "squad0-reviewer"}, "state": "APPROVED", "submittedAt": "2026-04-15T18:00:00Z"},
+			{"author": {"login": "devin-ai-integration"}, "state": "COMMENTED", "submittedAt": "2026-04-15T18:36:00Z"}
+		],
+		"commits": [
+			{"committedDate": "2026-04-15T18:10:00Z"}
+		]
+	}`)
+
+	assert.True(t, orchestrator.ParseLiveBotReviewForTest(data))
+}
+
+func TestParseLiveBotReview_BotApprovedAfterBotComment_StillBlocks(t *testing.T) {
+	t.Parallel()
+
+	// A bot's own later approval should NOT supersede its prior
+	// comment — only a human-side approval counts as judgement that
+	// the bot's feedback is non-blocking.
+	data := []byte(`{
+		"reviews": [
+			{"author": {"login": "devin-ai-integration"}, "state": "COMMENTED", "submittedAt": "2026-04-15T18:36:00Z"},
+			{"author": {"login": "coderabbitai[bot]"}, "state": "APPROVED", "submittedAt": "2026-04-15T19:00:00Z"}
+		],
+		"commits": [
+			{"committedDate": "2026-04-15T18:10:00Z"}
+		]
+	}`)
+
+	assert.True(t, orchestrator.ParseLiveBotReviewForTest(data))
+}
+
 func TestParseReviewBody_ExtractsBlockersAndSuggestions(t *testing.T) {
 	t.Parallel()
 

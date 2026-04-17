@@ -244,8 +244,24 @@ func hasLiveBotReview(ctx context.Context, repoDir, prURL string) bool {
 }
 
 // parseLiveBotReview reports whether the given gh JSON blob contains
-// a COMMENTED review from a known bot submitted after the latest
-// commit on the PR branch. Pure function, tested directly.
+// a COMMENTED review from a known bot that should still block merge.
+//
+// A bot review counts as live when:
+//   - it was submitted after the latest commit on the PR branch
+//     (engineer hasn't pushed a fix yet), AND
+//   - no human reviewer has APPROVED the PR after the bot review
+//     (a later human approval supersedes the bot's prior comment —
+//     reviewers see the bot feedback, judge it, and either fix it
+//     or signal it's not blocking by approving on top).
+//
+// The supersession rule fixes a permanent ping-pong loop where a
+// bot review posted before the engineer's last commit (or about
+// feedback addressed without a fresh commit) would block forever:
+// the engineer never pushes again because there's nothing to fix,
+// and the bot review stays "after the last commit" indefinitely.
+// Seen in the wild on JAM-24.
+//
+// Pure function, tested directly.
 func parseLiveBotReview(data []byte) bool {
 	var parsed struct {
 		Reviews []struct {
@@ -280,7 +296,37 @@ func parseLiveBotReview(data []byte) bool {
 		if !isBotReviewer(review.Author.Login) {
 			continue
 		}
-		if review.SubmittedAt.After(lastCommit) {
+		if !review.SubmittedAt.After(lastCommit) {
+			continue
+		}
+		if humanApprovedAfter(parsed.Reviews, review.SubmittedAt) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// humanApprovedAfter reports whether any human reviewer submitted an
+// APPROVED review after the given time. "Human" is defined as
+// not-isBotReviewer — anyone whose login isn't on the known-bot list
+// counts, including squad0's own reviewer agents.
+func humanApprovedAfter(reviews []struct {
+	Author struct {
+		Login string `json:"login"`
+	} `json:"author"`
+	State       string    `json:"state"`
+	SubmittedAt time.Time `json:"submittedAt"`
+}, after time.Time,
+) bool {
+	for _, review := range reviews {
+		if review.State != "APPROVED" {
+			continue
+		}
+		if isBotReviewer(review.Author.Login) {
+			continue
+		}
+		if review.SubmittedAt.After(after) {
 			return true
 		}
 	}
