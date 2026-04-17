@@ -76,6 +76,11 @@ var migrations = []migration{
 		description: "cognitive memory fields",
 		apply:       applyCognitiveMemoryMigration,
 	},
+	{
+		version:     3,
+		description: "working memory (session-scoped scratchpad)",
+		apply:       applyWorkingMemoryMigration,
+	},
 }
 
 func closeDB(db *sql.DB) {
@@ -211,6 +216,40 @@ func applyInitialSchema(tx *sql.Tx) error {
 	for _, stmt := range statements {
 		if _, err := tx.Exec(stmt); err != nil {
 			return fmt.Errorf("executing %q: %w", stmt[:40], err)
+		}
+	}
+
+	return nil
+}
+
+// applyWorkingMemoryMigration adds the working memory table — the
+// session-scoped scratchpad agents use to track in-progress state
+// (intermediate computations, things they're considering, "remember
+// to also do X" reminders). Cleared at session end so it doesn't
+// pollute long-term memory; fundamentally different from facts /
+// beliefs / episodes which all persist forever.
+//
+// Modelled on the working / episodic / semantic / procedural split
+// from cognitive science: working memory is the only one that's
+// supposed to decay. This complements the existing schema (facts +
+// beliefs are semantic; episodes are episodic; technique-typed
+// facts are procedural) by filling the obvious gap.
+func applyWorkingMemoryMigration(tx *sql.Tx) error {
+	statements := []string{
+		`CREATE TABLE working_memory (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			session_id TEXT NOT NULL,
+			key TEXT NOT NULL,
+			value TEXT NOT NULL,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(session_id, key)
+		)`,
+		`CREATE INDEX idx_working_memory_session ON working_memory(session_id)`,
+	}
+
+	for _, stmt := range statements {
+		if _, err := tx.Exec(stmt); err != nil {
+			return fmt.Errorf("working memory migration: %w", err)
 		}
 	}
 

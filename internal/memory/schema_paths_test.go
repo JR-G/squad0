@@ -103,7 +103,7 @@ func TestOpen_Reopen_ExistingDB_SkipsMigrations(t *testing.T) {
 	var version1 int
 	err = db1.RawDB().QueryRow(`SELECT version FROM schema_version`).Scan(&version1)
 	require.NoError(t, err)
-	assert.Equal(t, 2, version1)
+	assert.Equal(t, 3, version1)
 	require.NoError(t, db1.Close())
 
 	// Second open should skip all migrations (version already 1)
@@ -114,7 +114,7 @@ func TestOpen_Reopen_ExistingDB_SkipsMigrations(t *testing.T) {
 	var version2 int
 	err = db2.RawDB().QueryRow(`SELECT version FROM schema_version`).Scan(&version2)
 	require.NoError(t, err)
-	assert.Equal(t, 2, version2)
+	assert.Equal(t, 3, version2)
 
 	// Verify data is still accessible
 	store := memory.NewGraphStore(db2)

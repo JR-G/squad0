@@ -30,12 +30,14 @@ func TestClassifySessionDuration_ClearlyOverHalf_ReturnsSlow(t *testing.T) {
 
 	roles := []agent.Role{agent.RoleEngineer1}
 	mon := health.NewMonitor(roles, health.MonitorConfig{
-		// Use a very short max so sleeping 8ms is clearly over half (5ms)
-		MaxSessionTime: 10 * time.Millisecond,
+		// Headroom for goroutine scheduler under concurrent test load:
+		// 60ms sleep against 100ms max is clearly Slow (>50%) without
+		// risking Stuck if the scheduler delays past 100ms.
+		MaxSessionTime: 100 * time.Millisecond,
 	})
 
 	mon.RecordSessionStart(agent.RoleEngineer1)
-	time.Sleep(8 * time.Millisecond)
+	time.Sleep(60 * time.Millisecond)
 	mon.Evaluate()
 
 	state, _ := mon.GetHealth(agent.RoleEngineer1)
@@ -47,11 +49,11 @@ func TestClassifySessionDuration_ClearlyOverMax_ReturnsStuck(t *testing.T) {
 
 	roles := []agent.Role{agent.RoleEngineer1}
 	mon := health.NewMonitor(roles, health.MonitorConfig{
-		MaxSessionTime: 5 * time.Millisecond,
+		MaxSessionTime: 50 * time.Millisecond,
 	})
 
 	mon.RecordSessionStart(agent.RoleEngineer1)
-	time.Sleep(15 * time.Millisecond)
+	time.Sleep(150 * time.Millisecond)
 	mon.Evaluate()
 
 	state, _ := mon.GetHealth(agent.RoleEngineer1)

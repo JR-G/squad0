@@ -41,7 +41,7 @@ func TestOpen_IdempotentReopen_SkipsAppliedMigrations(t *testing.T) {
 	var version int
 	err = db2.RawDB().QueryRow(`SELECT version FROM schema_version`).Scan(&version)
 	require.NoError(t, err)
-	assert.Equal(t, 2, version)
+	assert.Equal(t, 3, version)
 }
 
 func TestOpen_Reopen_UpdatesBranch(t *testing.T) {
@@ -57,7 +57,7 @@ func TestOpen_Reopen_UpdatesBranch(t *testing.T) {
 	var initialVersion int
 	err = db1.RawDB().QueryRow(`SELECT version FROM schema_version`).Scan(&initialVersion)
 	require.NoError(t, err)
-	assert.Equal(t, 2, initialVersion)
+	assert.Equal(t, 3, initialVersion)
 	require.NoError(t, db1.Close())
 
 	db2, err := memory.Open(ctx, dbPath)
@@ -67,7 +67,7 @@ func TestOpen_Reopen_UpdatesBranch(t *testing.T) {
 	var finalVersion int
 	err = db2.RawDB().QueryRow(`SELECT version FROM schema_version`).Scan(&finalVersion)
 	require.NoError(t, err)
-	assert.Equal(t, 2, finalVersion)
+	assert.Equal(t, 3, finalVersion)
 }
 
 func TestCurrentVersion_EmptyTable_ReturnsZero(t *testing.T) {
