@@ -114,6 +114,49 @@ func TestConsoleWriter_SetRoster_ReplacesRoles(t *testing.T) {
 	assert.Contains(t, output, "Mara")
 }
 
+// Regression: roster substitution used to mangle file paths and
+// any other token that contained a role substring. Real example
+// from the wild: a worktree path ".worktrees/engineer-2-fixup" was
+// being logged as ".worktrees/Mara (engineer-2)-fixup", which
+// looked like a real path bug but wasn't.
+func TestConsoleWriter_SetRoster_DoesNotMangleFilePaths(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	writer := logging.NewConsoleWriter(&buf)
+	writer.SetRoster(map[string]string{"engineer-2": "Mara"})
+
+	_, _ = writer.Write([]byte("created worktree at /repo/.worktrees/engineer-2-fixup (branch feat)"))
+
+	output := buf.String()
+	assert.Contains(t, output, ".worktrees/engineer-2-fixup")
+	assert.NotContains(t, output, "Mara (engineer-2)-fixup")
+}
+
+func TestConsoleWriter_SetRoster_StandaloneRoleReplaced(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	writer := logging.NewConsoleWriter(&buf)
+	writer.SetRoster(map[string]string{"engineer-2": "Mara"})
+
+	_, _ = writer.Write([]byte("session engineer-2 finished"))
+
+	assert.Contains(t, buf.String(), "Mara")
+}
+
+func TestConsoleWriter_SetRoster_RoleAtEndOfLineReplaced(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	writer := logging.NewConsoleWriter(&buf)
+	writer.SetRoster(map[string]string{"engineer-2": "Mara"})
+
+	_, _ = writer.Write([]byte("respawned engineer-2"))
+
+	assert.Contains(t, buf.String(), "Mara")
+}
+
 func TestConsoleWriter_StripLogTimestamp(t *testing.T) {
 	t.Parallel()
 

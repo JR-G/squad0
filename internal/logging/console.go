@@ -213,10 +213,65 @@ func (cw *ConsoleWriter) replaceRoles(body string) string {
 		}
 		name := cw.roster[role]
 		if name == "" || name == role {
-			body = strings.ReplaceAll(body, role, bold+role+reset)
+			body = replaceRoleAtBoundary(body, role, bold+role+reset)
 			continue
 		}
-		body = strings.ReplaceAll(body, role, bold+name+reset+dim+" ("+role+")"+reset)
+		body = replaceRoleAtBoundary(body, role, bold+name+reset+dim+" ("+role+")"+reset)
 	}
 	return body
+}
+
+// replaceRoleAtBoundary swaps occurrences of role in body for
+// replacement only when the surrounding characters mark a word
+// boundary — anything not in [A-Za-z0-9-_/.]. Without the boundary
+// check the replacement mangles file paths and ticket titles that
+// happen to contain a role substring (e.g. ".worktrees/engineer-2-fixup"
+// would otherwise become ".worktrees/Mara (engineer-2)-fixup").
+func replaceRoleAtBoundary(body, role, replacement string) string {
+	var out strings.Builder
+	out.Grow(len(body))
+
+	cursor := 0
+	for cursor < len(body) {
+		offset := strings.Index(body[cursor:], role)
+		if offset == -1 {
+			out.WriteString(body[cursor:])
+			break
+		}
+		match := cursor + offset
+		out.WriteString(body[cursor:match])
+		end := match + len(role)
+		out.WriteString(pickRoleSwap(body, match, end, role, replacement))
+		cursor = end
+	}
+	return out.String()
+}
+
+func pickRoleSwap(body string, match, end int, role, replacement string) string {
+	if isRoleBoundary(body, match-1) && isRoleBoundary(body, end) {
+		return replacement
+	}
+	return role
+}
+
+// isRoleBoundary reports whether the byte at idx (or the absent
+// position if idx is out of range) marks a word boundary for
+// role-name substitution. Path/identifier characters return false so
+// matches inside larger tokens are skipped.
+func isRoleBoundary(body string, idx int) bool {
+	if idx < 0 || idx >= len(body) {
+		return true
+	}
+	char := body[idx]
+	switch {
+	case char >= 'a' && char <= 'z':
+		return false
+	case char >= 'A' && char <= 'Z':
+		return false
+	case char >= '0' && char <= '9':
+		return false
+	case char == '-' || char == '_' || char == '/' || char == '.':
+		return false
+	}
+	return true
 }
