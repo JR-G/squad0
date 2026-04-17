@@ -305,13 +305,17 @@ func ensureUserScopeLinearMCPWith(ctx context.Context, runner claudeMCPRunner, a
 		_, _ = runner.Run(ctx, "mcp", "remove", "squad0-linear", "--scope", "user")
 	}
 
+	// --header is a variadic option in claude's CLI — placed before
+	// the positional args it would greedily consume the name and URL.
+	// Putting it at the end (matching the docs example exactly) is
+	// the only ordering that parses correctly.
 	args := []string{
 		"mcp", "add",
 		"--scope", "user",
 		"--transport", "http",
-		"--header", "Authorization: Bearer " + apiKey,
 		"squad0-linear",
 		linearMCPEndpoint,
+		"--header", "Authorization: Bearer " + apiKey,
 	}
 	if output, err := runner.Run(ctx, args...); err != nil {
 		return fmt.Errorf("claude mcp add: %s: %w", strings.TrimSpace(string(output)), err)

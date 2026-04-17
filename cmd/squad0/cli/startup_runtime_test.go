@@ -212,9 +212,9 @@ func TestEnsureUserScopeLinearMCPWith_NotRegistered_RegistersHTTPWithBearer(t *t
 			"mcp", "add",
 			"--scope", "user",
 			"--transport", "http",
-			"--header", "Authorization: Bearer lin_secret",
 			"squad0-linear",
 			"https://mcp.linear.app/mcp",
+			"--header", "Authorization: Bearer lin_secret",
 		},
 		runner.calls[1],
 	)
