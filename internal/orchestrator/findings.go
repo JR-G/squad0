@@ -81,13 +81,11 @@ func (orch *Orchestrator) PersistFindings(ctx context.Context, ticket, transcrip
 	prompt := fmt.Sprintf(
 		`Post a comment on Linear ticket %s summarising what was discovered during implementation.
 
-The Linear MCP tool is registered as a *deferred* tool — load its
-schema first, then call it:
+Prefer mcp__squad0_linear__save_comment; fall back to mcp__claude_ai_Linear__save_comment
+if squad0's isn't exposed. If the tool schema isn't loaded, first run
+ToolSearch with {"query": "select:<tool-name>", "max_results": 1}.
 
-1. ToolSearch with arguments:
-   {"query": "select:mcp__claude_ai_Linear__save_comment", "max_results": 1}
-2. mcp__claude_ai_Linear__save_comment with arguments:
-   {"issueId": "%s", "body": "%s"}`,
+Call save_comment with arguments: {"issueId": "%s", "body": "%s"}`,
 		ticket, ticket, findings)
 
 	_, err := pmAgent.DirectSession(ctx, prompt)

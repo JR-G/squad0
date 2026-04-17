@@ -17,13 +17,23 @@ import (
 // fails we miss a tool_use block in the stream and the smoke test
 // errors. The prompt intentionally uses list_teams (read-only, no
 // side effects) so running the smoke test on startup never mutates
-// the board.
-const linearSmokeTestPrompt = `The Linear MCP tools are registered as *deferred* tools — their schemas must be loaded via ToolSearch before use.
+// the board. Prefers our own squad0-linear MCP (stable, API-key
+// auth, no OAuth expiry) and falls back to the managed claude.ai
+// connector if our stdio server isn't available.
+const linearSmokeTestPrompt = `Call a Linear tool to confirm the integration is live.
 
-Do this exactly:
-1. Call ToolSearch with arguments: {"query": "select:mcp__claude_ai_Linear__list_teams", "max_results": 1}
-2. Call mcp__claude_ai_Linear__list_teams with arguments: {}
-3. Reply with just "ok".`
+Pick whichever tool name is exposed in this session:
+  - mcp__squad0_linear__list_teams (preferred — squad0's own server)
+  - mcp__claude_ai_Linear__list_teams (fallback — managed connector)
+
+If the tool is deferred (not pre-loaded), first load its schema with
+ToolSearch, for example:
+  ToolSearch({"query": "select:mcp__squad0_linear__list_teams", "max_results": 1})
+
+Then call the tool with arguments: {}
+Then reply with just "ok".`
+
+const statusConnected = "connected"
 
 // mcpServerStatus is one entry in the stream-json init payload's
 // mcp_servers array.
@@ -139,11 +149,16 @@ func realVerifyMCPHealth(ctx context.Context, pmAgent *agent.Agent, model, workD
 	return result
 }
 
+// isLinearToolName returns true if the tool name belongs to either
+// the squad0 stdio Linear MCP or the managed claude.ai connector.
+func isLinearToolName(name string) bool {
+	return strings.HasPrefix(name, "mcp__squad0_linear__") ||
+		strings.HasPrefix(name, "mcp__claude_ai_Linear__")
+}
+
 // assertLinearToolInvoked scans the stream-json transcript for a
-// tool_use of a Linear MCP tool and confirms its tool_result was
-// not an error. This catches the deferred-tool class of failure:
-// init reports Linear connected and tools exposed, yet real sessions
-// cannot actually call the tool because the schema isn't loaded.
+// tool_use of a Linear MCP tool (either our stdio server or the
+// managed connector) and confirms its tool_result was not an error.
 func assertLinearToolInvoked(raw string) error {
 	linearInvoked := false
 	linearErrored := false
@@ -165,7 +180,7 @@ func assertLinearToolInvoked(raw string) error {
 		}
 
 		for _, block := range blocks {
-			if block.Type == "tool_use" && strings.HasPrefix(block.Name, "mcp__claude_ai_Linear__") {
+			if block.Type == "tool_use" && isLinearToolName(block.Name) {
 				linearInvoked = true
 			}
 			if block.Type == "tool_result" && block.IsError {
@@ -175,7 +190,7 @@ func assertLinearToolInvoked(raw string) error {
 	}
 
 	if !linearInvoked {
-		return fmt.Errorf("smoke-test prompt asked for a Linear MCP call but no mcp__claude_ai_Linear__* tool_use appeared — deferred-tool loading is broken for this session")
+		return fmt.Errorf("smoke-test prompt asked for a Linear MCP call but no tool_use appeared — neither squad0-linear nor the managed connector responded")
 	}
 	if linearErrored {
 		return fmt.Errorf("Linear MCP tool call returned an error during smoke test — sessions will not be able to use the tool")
@@ -183,23 +198,49 @@ func assertLinearToolInvoked(raw string) error {
 	return nil
 }
 
-// assertLinearHealthy checks both the connection state and that
-// Linear tools are actually exposed in the session.
+// assertLinearHealthy accepts any healthy Linear path: squad0-linear
+// (our stdio server) OR the managed claude.ai connector. At least
+// one must be connected with tools exposed.
 func assertLinearHealthy(init mcpInitMessage) error {
-	linear := findServer(init, "claude.ai Linear")
-	if linear == nil {
-		return fmt.Errorf("claude.ai Linear MCP not advertised — the managed connector is not enabled on this machine")
+	if err := assertSquad0LinearHealthy(init); err == nil {
+		return nil
 	}
-	if linear.Status != "connected" {
-		return fmt.Errorf("claude.ai Linear MCP status=%q, want \"connected\"", linear.Status)
+	if err := assertManagedLinearHealthy(init); err == nil {
+		return nil
 	}
+	return fmt.Errorf("no Linear MCP is healthy: neither squad0-linear nor claude.ai Linear is connected with tools exposed")
+}
 
+func assertSquad0LinearHealthy(init mcpInitMessage) error {
+	entry := findServer(init, "squad0-linear")
+	if entry == nil {
+		return fmt.Errorf("squad0-linear not advertised")
+	}
+	if entry.Status != statusConnected {
+		return fmt.Errorf("squad0-linear status=%q", entry.Status)
+	}
+	for _, name := range init.Tools {
+		if strings.HasPrefix(name, "mcp__squad0_linear__") {
+			return nil
+		}
+	}
+	return fmt.Errorf("squad0-linear connected but no tools exposed")
+}
+
+func assertManagedLinearHealthy(init mcpInitMessage) error {
+	entry := findServer(init, "claude.ai Linear")
+	if entry == nil {
+		return fmt.Errorf("claude.ai Linear MCP not advertised")
+	}
+	if entry.Status != statusConnected {
+		return fmt.Errorf("claude.ai Linear MCP status=%q", entry.Status)
+	}
 	for _, name := range init.Tools {
 		if strings.HasPrefix(name, "mcp__claude_ai_Linear__") {
 			return nil
 		}
 	}
-	return fmt.Errorf("claude.ai Linear is connected but no mcp__claude_ai_Linear__* tools are exposed — sessions will not see Linear (likely --mcp-config is being passed somewhere it shouldn't be)")
+	return fmt.Errorf("claude.ai Linear connected but no tools exposed")
 }
 
 // assertMemoryHealthy accepts either the user-scope name
@@ -211,7 +252,7 @@ func assertMemoryHealthy(init mcpInitMessage) error {
 		if entry == nil {
 			continue
 		}
-		if entry.Status != "connected" {
+		if entry.Status != statusConnected {
 			return fmt.Errorf("memory MCP %q status=%q, want \"connected\" (check SQUAD0_MEMORY_DB env var and that the binary is on PATH)", name, entry.Status)
 		}
 		return nil

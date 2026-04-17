@@ -18,7 +18,7 @@ func TestWireAgentMCP_MemoryErr_HardFails(t *testing.T) {
 	t.Cleanup(restore)
 
 	var out bytes.Buffer
-	err := cli.WireAgentMCP(context.Background(), &out, nil, nil, t.TempDir(), t.TempDir(), true)
+	err := cli.WireAgentMCP(context.Background(), &out, nil, nil, t.TempDir(), t.TempDir(), "lin_secret")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "memory MCP unhealthy")
 }
@@ -30,7 +30,7 @@ func TestWireAgentMCP_OverallErr_HardFails(t *testing.T) {
 	t.Cleanup(restore)
 
 	var out bytes.Buffer
-	err := cli.WireAgentMCP(context.Background(), &out, nil, nil, t.TempDir(), t.TempDir(), true)
+	err := cli.WireAgentMCP(context.Background(), &out, nil, nil, t.TempDir(), t.TempDir(), "lin_secret")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "subprocess crashed")
 }
@@ -42,7 +42,7 @@ func TestWireAgentMCP_LinearErr_NoAPI_HardFails(t *testing.T) {
 	t.Cleanup(restore)
 
 	var out bytes.Buffer
-	err := cli.WireAgentMCP(context.Background(), &out, nil, nil, t.TempDir(), t.TempDir(), false)
+	err := cli.WireAgentMCP(context.Background(), &out, nil, nil, t.TempDir(), t.TempDir(), "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no LINEAR_API_KEY fallback")
 }
@@ -54,7 +54,7 @@ func TestWireAgentMCP_LinearErr_WithAPI_WarnsAndContinues(t *testing.T) {
 	t.Cleanup(restore)
 
 	var out bytes.Buffer
-	err := cli.WireAgentMCP(context.Background(), &out, nil, nil, t.TempDir(), t.TempDir(), true)
+	err := cli.WireAgentMCP(context.Background(), &out, nil, nil, t.TempDir(), t.TempDir(), "lin_secret")
 	require.NoError(t, err)
 	assert.Contains(t, out.String(), "degraded")
 }
@@ -64,7 +64,7 @@ func TestWireAgentMCP_AllHealthy_ReportsSuccess(t *testing.T) {
 	t.Cleanup(restore)
 
 	var out bytes.Buffer
-	err := cli.WireAgentMCP(context.Background(), &out, nil, nil, t.TempDir(), t.TempDir(), true)
+	err := cli.WireAgentMCP(context.Background(), &out, nil, nil, t.TempDir(), t.TempDir(), "lin_secret")
 	require.NoError(t, err)
 	assert.Contains(t, out.String(), "MCP servers verified")
 }

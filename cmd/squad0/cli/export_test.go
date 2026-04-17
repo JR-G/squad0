@@ -56,10 +56,9 @@ func WireAgentMCP(
 	out io.Writer,
 	agents map[agent.Role]*agent.Agent,
 	modelMap map[agent.Role]string,
-	dataDir, targetRepoDir string,
-	linearAPIConfigured bool,
+	dataDir, targetRepoDir, linearAPIKey string,
 ) error {
-	return wireAgentMCP(ctx, out, agents, modelMap, dataDir, targetRepoDir, linearAPIConfigured)
+	return wireAgentMCP(ctx, out, agents, modelMap, dataDir, targetRepoDir, linearAPIKey)
 }
 
 // ParseCronToInterval exports parseCronToInterval for testing.

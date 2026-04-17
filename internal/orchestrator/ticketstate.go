@@ -11,16 +11,15 @@ import (
 
 const moveTicketPromptTemplate = `Move Linear ticket %s to "%s" status.
 
-The Linear MCP tools are registered as *deferred* tools in this session:
-their schemas are not pre-loaded, so calling them directly returns
-InputValidationError. Load the schemas first.
+Prefer the squad0-linear MCP tools (mcp__squad0_linear__*). If those
+aren't exposed, use the managed connector equivalents (mcp__claude_ai_Linear__*).
+If the tool schema isn't pre-loaded, load it first via ToolSearch with
+{"query": "select:<tool-name>", "max_results": 5}.
 
-1. Call ToolSearch with arguments:
-   {"query": "select:mcp__claude_ai_Linear__get_issue,mcp__claude_ai_Linear__list_issue_statuses,mcp__claude_ai_Linear__save_issue", "max_results": 5}
-2. mcp__claude_ai_Linear__get_issue — arguments: {"id": "%s"}
-3. mcp__claude_ai_Linear__list_issue_statuses — arguments: {"teamId": "<teamId from step 2>"}
-4. Find the state id whose name matches "%s"
-5. mcp__claude_ai_Linear__save_issue — arguments: {"id": "%s", "stateId": "<id from step 4>"}
+1. get_issue — arguments: {"id": "%s"}
+2. list_issue_statuses — arguments: {"teamId": "<teamId from step 1>"}
+3. Find the state id whose name matches "%s"
+4. save_issue — arguments: {"id": "%s", "stateId": "<id from step 3>"}
 
 Respond with just "done" when complete, or "failed: <short reason>" if you could not update it.
 `

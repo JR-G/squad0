@@ -185,9 +185,10 @@ func wireAgentMCP(
 	agents map[agent.Role]*agent.Agent,
 	modelMap map[agent.Role]string,
 	_ /* dataDir */, targetRepoDir string,
-	linearAPIConfigured bool,
+	linearAPIKey string,
 ) error {
 	registerMemoryMCP(ctx, out)
+	registerLinearMCP(ctx, out, linearAPIKey)
 
 	result := verifyMCPHealth(ctx, agents[agent.RolePM], modelMap[agent.RolePM], targetRepoDir)
 
@@ -200,7 +201,7 @@ func wireAgentMCP(
 	}
 
 	if result.LinearErr != nil {
-		return handleLinearErr(out, result.LinearErr, linearAPIConfigured)
+		return handleLinearErr(out, result.LinearErr, linearAPIKey != "")
 	}
 
 	_, _ = fmt.Fprint(out, tui.StepDone("MCP servers verified (Linear connected, memory connected)"))
@@ -213,6 +214,28 @@ func handleLinearErr(out io.Writer, linearErr error, linearAPIConfigured bool) e
 	}
 	_, _ = fmt.Fprint(out, tui.StepWarn(fmt.Sprintf("Linear MCP degraded (%v) — using direct GraphQL API for ticket operations", linearErr)))
 	return nil
+}
+
+// registerLinearMCP wires up squad0-linear at user scope, giving
+// sessions a stable Linear toolset that doesn't depend on the
+// OAuth-managed claude.ai connector. Warns and continues on any
+// issue — squad0 can still operate via the direct GraphQL path in
+// MoveLinearTicketStateAPI.
+func registerLinearMCP(ctx context.Context, out io.Writer, apiKey string) {
+	if apiKey == "" {
+		_, _ = fmt.Fprint(out, tui.StepWarn("LINEAR_API_KEY not configured — squad0-linear MCP will not register"))
+		return
+	}
+	binaryPath := resolveLinearBinaryPath()
+	if binaryPath == "" {
+		_, _ = fmt.Fprint(out, tui.StepWarn("squad0-linear-mcp binary not found next to squad0 — Linear MCP will not register"))
+		return
+	}
+	if err := ensureUserScopeLinearMCP(ctx, binaryPath, apiKey); err != nil {
+		_, _ = fmt.Fprint(out, tui.StepWarn(fmt.Sprintf("user-scope Linear MCP registration failed: %v", err)))
+		return
+	}
+	_, _ = fmt.Fprint(out, tui.StepDone("Linear MCP registered (user scope)"))
 }
 
 // registerMemoryMCP wires up squad0-memory at user scope, surfacing
@@ -263,13 +286,43 @@ func ensureUserScopeMemoryMCPWith(ctx context.Context, runner claudeMCPRunner, b
 	return nil
 }
 
+// ensureUserScopeLinearMCP registers squad0-linear at user scope with
+// LINEAR_API_KEY injected at spawn time. Avoiding --mcp-config is
+// still load-bearing (the managed Linear connector only exposes its
+// tools to sessions without --mcp-config); user-scope registration
+// is the supported way to add our own stdio MCP alongside it.
+func ensureUserScopeLinearMCP(ctx context.Context, binaryPath, apiKey string) error {
+	return ensureUserScopeLinearMCPWith(ctx, execClaudeMCPRunner{}, binaryPath, apiKey)
+}
+
+func ensureUserScopeLinearMCPWith(ctx context.Context, runner claudeMCPRunner, binaryPath, apiKey string) error {
+	listOutput, _ := runner.Run(ctx, "mcp", "list")
+	if strings.Contains(string(listOutput), "squad0-linear:") {
+		_, _ = runner.Run(ctx, "mcp", "remove", "squad0-linear", "--scope", "user")
+	}
+
+	args := []string{"mcp", "add", "--scope", "user", "--env", "LINEAR_API_KEY=" + apiKey, "squad0-linear", binaryPath}
+	if output, err := runner.Run(ctx, args...); err != nil {
+		return fmt.Errorf("claude mcp add: %s: %w", strings.TrimSpace(string(output)), err)
+	}
+	return nil
+}
+
 func resolveMemoryBinaryPath() string {
+	return resolveSiblingBinary("squad0-memory-mcp")
+}
+
+func resolveLinearBinaryPath() string {
+	return resolveSiblingBinary("squad0-linear-mcp")
+}
+
+func resolveSiblingBinary(name string) string {
 	exe, err := os.Executable()
 	if err != nil {
 		return ""
 	}
 
-	candidate := filepath.Join(filepath.Dir(exe), "squad0-memory-mcp")
+	candidate := filepath.Join(filepath.Dir(exe), name)
 	if _, statErr := os.Stat(candidate); statErr == nil {
 		return candidate
 	}
