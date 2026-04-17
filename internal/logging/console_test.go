@@ -157,6 +157,51 @@ func TestConsoleWriter_SetRoster_RoleAtEndOfLineReplaced(t *testing.T) {
 	assert.Contains(t, buf.String(), "Mara")
 }
 
+// Cover the various character classes isRoleBoundary checks. Each
+// pair drives a different branch: alpha-suffix, digit-suffix,
+// underscore-prefix, dot-prefix, and an actual boundary char.
+func TestConsoleWriter_SetRoster_BoundaryClasses(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		input        string
+		shouldRename bool
+	}{
+		"alphabetic suffix blocks rename": {"engineer-2x finished", false},
+		"digit suffix blocks rename":      {"engineer-23 finished", false},
+		"underscore prefix blocks rename": {"foo_engineer-2 done", false},
+		"dot prefix blocks rename":        {"pkg.engineer-2 done", false},
+		"colon boundary allows rename":    {"engineer-2: ok", true},
+		"comma boundary allows rename":    {"engineer-2, ok", true},
+		"parens boundary allows rename":   {"(engineer-2) ok", true},
+		"start of line allows rename":     {"engineer-2 mid", true},
+	}
+
+	for name, scenario := range cases {
+		name, scenario := name, scenario
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var buf bytes.Buffer
+			writer := logging.NewConsoleWriter(&buf)
+			writer.SetRoster(map[string]string{"engineer-2": "Mara"})
+
+			_, _ = writer.Write([]byte(scenario.input))
+
+			assertRenamed(t, buf.String(), scenario.input, scenario.shouldRename)
+		})
+	}
+}
+
+func assertRenamed(t *testing.T, output, input string, shouldRename bool) {
+	t.Helper()
+	if shouldRename {
+		assert.Contains(t, output, "Mara", "should have renamed in: %q", input)
+		return
+	}
+	assert.NotContains(t, output, "Mara", "should NOT have renamed in: %q", input)
+}
+
 func TestConsoleWriter_StripLogTimestamp(t *testing.T) {
 	t.Parallel()
 
