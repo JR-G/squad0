@@ -118,9 +118,9 @@ func (orch *Orchestrator) startReview(ctx context.Context, prURL, ticket string,
 		return
 	}
 
-	orch.wg.Add(1)
+	orch.sessions.Add(1)
 	go func() {
-		defer orch.wg.Done()
+		defer orch.sessions.Done()
 		defer func() { _ = orch.checkIns.SetIdle(ctx, agent.RoleReviewer) }()
 
 		orch.runReview(ctx, reviewer, prURL, ticket, workItemID, engineerRole, false)

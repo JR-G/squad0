@@ -8,7 +8,7 @@ import (
 func TestDrainSessions_NoInFlight_ReturnsImmediately(t *testing.T) {
 	t.Parallel()
 
-	orch := &Orchestrator{}
+	orch := &Orchestrator{sessions: NewSessionTracker()}
 
 	start := time.Now()
 	orch.drainSessionsFor(50 * time.Millisecond)
@@ -22,12 +22,12 @@ func TestDrainSessions_NoInFlight_ReturnsImmediately(t *testing.T) {
 func TestDrainSessions_StuckGoroutine_HitsGrace(t *testing.T) {
 	t.Parallel()
 
-	orch := &Orchestrator{}
+	orch := &Orchestrator{sessions: NewSessionTracker()}
 	release := make(chan struct{})
 
-	orch.wg.Add(1)
+	orch.sessions.Add(1)
 	go func() {
-		defer orch.wg.Done()
+		defer orch.sessions.Done()
 		<-release
 	}()
 	t.Cleanup(func() { close(release) })

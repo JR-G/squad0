@@ -28,12 +28,10 @@ type Orchestrator struct {
 	monitor      *health.Monitor
 	running      bool
 	conversation *ConversationEngine
-	wg           sync.WaitGroup
+	sessions     *SessionTracker
 	assigning    bool
 	assigningMu  sync.Mutex
 
-	sessionCancels       map[agent.Role]context.CancelFunc // pause → cancel
-	cancelsMu            sync.Mutex
 	roster               map[agent.Role]string
 	pipelineStore        *pipeline.WorkItemStore
 	handoffStore         *pipeline.HandoffStore
@@ -82,7 +80,7 @@ func NewOrchestrator(
 		checkIns:       checkIns,
 		bot:            bot,
 		assigner:       assigner,
-		sessionCancels: make(map[agent.Role]context.CancelFunc),
+		sessions:       NewSessionTracker(),
 		followedUp:     make(map[int64]bool),
 		mergeAnnounced: make(map[string]bool),
 	}
@@ -288,17 +286,19 @@ func (orch *Orchestrator) startWork(ctx context.Context, assignment Assignment) 
 	assignment.WorkItemID = orch.createPipelineItem(ctx, assignment)
 	go MoveTicketState(ctx, orch.agents[agent.RolePM], assignment.Ticket, "In Progress")
 
-	orch.wg.Add(1)
+	orch.sessions.Add(1)
 	go func() {
-		defer orch.wg.Done()
+		defer orch.sessions.Done()
 		defer orch.clearSessionCancel(assignment.Role)
 		orch.runSession(sessionCtx, agentInstance, assignment)
 	}()
 }
 
-// Wait blocks until all running sessions complete.
+// Wait blocks until all running sessions complete. Unbounded —
+// shutdown uses orch.sessions.DrainFor with a deadline instead.
+// Public for tests that need to drain before assertions.
 func (orch *Orchestrator) Wait() {
-	orch.wg.Wait()
+	orch.sessions.Wait()
 }
 
 func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.Agent, assignment Assignment) {
@@ -421,41 +421,17 @@ func (orch *Orchestrator) RegisterCancelForTest(role agent.Role, cancel context.
 	orch.registerSessionCancel(role, cancel)
 }
 
-// cancelSession cancels a running session for the given role, if any.
-func (orch *Orchestrator) cancelSession(role agent.Role) {
-	orch.cancelsMu.Lock()
-	defer orch.cancelsMu.Unlock()
-
-	cancel, ok := orch.sessionCancels[role]
-	if !ok {
-		return
-	}
-	cancel()
-	delete(orch.sessionCancels, role)
-}
-
-// cancelAllSessions cancels every running session.
-func (orch *Orchestrator) cancelAllSessions() {
-	orch.cancelsMu.Lock()
-	defer orch.cancelsMu.Unlock()
-
-	for role, cancel := range orch.sessionCancels {
-		cancel()
-		delete(orch.sessionCancels, role)
-	}
-}
-
+// cancelSession, cancelAllSessions, registerSessionCancel,
+// clearSessionCancel are thin forwards to the SessionTracker. Kept
+// as orchestrator-level helpers so existing callers don't need to
+// reach into orch.sessions directly — the tracker is an internal
+// implementation detail. Test-export wrappers stay below.
+func (orch *Orchestrator) cancelSession(role agent.Role) { orch.sessions.Cancel(role) }
+func (orch *Orchestrator) cancelAllSessions()            { orch.sessions.CancelAll() }
 func (orch *Orchestrator) registerSessionCancel(role agent.Role, cancel context.CancelFunc) {
-	orch.cancelsMu.Lock()
-	defer orch.cancelsMu.Unlock()
-	orch.sessionCancels[role] = cancel
+	orch.sessions.Register(role, cancel)
 }
-
-func (orch *Orchestrator) clearSessionCancel(role agent.Role) {
-	orch.cancelsMu.Lock()
-	defer orch.cancelsMu.Unlock()
-	delete(orch.sessionCancels, role)
-}
+func (orch *Orchestrator) clearSessionCancel(role agent.Role) { orch.sessions.Clear(role) }
 
 // filterHealthyEngineers returns engineers that are not in a failing
 // health state.

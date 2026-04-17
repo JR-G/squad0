@@ -200,9 +200,9 @@ func (orch *Orchestrator) resumeAssignment(ctx context.Context, item pipeline.Wo
 	sessionCtx, cancel := context.WithCancel(ctx)
 	orch.registerSessionCancel(item.Engineer, cancel)
 
-	orch.wg.Add(1)
+	orch.sessions.Add(1)
 	go func() {
-		defer orch.wg.Done()
+		defer orch.sessions.Done()
 		defer orch.clearSessionCancel(item.Engineer)
 		orch.runSession(sessionCtx, agentInstance, assignment)
 	}()
@@ -268,9 +268,9 @@ func (orch *Orchestrator) resumeWithGitHubState(ctx context.Context, item pipeli
 		}
 		log.Printf("resume: %s is approved on GitHub — sending engineer to merge", item.Ticket)
 		orch.forceAdvancePipeline(ctx, item.ID, pipeline.StageApproved, "resume: github reports approved")
-		orch.wg.Add(1)
+		orch.sessions.Add(1)
 		go func() {
-			defer orch.wg.Done()
+			defer orch.sessions.Done()
 			orch.startEngineerMerge(ctx, item.PRURL, item.Ticket, item.ID, item.Engineer)
 		}()
 

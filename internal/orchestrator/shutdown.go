@@ -2,7 +2,6 @@ package orchestrator
 
 import (
 	"context"
-	"log"
 	"time"
 
 	"github.com/JR-G/squad0/internal/agent"
@@ -16,13 +15,14 @@ const shutdownGrace = 30 * time.Second
 
 // runPostSessionAsync detaches findings persistence and memory flush
 // from the session context (which is cancelled on shutdown or pause)
-// and tracks them on orch.wg so drainSessions waits for them.
+// and tracks them on the SessionTracker so drainSessions waits for
+// them.
 func (orch *Orchestrator) runPostSessionAsync(ctx context.Context, agentInstance *agent.Agent, ticket, transcript string) {
 	postCtx, postCancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
 
-	orch.wg.Add(1)
+	orch.sessions.Add(1)
 	go func() {
-		defer orch.wg.Done()
+		defer orch.sessions.Done()
 		defer postCancel()
 
 		orch.PersistFindings(postCtx, ticket, transcript)
@@ -34,25 +34,16 @@ func (orch *Orchestrator) runPostSessionAsync(ctx context.Context, agentInstance
 	}()
 }
 
-// drainSessions blocks until in-flight session goroutines finish or the
-// shutdown grace period elapses, whichever comes first. Critical for
-// pre-exit memory flushes — without this, learnings from sessions still
-// running at shutdown are silently dropped.
+// drainSessions waits for in-flight session goroutines or the
+// shutdown grace period to elapse, whichever comes first. Critical
+// for pre-exit memory flushes — without this, learnings from
+// sessions still running at shutdown are silently dropped.
 func (orch *Orchestrator) drainSessions() {
-	orch.drainSessionsFor(shutdownGrace)
+	orch.sessions.DrainFor(shutdownGrace)
 }
 
+// drainSessionsFor exposes the bounded wait for tests that need a
+// short grace period to verify the timeout branch fires.
 func (orch *Orchestrator) drainSessionsFor(grace time.Duration) {
-	done := make(chan struct{})
-	go func() {
-		orch.wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		log.Println("orchestrator: all sessions drained cleanly")
-	case <-time.After(grace):
-		log.Printf("orchestrator: shutdown grace (%s) elapsed with sessions still running — exiting anyway", grace)
-	}
+	orch.sessions.DrainFor(grace)
 }
