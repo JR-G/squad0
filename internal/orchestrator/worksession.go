@@ -19,13 +19,23 @@ const implementationPromptTemplate = `You are working on ticket %s.
 ## Workflow
 Step 1: CONTEXT — Read the full ticket from Linear using your MCP tools. Use recall to check memory for anything relevant.
 Step 2: EXPLORE — Read the codebase to understand the existing code and patterns.
-Step 3: IMPLEMENT — Write clean, well-tested code. Make atomic commits (feat:, fix:, etc.).
-Step 4: SELF-REVIEW — Read your own diff. Check for missing tests, error handling, edge cases.
-Step 5: VERIFY — Run the test suite. Fix any failures.
-Step 6: SUBMIT — Push and create a PR:
+Step 3: PLAN — Before writing any code, write a 3-5 line plan in your output explaining:
+   - the files you'll touch and why
+   - the tests you'll add
+   - what you're explicitly NOT doing (out of scope)
+Step 4: CRITIQUE — Read your own plan and list 2-3 risks or weaknesses (e.g. edge cases you haven't covered, assumptions that might be wrong, tests that will be flaky). If any feel real, revise the plan before continuing.
+Step 5: IMPLEMENT — Write clean, well-tested code. Make atomic commits (feat:, fix:, etc.).
+Step 6: SELF-REVIEW — Read your own diff. Check for missing tests, error handling, edge cases. Address anything from Step 4 that you handwaved.
+Step 7: VERIFY — Run the test suite. Fix any failures.
+Step 8: SUBMIT — Push and create a PR:
    git push -u origin HEAD
    gh pr create --title "%s: <description>" --body "<what and why>"
-Step 7: DONE — Move ticket to "In Review" status.
+Step 9: DONE — Move ticket to "In Review" status.
+
+Steps 3 and 4 are not optional — write them out as plain prose before
+starting the implementation. The point is to think before acting, not
+to follow a checklist after the fact. If your plan changes during
+implementation, note the change in your output before continuing.
 
 Your session is not complete until a PR exists on GitHub. If a step fails, fix it and continue.
 `

@@ -32,6 +32,19 @@ func TestBuildImplementationPrompt_IncludesTicketAndDescription(t *testing.T) {
 	assert.Contains(t, prompt, "Linear")
 }
 
+func TestBuildImplementationPrompt_EnforcesPlanCritiqueRevise(t *testing.T) {
+	t.Parallel()
+
+	prompt := orchestrator.BuildImplementationPrompt("JAM-99", "any work")
+
+	// Reflexion-style structure: PLAN before code, CRITIQUE the plan,
+	// then implement. Tests guard against the steps being silently
+	// dropped if the prompt template is edited later.
+	assert.Contains(t, prompt, "PLAN")
+	assert.Contains(t, prompt, "CRITIQUE")
+	assert.Contains(t, prompt, "not optional", "PLAN/CRITIQUE must be required, not advisory")
+}
+
 func TestNewWorkSession_CreatesWorktree(t *testing.T) {
 	t.Parallel()
 
