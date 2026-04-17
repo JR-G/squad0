@@ -27,6 +27,7 @@ type Orchestrator struct {
 	assigner     *Assigner
 	scheduler    *WorkScheduler
 	health       *HealthSupervisor
+	chat         *ConversationCoordinator
 	running      bool
 	conversation *ConversationEngine
 	sessions     *SessionTracker
@@ -82,6 +83,7 @@ func NewOrchestrator(
 		scheduler:      NewWorkScheduler(assigner),
 		sessions:       NewSessionTracker(),
 		health:         NewHealthSupervisor(nil),
+		chat:           NewConversationCoordinator(bot),
 		followedUp:     make(map[int64]bool),
 		mergeAnnounced: make(map[string]bool),
 	}
@@ -223,6 +225,7 @@ func (orch *Orchestrator) dispatchAssignments(ctx context.Context, assignments [
 // and wires up the pause checker so paused agents stay silent.
 func (orch *Orchestrator) SetConversationEngine(engine *ConversationEngine) {
 	orch.conversation = engine
+	orch.chat.SetConversation(engine)
 	engine.SetPauseChecker(orch.IsPaused)
 }
 
@@ -247,6 +250,7 @@ func (orch *Orchestrator) SetProjectFactStore(store *memory.FactStore) {
 // chosen names instead of role IDs.
 func (orch *Orchestrator) SetRoster(roster map[agent.Role]string) {
 	orch.roster = roster
+	orch.chat.SetRoster(roster)
 }
 
 func (orch *Orchestrator) startWork(ctx context.Context, assignment Assignment) {
@@ -374,19 +378,7 @@ func (orch *Orchestrator) runSession(ctx context.Context, agentInstance *agent.A
 }
 
 func (orch *Orchestrator) postAsRole(ctx context.Context, channel, text string, role agent.Role) {
-	if orch.bot == nil {
-		return
-	}
-
-	ts, err := orch.bot.PostAsRoleWithTS(ctx, channel, text, role)
-	if err != nil {
-		log.Printf("postAsRole failed for %s in %s: %v", role, channel, err)
-		return
-	}
-
-	if orch.conversation != nil {
-		go orch.conversation.OnThreadMessage(ctx, channel, orch.NameForRole(role), text, ts)
-	}
+	orch.chat.Post(ctx, channel, text, role)
 }
 
 // AnnounceForTest exports announceAsRole for testing.
@@ -398,11 +390,7 @@ func (orch *Orchestrator) AnnounceForTest(ctx context.Context, channel, text str
 // engine. Used for status updates and announcements that don't need
 // agent responses.
 func (orch *Orchestrator) announceAsRole(ctx context.Context, channel, text string, role agent.Role) {
-	if orch.bot == nil {
-		return
-	}
-
-	_ = orch.bot.PostAsRole(ctx, channel, text, role)
+	orch.chat.Announce(ctx, channel, text, role)
 }
 
 // RegisterCancelForTest exports registerSessionCancel for testing.

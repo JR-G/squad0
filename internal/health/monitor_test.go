@@ -104,11 +104,11 @@ func TestMonitor_Evaluate_LongSession_SetsSlow(t *testing.T) {
 
 	roles := []agent.Role{agent.RoleEngineer1}
 	mon := health.NewMonitor(roles, health.MonitorConfig{
-		MaxSessionTime: 10 * time.Millisecond,
+		MaxSessionTime: 100 * time.Millisecond,
 	})
 
 	mon.RecordSessionStart(agent.RoleEngineer1)
-	time.Sleep(8 * time.Millisecond)
+	time.Sleep(60 * time.Millisecond)
 	mon.Evaluate()
 
 	state, _ := mon.GetHealth(agent.RoleEngineer1)
@@ -120,11 +120,11 @@ func TestMonitor_Evaluate_VeryLongSession_SetsStuck(t *testing.T) {
 
 	roles := []agent.Role{agent.RoleEngineer1}
 	mon := health.NewMonitor(roles, health.MonitorConfig{
-		MaxSessionTime: 10 * time.Millisecond,
+		MaxSessionTime: 100 * time.Millisecond,
 	})
 
 	mon.RecordSessionStart(agent.RoleEngineer1)
-	time.Sleep(15 * time.Millisecond)
+	time.Sleep(150 * time.Millisecond)
 	mon.Evaluate()
 
 	state, _ := mon.GetHealth(agent.RoleEngineer1)

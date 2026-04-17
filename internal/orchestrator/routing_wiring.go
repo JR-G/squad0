@@ -34,18 +34,9 @@ func (orch *Orchestrator) CancelSessionForTest(role agent.Role) {
 }
 
 // NameForRole returns the agent's chosen name, falling back to the
-// role ID if no name is known.
+// role ID if no name is known. Thin forward to ConversationCoordinator.
 func (orch *Orchestrator) NameForRole(role agent.Role) string {
-	if orch.roster == nil {
-		return string(role)
-	}
-
-	name, ok := orch.roster[role]
-	if !ok || name == string(role) {
-		return string(role)
-	}
-
-	return name
+	return orch.chat.NameForRole(role)
 }
 
 // SetSpecialisationStore connects the specialisation tracker for
