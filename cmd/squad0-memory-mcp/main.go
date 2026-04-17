@@ -17,14 +17,23 @@ import (
 // the orchestrator can only vary the env on each spawn.
 const envDBPath = "SQUAD0_MEMORY_DB"
 
+// fallbackDBPath is what we open when neither --db nor SQUAD0_MEMORY_DB
+// is provided. It keeps the server connectable in interactive
+// `claude` sessions where the env var isn't set — without it, the
+// binary exits and `claude mcp list` permanently shows
+// "squad0-memory ✘ failed". The in-memory DB has no persisted data,
+// so memory tools work but return nothing useful, which is the
+// honest behaviour when no agent context is provided.
+const fallbackDBPath = ":memory:"
+
 func main() {
 	dbPath := flag.String("db", "", "path to the agent's SQLite database (overridden by "+envDBPath+" env var)")
 	flag.Parse()
 
 	resolved := resolveDBPath(*dbPath, os.Getenv(envDBPath))
 	if resolved == "" {
-		fmt.Fprintf(os.Stderr, "error: set %s env var or pass --db\n", envDBPath)
-		os.Exit(1)
+		fmt.Fprintf(os.Stderr, "warn: %s not set and --db not passed — running with an empty in-memory DB\n", envDBPath)
+		resolved = fallbackDBPath
 	}
 
 	if err := run(resolved); err != nil {
