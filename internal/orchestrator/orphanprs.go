@@ -14,6 +14,33 @@ import (
 
 var ticketFromBranch = regexp.MustCompile(`(?i)feat/(jam-\d+)`)
 
+var listOpenPRsFunc = listOpenPRs
+
+// SetListOpenPRsForTest swaps the open-PR fetcher used by
+// recoverOrphanedPRs and returns a restore func.
+func SetListOpenPRsForTest(fn func(ctx context.Context, repoDir string) ([]OpenPR, error)) func() {
+	prev := listOpenPRsFunc
+	listOpenPRsFunc = func(ctx context.Context, repoDir string) ([]openPR, error) {
+		prs, err := fn(ctx, repoDir)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]openPR, len(prs))
+		for i, pr := range prs {
+			out[i] = openPR{ticket: pr.Ticket, url: pr.URL, branch: pr.Branch}
+		}
+		return out, nil
+	}
+	return func() { listOpenPRsFunc = prev }
+}
+
+// OpenPR is the test-visible mirror of openPR.
+type OpenPR struct {
+	Ticket string
+	URL    string
+	Branch string
+}
+
 // RecoverOrphanedPRsForTest exports recoverOrphanedPRs for testing.
 func (orch *Orchestrator) RecoverOrphanedPRsForTest(ctx context.Context) {
 	orch.recoverOrphanedPRs(ctx)
@@ -34,7 +61,7 @@ func (orch *Orchestrator) recoverOrphanedPRs(ctx context.Context) {
 		return
 	}
 
-	prs, err := listOpenPRs(ctx, orch.cfg.TargetRepoDir)
+	prs, err := listOpenPRsFunc(ctx, orch.cfg.TargetRepoDir)
 	if err != nil {
 		log.Printf("orphan PR scan failed: %v", err)
 		return

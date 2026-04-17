@@ -233,3 +233,101 @@ func TestParseOpenPRs_SingleValidPR_ReturnsSingleItem(t *testing.T) {
 	prs := orchestrator.ParseOpenPRsForTest(output)
 	require.Len(t, prs, 1)
 }
+
+func TestRecoverOrphanedPRs_NewTicket_CreatesPipelineItem(t *testing.T) {
+	ctx := context.Background()
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	pipeStore := newPipelineStore(t, sqlDB)
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{TargetRepoDir: "/tmp/x"},
+		map[agent.Role]*agent.Agent{},
+		checkIns, nil, nil,
+	)
+	orch.SetPipeline(pipeStore)
+
+	restore := orchestrator.SetListOpenPRsForTest(func(_ context.Context, _ string) ([]orchestrator.OpenPR, error) {
+		return []orchestrator.OpenPR{
+			{Ticket: "JAM-OPRH", URL: "https://github.com/test/pull/77", Branch: "feat/jam-orph"},
+		}, nil
+	})
+	t.Cleanup(restore)
+
+	orch.RecoverOrphanedPRsForTest(ctx)
+
+	items, err := pipeStore.GetByTicket(ctx, "JAM-OPRH")
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, "https://github.com/test/pull/77", items[0].PRURL)
+	assert.Equal(t, "feat/jam-orph", items[0].Branch)
+}
+
+func TestRecoverOrphanedPRs_AlreadyTracked_Skipped(t *testing.T) {
+	ctx := context.Background()
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	pipeStore := newPipelineStore(t, sqlDB)
+	_, _ = pipeStore.Create(ctx, pipeline.WorkItem{
+		Ticket: "JAM-EXIST", Engineer: agent.RoleEngineer1, Stage: pipeline.StageWorking,
+	})
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{TargetRepoDir: "/tmp/x"},
+		map[agent.Role]*agent.Agent{},
+		checkIns, nil, nil,
+	)
+	orch.SetPipeline(pipeStore)
+
+	restore := orchestrator.SetListOpenPRsForTest(func(_ context.Context, _ string) ([]orchestrator.OpenPR, error) {
+		return []orchestrator.OpenPR{
+			{Ticket: "JAM-EXIST", URL: "https://github.com/test/pull/88", Branch: "feat/jam-exist"},
+		}, nil
+	})
+	t.Cleanup(restore)
+
+	orch.RecoverOrphanedPRsForTest(ctx)
+
+	items, err := pipeStore.GetByTicket(ctx, "JAM-EXIST")
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Empty(t, items[0].PRURL)
+}
+
+func TestRecoverOrphanedPRs_FetcherError_Logs(t *testing.T) {
+	ctx := context.Background()
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	pipeStore := newPipelineStore(t, sqlDB)
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{TargetRepoDir: "/tmp/x"},
+		map[agent.Role]*agent.Agent{},
+		checkIns, nil, nil,
+	)
+	orch.SetPipeline(pipeStore)
+
+	restore := orchestrator.SetListOpenPRsForTest(func(_ context.Context, _ string) ([]orchestrator.OpenPR, error) {
+		return nil, assert.AnError
+	})
+	t.Cleanup(restore)
+
+	assert.NotPanics(t, func() {
+		orch.RecoverOrphanedPRsForTest(ctx)
+	})
+}
