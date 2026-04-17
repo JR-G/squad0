@@ -8,6 +8,9 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	ghcli "github.com/JR-G/squad0/internal/integrations/github/cli"
+	"github.com/JR-G/squad0/internal/ports"
 )
 
 const (
@@ -222,11 +225,11 @@ func SetLiveBotReviewCheckerForTest(fn func(context.Context, string, string) boo
 	return func() { liveBotReviewChecker = prev }
 }
 
-// hasLiveBotReview shells out to gh to check whether Devin or
-// CodeRabbit has an active COMMENTED review on the PR head. A review
-// is "live" when its submittedAt is after the last commit on the
-// branch — once the engineer pushes a fix the review becomes stale
-// and stops blocking the approval gate.
+// hasLiveBotReview asks the configured PullRequestHost whether
+// Devin or CodeRabbit has an active COMMENTED review on the PR
+// head. A review is "live" when its submittedAt is after the last
+// commit on the branch — once the engineer pushes a fix the review
+// becomes stale and stops blocking the approval gate.
 func hasLiveBotReview(ctx context.Context, repoDir, prURL string) bool {
 	if repoDir == "" || prURL == "" || ctx.Err() != nil {
 		return false
@@ -234,16 +237,19 @@ func hasLiveBotReview(ctx context.Context, repoDir, prURL string) bool {
 	if _, err := os.Stat(repoDir + "/.git"); err != nil {
 		return false
 	}
-	cmd := exec.CommandContext(ctx, "gh", "pr", "view", prURL, "--json", "reviews,commits")
-	cmd.Dir = repoDir
-	output, err := cmd.Output()
+	host := ghcli.NewClient(repoDir)
+	reviews, err := host.Reviews(ctx, prURL)
 	if err != nil {
 		return false
 	}
-	return parseLiveBotReview(output)
+	commits, err := host.Commits(ctx, prURL)
+	if err != nil {
+		return false
+	}
+	return liveBotReview(reviews, commits)
 }
 
-// parseLiveBotReview reports whether the given gh JSON blob contains
+// liveBotReview reports whether the given reviews + commits include
 // a COMMENTED review from a known bot that should still block merge.
 //
 // A bot review counts as live when:
@@ -261,7 +267,41 @@ func hasLiveBotReview(ctx context.Context, repoDir, prURL string) bool {
 // and the bot review stays "after the last commit" indefinitely.
 // Seen in the wild on JAM-24.
 //
-// Pure function, tested directly.
+// Pure function over typed port values. parseLiveBotReview is the
+// raw-JSON wrapper retained for tests.
+func liveBotReview(reviews []ports.PRReview, commits []ports.PRCommit) bool {
+	if len(commits) == 0 {
+		return false
+	}
+
+	lastCommit := commits[0].CommittedDate
+	for _, commit := range commits[1:] {
+		if commit.CommittedDate.After(lastCommit) {
+			lastCommit = commit.CommittedDate
+		}
+	}
+
+	for _, review := range reviews {
+		if review.State != "COMMENTED" {
+			continue
+		}
+		if !isBotReviewer(review.AuthorLogin) {
+			continue
+		}
+		if !review.SubmittedAt.After(lastCommit) {
+			continue
+		}
+		if humanApprovedAfter(reviews, review.SubmittedAt) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// parseLiveBotReview keeps the raw-JSON entry point alive for the
+// existing test suite while liveBotReview drives production from
+// typed port values.
 func parseLiveBotReview(data []byte) bool {
 	var parsed struct {
 		Reviews []struct {
@@ -278,52 +318,28 @@ func parseLiveBotReview(data []byte) bool {
 	if err := json.Unmarshal(data, &parsed); err != nil {
 		return false
 	}
-	if len(parsed.Commits) == 0 {
-		return false
-	}
 
-	lastCommit := parsed.Commits[0].CommittedDate
-	for _, commit := range parsed.Commits[1:] {
-		if commit.CommittedDate.After(lastCommit) {
-			lastCommit = commit.CommittedDate
-		}
+	reviews := make([]ports.PRReview, len(parsed.Reviews))
+	for i, raw := range parsed.Reviews {
+		reviews[i] = ports.PRReview{AuthorLogin: raw.Author.Login, State: raw.State, SubmittedAt: raw.SubmittedAt}
 	}
-
-	for _, review := range parsed.Reviews {
-		if review.State != "COMMENTED" {
-			continue
-		}
-		if !isBotReviewer(review.Author.Login) {
-			continue
-		}
-		if !review.SubmittedAt.After(lastCommit) {
-			continue
-		}
-		if humanApprovedAfter(parsed.Reviews, review.SubmittedAt) {
-			continue
-		}
-		return true
+	commits := make([]ports.PRCommit, len(parsed.Commits))
+	for i, raw := range parsed.Commits {
+		commits[i] = ports.PRCommit{CommittedDate: raw.CommittedDate}
 	}
-	return false
+	return liveBotReview(reviews, commits)
 }
 
 // humanApprovedAfter reports whether any human reviewer submitted an
 // APPROVED review after the given time. "Human" is defined as
 // not-isBotReviewer — anyone whose login isn't on the known-bot list
 // counts, including squad0's own reviewer agents.
-func humanApprovedAfter(reviews []struct {
-	Author struct {
-		Login string `json:"login"`
-	} `json:"author"`
-	State       string    `json:"state"`
-	SubmittedAt time.Time `json:"submittedAt"`
-}, after time.Time,
-) bool {
+func humanApprovedAfter(reviews []ports.PRReview, after time.Time) bool {
 	for _, review := range reviews {
 		if review.State != "APPROVED" {
 			continue
 		}
-		if isBotReviewer(review.Author.Login) {
+		if isBotReviewer(review.AuthorLogin) {
 			continue
 		}
 		if review.SubmittedAt.After(after) {
