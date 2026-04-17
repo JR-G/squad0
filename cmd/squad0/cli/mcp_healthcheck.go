@@ -12,18 +12,13 @@ import (
 	"github.com/JR-G/squad0/internal/agent"
 )
 
-// linearSmokeTestPrompt forces Claude to exercise the full deferred-
-// tool flow: ToolSearch → tool_use of the loaded tool. If either step
-// fails we miss a tool_use block in the stream and the smoke test
-// errors. The prompt intentionally uses list_teams (read-only, no
-// side effects) so running the smoke test on startup never mutates
-// the board. Prefers our own squad0-linear MCP (stable, API-key
-// auth, no OAuth expiry) and falls back to the managed claude.ai
-// connector if our stdio server isn't available.
+// linearSmokeTestPrompt confirms a Linear tool is callable end-to-end.
+// squad0-linear is the bearer-auth registration of Linear's official
+// MCP; the managed claude.ai Linear connector remains a fallback.
 const linearSmokeTestPrompt = `Call a Linear tool to confirm the integration is live.
 
 Pick whichever tool name is exposed in this session:
-  - mcp__squad0_linear__list_teams (preferred — squad0's own server)
+  - mcp__squad0_linear__list_teams (preferred — bearer auth, no OAuth expiry)
   - mcp__claude_ai_Linear__list_teams (fallback — managed connector)
 
 If the tool is deferred (not pre-loaded), first load its schema with
