@@ -12,6 +12,19 @@ import (
 	"github.com/JR-G/squad0/internal/agent"
 )
 
+// linearSmokeTestPrompt forces Claude to exercise the full deferred-
+// tool flow: ToolSearch → tool_use of the loaded tool. If either step
+// fails we miss a tool_use block in the stream and the smoke test
+// errors. The prompt intentionally uses list_teams (read-only, no
+// side effects) so running the smoke test on startup never mutates
+// the board.
+const linearSmokeTestPrompt = `The Linear MCP tools are registered as *deferred* tools — their schemas must be loaded via ToolSearch before use.
+
+Do this exactly:
+1. Call ToolSearch with arguments: {"query": "select:mcp__claude_ai_Linear__list_teams", "max_results": 1}
+2. Call mcp__claude_ai_Linear__list_teams with arguments: {}
+3. Reply with just "ok".`
+
 // mcpServerStatus is one entry in the stream-json init payload's
 // mcp_servers array.
 type mcpServerStatus struct {
@@ -27,6 +40,25 @@ type mcpInitMessage struct {
 	SubType    string            `json:"subtype"`
 	MCPServers []mcpServerStatus `json:"mcp_servers"`
 	Tools      []string          `json:"tools"`
+}
+
+// smokeContentBlock is the assistant-message content shape we care
+// about — enough to spot a tool_use of a Linear MCP tool and a
+// subsequent tool_result that signals an error.
+type smokeContentBlock struct {
+	Type    string `json:"type"`
+	Name    string `json:"name"`
+	IsError bool   `json:"is_error"`
+}
+
+// smokeStreamLine mirrors the subset of a stream-json line we inspect
+// to confirm the deferred-tool flow succeeded.
+type smokeStreamLine struct {
+	Type    string `json:"type"`
+	Message struct {
+		Content []smokeContentBlock `json:"content"`
+	} `json:"message"`
+	Content []smokeContentBlock `json:"content"`
 }
 
 // verifyMCPHealth is the startup smoke-test hook. Overridable so
@@ -59,7 +91,7 @@ func realVerifyMCPHealth(ctx context.Context, pmAgent *agent.Agent, model, workD
 		return fmt.Errorf("PM model is empty — cannot spawn smoke-test subprocess")
 	}
 
-	smokeCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	smokeCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 
 	args := []string{
@@ -71,7 +103,7 @@ func realVerifyMCPHealth(ctx context.Context, pmAgent *agent.Agent, model, workD
 	}
 
 	cmd := exec.CommandContext(smokeCtx, "claude", args...)
-	cmd.Stdin = strings.NewReader("ok")
+	cmd.Stdin = strings.NewReader(linearSmokeTestPrompt)
 	if workDir != "" {
 		cmd.Dir = workDir
 	}
@@ -85,7 +117,8 @@ func realVerifyMCPHealth(ctx context.Context, pmAgent *agent.Agent, model, workD
 		return fmt.Errorf("running claude smoke test: %w", err)
 	}
 
-	init, found := parseMCPInit(string(output))
+	raw := string(output)
+	init, found := parseMCPInit(raw)
 	if !found {
 		return fmt.Errorf("no MCP init line in claude smoke-test output")
 	}
@@ -93,7 +126,54 @@ func realVerifyMCPHealth(ctx context.Context, pmAgent *agent.Agent, model, workD
 	if err := assertLinearHealthy(init); err != nil {
 		return err
 	}
-	return assertMemoryHealthy(init)
+	if err := assertMemoryHealthy(init); err != nil {
+		return err
+	}
+	return assertLinearToolInvoked(raw)
+}
+
+// assertLinearToolInvoked scans the stream-json transcript for a
+// tool_use of a Linear MCP tool and confirms its tool_result was
+// not an error. This catches the deferred-tool class of failure:
+// init reports Linear connected and tools exposed, yet real sessions
+// cannot actually call the tool because the schema isn't loaded.
+func assertLinearToolInvoked(raw string) error {
+	linearInvoked := false
+	linearErrored := false
+
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		var parsed smokeStreamLine
+		if err := json.Unmarshal([]byte(line), &parsed); err != nil {
+			continue
+		}
+
+		blocks := parsed.Message.Content
+		if len(blocks) == 0 {
+			blocks = parsed.Content
+		}
+
+		for _, block := range blocks {
+			if block.Type == "tool_use" && strings.HasPrefix(block.Name, "mcp__claude_ai_Linear__") {
+				linearInvoked = true
+			}
+			if block.Type == "tool_result" && block.IsError {
+				linearErrored = true
+			}
+		}
+	}
+
+	if !linearInvoked {
+		return fmt.Errorf("smoke-test prompt asked for a Linear MCP call but no mcp__claude_ai_Linear__* tool_use appeared — deferred-tool loading is broken for this session")
+	}
+	if linearErrored {
+		return fmt.Errorf("Linear MCP tool call returned an error during smoke test — sessions will not be able to use the tool")
+	}
+	return nil
 }
 
 // assertLinearHealthy checks both the connection state and that

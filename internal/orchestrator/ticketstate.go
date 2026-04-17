@@ -4,35 +4,82 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 
 	"github.com/JR-G/squad0/internal/agent"
 )
 
 const moveTicketPromptTemplate = `Move Linear ticket %s to "%s" status.
 
-Use the Linear MCP tools (these are the exact tool names — do not guess
-shorter variants, they will not exist):
+The Linear MCP tools are registered as *deferred* tools in this session:
+their schemas are not pre-loaded, so calling them directly returns
+InputValidationError. Load the schemas first.
 
-1. mcp__claude_ai_Linear__get_issue — arguments: {"id": "%s"}
-2. mcp__claude_ai_Linear__list_issue_statuses — arguments: {"teamId": "<teamId from step 1>"}
-3. Find the state id whose name matches "%s"
-4. mcp__claude_ai_Linear__save_issue — arguments: {"id": "%s", "stateId": "<id from step 3>"}
+1. Call ToolSearch with arguments:
+   {"query": "select:mcp__claude_ai_Linear__get_issue,mcp__claude_ai_Linear__list_issue_statuses,mcp__claude_ai_Linear__save_issue", "max_results": 5}
+2. mcp__claude_ai_Linear__get_issue — arguments: {"id": "%s"}
+3. mcp__claude_ai_Linear__list_issue_statuses — arguments: {"teamId": "<teamId from step 2>"}
+4. Find the state id whose name matches "%s"
+5. mcp__claude_ai_Linear__save_issue — arguments: {"id": "%s", "stateId": "<id from step 4>"}
 
 Respond with just "done" when complete, or "failed: <short reason>" if you could not update it.
 `
 
-// The fmt.Sprintf call in MoveTicketState fills these placeholders in
-// order:
-//  1. ticket          — "Move Linear ticket %s ..."
-//  2. targetState     — "to \"%s\" status"
-//  3. ticket          — get_issue id
-//  4. targetState     — "whose name matches \"%s\""
-//  5. ticket          — save_issue id
+// linearStateSetter is the API-based transition path. When set, it is
+// tried first and only falls back to the PM-via-MCP path on error.
+// The setter is nil until start.go wires it up with the configured
+// LINEAR_API_KEY and team ID, which lets MoveTicketState stay a
+// package-level function with no struct plumbing.
+var (
+	linearStateSetterMu sync.RWMutex
+	linearStateSetter   func(ctx context.Context, ticket, targetState string) error
+)
 
-// MoveTicketState uses the PM agent to transition a Linear ticket to
-// the given state. This is a safety net — agents also move tickets
-// themselves via MCP tools during sessions.
+// SetLinearStateSetter installs a transition function that bypasses
+// MCP (typically MoveLinearTicketStateAPI bound to apiKey + teamID).
+// Passing nil clears it.
+func SetLinearStateSetter(fn func(ctx context.Context, ticket, targetState string) error) {
+	linearStateSetterMu.Lock()
+	defer linearStateSetterMu.Unlock()
+	linearStateSetter = fn
+}
+
+func currentLinearStateSetter() func(ctx context.Context, ticket, targetState string) error {
+	linearStateSetterMu.RLock()
+	defer linearStateSetterMu.RUnlock()
+	return linearStateSetter
+}
+
+// MoveTicketState transitions a Linear ticket to the given state.
+// Prefers the direct GraphQL API path when a setter has been
+// installed; falls back to a PM DirectSession that calls the Linear
+// MCP tools. The MCP path exists for environments that haven't
+// configured LINEAR_API_KEY — it is slower and less reliable because
+// MCP tools are deferred and the model has to ToolSearch them first.
 func MoveTicketState(ctx context.Context, pmAgent *agent.Agent, ticket, targetState string) {
+	if tryMoveViaAPI(ctx, ticket, targetState) {
+		return
+	}
+	moveViaPMSession(ctx, pmAgent, ticket, targetState)
+}
+
+// tryMoveViaAPI returns true if the API path handled the transition
+// (success), false if no setter is installed or the call failed and
+// the caller should fall back to the PM path.
+func tryMoveViaAPI(ctx context.Context, ticket, targetState string) bool {
+	setter := currentLinearStateSetter()
+	if setter == nil {
+		return false
+	}
+	if err := setter(ctx, ticket, targetState); err != nil {
+		log.Printf("Linear API transition failed for %s → %s: %v (falling back to PM session)", ticket, targetState, err)
+		return false
+	}
+	log.Printf("ticket %s → %s via Linear API", ticket, targetState)
+	return true
+}
+
+func moveViaPMSession(ctx context.Context, pmAgent *agent.Agent, ticket, targetState string) {
 	if pmAgent == nil {
 		return
 	}

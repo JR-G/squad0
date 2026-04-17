@@ -1,11 +1,16 @@
 package orchestrator_test
 
 import (
+	"database/sql"
 	"sort"
 	"testing"
 
+	"github.com/JR-G/squad0/internal/agent"
+	"github.com/JR-G/squad0/internal/coordination"
 	"github.com/JR-G/squad0/internal/orchestrator"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBlockedTickets_Block_Then_IsBlocked_True(t *testing.T) {
@@ -82,5 +87,35 @@ func TestOrchestrator_ForceAdvancePipeline_NoStore_NoPanic(t *testing.T) {
 	// No pipeline store wired — should be a no-op, not a panic.
 	assert.NotPanics(t, func() {
 		orch.ForceAdvancePipelineForTest(t.Context(), 0, "merged", "test")
+	})
+}
+
+// TestOrchestrator_ReconcileGitHubState_BadRepoDir_HandlesFetchError
+// exercises the fetcher-dispatch path (both pipeline store + target
+// repo dir present) so the NewGHPRStateFetcher call and its error
+// handling run. The fetcher shells out to gh in a non-repo dir,
+// which fails gracefully — the orchestrator must not panic.
+func TestOrchestrator_ReconcileGitHubState_BadRepoDir_HandlesFetchError(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	checkIns := coordination.NewCheckInStore(sqlDB)
+	require.NoError(t, checkIns.InitSchema(ctx))
+
+	pipeStore := newPipelineStore(t, sqlDB)
+
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.Config{TargetRepoDir: t.TempDir()},
+		map[agent.Role]*agent.Agent{},
+		checkIns, nil, nil,
+	)
+	orch.SetPipeline(pipeStore)
+
+	assert.NotPanics(t, func() {
+		orch.ReconcileGitHubState(ctx)
 	})
 }

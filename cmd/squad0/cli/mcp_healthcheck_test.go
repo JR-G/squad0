@@ -170,6 +170,55 @@ func TestAssertMemoryHealthy_FailedStatus_ReturnsErrorWithName(t *testing.T) {
 	assert.ErrorContains(t, err, "status=\"failed\"")
 }
 
+func TestAssertLinearToolInvoked_ToolUsePresent_ReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	raw := `{"type":"assistant","message":{"content":[{"type":"tool_use","name":"mcp__claude_ai_Linear__list_teams"}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","is_error":false}]}}`
+
+	assert.NoError(t, assertLinearToolInvoked(raw))
+}
+
+func TestAssertLinearToolInvoked_NoLinearToolUse_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	raw := `{"type":"assistant","message":{"content":[{"type":"text","text":"ok"}]}}`
+
+	err := assertLinearToolInvoked(raw)
+	assert.ErrorContains(t, err, "no mcp__claude_ai_Linear__")
+}
+
+func TestAssertLinearToolInvoked_ToolResultError_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	raw := `{"type":"assistant","message":{"content":[{"type":"tool_use","name":"mcp__claude_ai_Linear__list_teams"}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","is_error":true}]}}`
+
+	err := assertLinearToolInvoked(raw)
+	assert.ErrorContains(t, err, "returned an error")
+}
+
+func TestAssertLinearToolInvoked_MalformedJSONLines_Skipped(t *testing.T) {
+	t.Parallel()
+
+	raw := `not json
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"mcp__claude_ai_Linear__list_teams"}]}}
+
+{"type":"user","message":{"content":[{"type":"tool_result","is_error":false}]}}`
+
+	assert.NoError(t, assertLinearToolInvoked(raw))
+}
+
+func TestAssertLinearToolInvoked_TopLevelContent_AlsoInspected(t *testing.T) {
+	t.Parallel()
+
+	// Some stream-json variants put content at the top level rather
+	// than nested under "message". The scanner must cover both.
+	raw := `{"type":"assistant","content":[{"type":"tool_use","name":"mcp__claude_ai_Linear__list_teams"}]}`
+
+	assert.NoError(t, assertLinearToolInvoked(raw))
+}
+
 func TestRealVerifyMCPHealth_NilAgent_ReturnsError(t *testing.T) {
 	t.Parallel()
 

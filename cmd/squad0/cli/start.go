@@ -221,6 +221,13 @@ func runOrchestratorWithContext(ctx context.Context, cfg config.Config, deps Sta
 		assigner.SetSmartAssigner(smart)
 		_ = os.Setenv("LINEAR_API_KEY", slackSecrets.LinearAPIKey)
 		_ = os.Setenv("LINEAR_AUTH_HEADER", "Bearer "+slackSecrets.LinearAPIKey)
+
+		apiKey := slackSecrets.LinearAPIKey
+		teamID := cfg.Linear.TeamID
+		orchestrator.SetLinearStateSetter(func(ctx context.Context, ticket, targetState string) error {
+			return orchestrator.MoveLinearTicketStateAPI(ctx, apiKey, teamID, ticket, targetState)
+		})
+
 		_, _ = fmt.Fprint(out, tui.StepDone("Smart dispatch enabled"))
 	}
 
