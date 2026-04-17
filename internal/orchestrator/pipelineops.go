@@ -85,6 +85,11 @@ func (orch *Orchestrator) advancePipeline(ctx context.Context, itemID int64, sta
 	}
 }
 
+// ForceAdvancePipelineForTest exposes forceAdvancePipeline for tests.
+func (orch *Orchestrator) ForceAdvancePipelineForTest(ctx context.Context, itemID int64, stage pipeline.Stage, reason string) {
+	orch.forceAdvancePipeline(ctx, itemID, stage, reason)
+}
+
 // forceAdvancePipeline bypasses the lifecycle validator. Reserved
 // for reconciliation paths that must match externally-observed state
 // (e.g. GitHub already shows a PR as merged on restart). Logs the
@@ -118,20 +123,20 @@ func (orch *Orchestrator) shouldEscalate(ctx context.Context, workItemID int64, 
 	}
 
 	// After max cycles, block the ticket and surface to triage.
-	// Never force-approve — buggy code must not be merged. The PM
-	// can reassign to a different engineer for a fresh perspective.
+	// Never force-approve — buggy code must not be merged. The
+	// blocked-tickets set keeps the smart-assigner from instantly
+	// re-picking the same ticket into a fresh work item, which was
+	// the JAM-24 failure: blocking → re-Todo → reassign → cycle.
+	// Operator un-blocks via Slack triage.
+	orch.blockedTickets.Block(ticket)
+
 	orch.announceAsRole(ctx, "reviews",
-		fmt.Sprintf("%s has had %d review cycles without resolution — blocking for reassignment.", ticket, item.ReviewCycles),
+		fmt.Sprintf("%s has had %d review cycles without resolution — blocking, needs human triage.", ticket, item.ReviewCycles),
 		agent.RolePM)
 	orch.announceAsRole(ctx, "triage",
-		fmt.Sprintf("%s blocked after %d review cycles — needs reassignment or human review", ticket, item.ReviewCycles),
+		fmt.Sprintf("%s blocked after %d review cycles — review the PR and either un-block manually or close it", ticket, item.ReviewCycles),
 		agent.RolePM)
 	orch.advancePipeline(ctx, workItemID, pipeline.StageFailed)
-
-	pmAgent := orch.agents[agent.RolePM]
-	if pmAgent != nil {
-		go MoveTicketState(ctx, pmAgent, ticket, "Todo")
-	}
 
 	return true
 }

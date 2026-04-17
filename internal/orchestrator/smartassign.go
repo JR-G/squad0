@@ -17,11 +17,20 @@ import (
 // The PM agent is only consulted for genuine tiebreakers.
 type SmartAssigner struct {
 	mu              sync.Mutex
-	failureCounts   map[string]int       // ticket → failure count
-	deferredTickets map[string]time.Time // ticket → deferred until
+	failureCounts   map[string]int
+	deferredTickets map[string]time.Time
 	pipelineStore   *pipeline.WorkItemStore
-	doneTickets     map[string]bool // cache of completed ticket IDs
+	doneTickets     map[string]bool
 	maxFailures     int
+	blocked         BlockedChecker
+}
+
+// BlockedChecker reports whether a ticket has been explicitly blocked
+// by the orchestrator (e.g. after exhausting review cycles). The
+// smart-assigner skips blocked tickets so they don't get instantly
+// re-picked into a fresh work item.
+type BlockedChecker interface {
+	IsBlocked(ticket string) bool
 }
 
 // NewSmartAssigner creates a SmartAssigner with default settings.
@@ -33,6 +42,12 @@ func NewSmartAssigner(pipelineStore *pipeline.WorkItemStore) *SmartAssigner {
 		doneTickets:     make(map[string]bool),
 		maxFailures:     3,
 	}
+}
+
+// SetBlockedChecker wires a BlockedChecker so the assigner can skip
+// tickets the orchestrator has marked blocked. Call once at startup.
+func (sa *SmartAssigner) SetBlockedChecker(checker BlockedChecker) {
+	sa.blocked = checker
 }
 
 // RecordFailure increments the failure count for a ticket.
@@ -103,6 +118,11 @@ func (sa *SmartAssigner) filterEligible(ctx context.Context, tickets []LinearTic
 	eligible := make([]LinearTicket, 0, len(tickets))
 
 	for _, ticket := range tickets {
+		if sa.blocked != nil && sa.blocked.IsBlocked(ticket.ID) {
+			log.Printf("assign: skipping %s — blocked by orchestrator (needs human triage)", ticket.ID)
+			continue
+		}
+
 		if sa.IsDeferred(ticket.ID) {
 			log.Printf("assign: skipping %s — deferred by PM", ticket.ID)
 			continue

@@ -77,20 +77,48 @@ func (orch *Orchestrator) reconcileWithFetcher(ctx context.Context, fetch PRStat
 
 // ReconcileWithStates reconciles pipeline items against the given PR
 // state map. Separated from ReconcileGitHubState for testability.
+//
+// Open items run the full reconcile state machine. Failed items run
+// only the silent-merge recovery path (GitHub says merged → sync
+// pipeline) — we don't want to un-fail items that GitHub still
+// shows as open or closed-without-merge, that's an explicit human-
+// triage moment, not an automatic transition.
 func (orch *Orchestrator) ReconcileWithStates(ctx context.Context, ghStates map[string]PRState) {
 	if orch.pipelineStore == nil {
 		return
 	}
-	openItems, err := orch.pipelineStore.OpenWithPR(ctx)
-	if err != nil || len(openItems) == 0 {
+	orch.reconcileOpenItems(ctx, ghStates)
+	orch.reconcileFailedItemsForSilentMerge(ctx, ghStates)
+}
+
+func (orch *Orchestrator) reconcileOpenItems(ctx context.Context, ghStates map[string]PRState) {
+	items, err := orch.pipelineStore.OpenWithPR(ctx)
+	if err != nil {
 		return
 	}
-	for _, item := range openItems {
+	for _, item := range items {
 		ghState, ok := ghStates[item.PRURL]
 		if !ok {
 			continue
 		}
 		orch.reconcileItem(ctx, item, ghState)
+	}
+}
+
+func (orch *Orchestrator) reconcileFailedItemsForSilentMerge(ctx context.Context, ghStates map[string]PRState) {
+	items, err := orch.pipelineStore.FailedWithPR(ctx)
+	if err != nil {
+		return
+	}
+	for _, item := range items {
+		ghState, ok := ghStates[item.PRURL]
+		if !ok {
+			continue
+		}
+		if !strings.EqualFold(ghState.State, "MERGED") {
+			continue
+		}
+		orch.reconcileMerged(ctx, item)
 	}
 }
 

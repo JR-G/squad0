@@ -30,6 +30,24 @@ func TestSmartAssigner_CircuitBreaker(t *testing.T) {
 	assert.True(t, sa.IsCircuitOpen("JAM-1"))
 }
 
+func TestSmartAssigner_FilterAndRank_SkipsBlockedTickets(t *testing.T) {
+	t.Parallel()
+
+	sa := orchestrator.NewSmartAssigner(nil)
+	blocked := orchestrator.NewBlockedTickets()
+	blocked.Block("JAM-STUCK")
+	sa.SetBlockedChecker(blocked)
+
+	tickets := []orchestrator.LinearTicket{
+		{ID: "JAM-STUCK", Title: "blocked", Priority: 1},
+		{ID: "JAM-OK", Title: "fine", Priority: 2},
+	}
+
+	assignments := sa.FilterAndRank(context.Background(), tickets, []agent.Role{agent.RoleEngineer1})
+	require.Len(t, assignments, 1)
+	assert.Equal(t, "JAM-OK", assignments[0].Ticket)
+}
+
 func TestSmartAssigner_FilterAndRank_SkipsCircuitOpen(t *testing.T) {
 	t.Parallel()
 

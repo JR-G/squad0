@@ -17,7 +17,8 @@ import (
 )
 
 func TestResumePendingWork_ChangesRequested_TriggersFixUp(t *testing.T) {
-	t.Parallel()
+	restore := orchestrator.SetMergeVerifierForTest(func(_ context.Context, _, _ string) bool { return false })
+	t.Cleanup(restore)
 
 	ctx := context.Background()
 	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
@@ -99,7 +100,8 @@ func TestResumePendingWork_ChangesRequested_TriggersFixUp(t *testing.T) {
 }
 
 func TestResumePendingWork_WorkingWithPR_TriggersFixUp(t *testing.T) {
-	t.Parallel()
+	restore := orchestrator.SetMergeVerifierForTest(func(_ context.Context, _, _ string) bool { return false })
+	t.Cleanup(restore)
 
 	ctx := context.Background()
 	sqlDB, err := sql.Open("sqlite3", ":memory:?_journal_mode=WAL")
@@ -371,22 +373,18 @@ func TestMergeAfterRetry_NoPM_ReturnsEarly(t *testing.T) {
 }
 
 func TestResumeWithGitHubState_Approved_SendsEngineerToMerge(t *testing.T) {
-	t.Parallel()
+	restore := orchestrator.SetMergeVerifierForTest(func(_ context.Context, _, _ string) bool { return false })
+	t.Cleanup(restore)
 
 	ctx := context.Background()
 	memDB, err := memory.Open(ctx, ":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = memDB.Close() })
 
-	// PM returns APPROVED for checkApprovalStatus, then MERGED for verifyMerged (but
-	// verifyMerged runs first — order: verifyMerged returns NOT merged, then checkApproval returns APPROVED).
+	// verifyMerged is overridden via the test hook (returns false),
+	// so the PM runner only needs the checkApprovalStatus reply.
 	pmRunner := &fakeProcessRunner{
-		output: []byte(`{"type":"result","result":"OPEN"}` + "\n"),
-		outputs: [][]byte{
-			[]byte(`{"type":"result","result":"OPEN"}` + "\n"),     // verifyMerged
-			[]byte(`{"type":"result","result":"APPROVED"}` + "\n"), // checkApprovalStatus
-			[]byte(`{"type":"result","result":"MERGED"}` + "\n"),   // engineer merge verify
-		},
+		output: []byte(`{"type":"result","result":"APPROVED"}` + "\n"),
 	}
 	engRunner := &fakeProcessRunner{
 		output: []byte(`{"type":"result","result":"done"}` + "\n"),

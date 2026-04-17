@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/JR-G/squad0/internal/agent"
+	ghcli "github.com/JR-G/squad0/internal/integrations/github/cli"
 	"github.com/JR-G/squad0/internal/pipeline"
 )
 
@@ -77,16 +78,43 @@ func (orch *Orchestrator) VerifyMergedForTest(ctx context.Context, verifyAgent *
 	return orch.verifyMerged(ctx, verifyAgent, prURL)
 }
 
-// verifyMerged checks the actual GitHub PR state to confirm it was merged.
-func (orch *Orchestrator) verifyMerged(ctx context.Context, verifyAgent *agent.Agent, prURL string) bool {
-	prompt := fmt.Sprintf("Run this command and respond with ONLY the output, nothing else:\ngh pr view %s --json state --jq .state", prURL)
+// verifyMerged checks the actual GitHub PR state via the gh CLI
+// adapter directly. Earlier this method delegated to a Claude
+// session and matched the substring "MERGED" in the transcript —
+// brittle: the transcript could include the word in error context
+// ("the PR is no longer in MERGED state") or omit it entirely
+// when Claude wraps the answer in prose. The brittleness produced
+// the JAM-24 failure mode where a successfully merged PR was
+// processed as merge-failed and ground through review cycles
+// until the orchestrator gave up.
+//
+// The verifyAgent param is kept for API compatibility; pass nil.
+// Override via SetMergeVerifierForTest.
+func (orch *Orchestrator) verifyMerged(ctx context.Context, _ *agent.Agent, prURL string) bool {
+	return mergeVerifier(ctx, orch.cfg.TargetRepoDir, prURL)
+}
 
-	result, err := verifyAgent.DirectSession(ctx, prompt)
+// mergeVerifier is the package-level hook for verifying a PR is
+// merged on GitHub. Production binds it to the gh CLI adapter;
+// tests override via SetMergeVerifierForTest.
+var mergeVerifier = func(ctx context.Context, repoDir, prURL string) bool {
+	if repoDir == "" || prURL == "" {
+		return false
+	}
+	state, err := ghcli.NewClient(repoDir).State(ctx, prURL)
 	if err != nil {
 		return false
 	}
+	return strings.EqualFold(state.State, "MERGED")
+}
 
-	return strings.Contains(strings.ToUpper(result.Transcript), "MERGED")
+// SetMergeVerifierForTest replaces the merge-verification hook with
+// a test-supplied function. Returns a restore function the test
+// should defer.
+func SetMergeVerifierForTest(fn func(ctx context.Context, repoDir, prURL string) bool) func() {
+	prev := mergeVerifier
+	mergeVerifier = fn
+	return func() { mergeVerifier = prev }
 }
 
 func (orch *Orchestrator) retryApproval(ctx context.Context, prURL, ticket string, workItemID int64, engineerRole agent.Role) {

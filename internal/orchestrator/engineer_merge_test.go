@@ -123,7 +123,8 @@ func TestStartEngineerMerge_EngineerSetsCheckIn(t *testing.T) {
 }
 
 func TestStartEngineerMerge_VerifyFails_AnnouncesFailure(t *testing.T) {
-	t.Parallel()
+	restore := orchestrator.SetMergeVerifierForTest(func(_ context.Context, _, _ string) bool { return false })
+	t.Cleanup(restore)
 
 	ctx := context.Background()
 	memDB, err := memory.Open(ctx, ":memory:")

@@ -49,6 +49,7 @@ type Orchestrator struct {
 	opinionStore         *routing.OpinionStore
 	tokenLedger          *routing.TokenLedger
 	complexityClassifier *routing.ComplexityClassifier
+	blockedTickets       *BlockedTickets
 	startedAt            time.Time
 }
 
@@ -93,6 +94,7 @@ func NewOrchestrator(
 		sessions:       NewSessionTracker(),
 		health:         NewHealthSupervisor(nil),
 		chat:           NewConversationCoordinator(bot),
+		blockedTickets: NewBlockedTickets(),
 		followedUp:     make(map[int64]bool),
 		mergeAnnounced: make(map[string]bool),
 	}

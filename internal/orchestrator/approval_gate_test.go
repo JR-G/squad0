@@ -232,16 +232,16 @@ func TestResumeWithGitHubState_ApprovedWithOutstandingComments_RevertsToReviewin
 	})
 	defer restore()
 
+	restoreVerify := orchestrator.SetMergeVerifierForTest(func(_ context.Context, _, _ string) bool { return false })
+	defer restoreVerify()
+
 	ctx := context.Background()
 	memDB, err := memory.Open(ctx, ":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = memDB.Close() })
 
 	pmRunner := &fakeProcessRunner{
-		outputs: [][]byte{
-			[]byte(`{"type":"result","result":"OPEN"}` + "\n"),
-			[]byte(`{"type":"result","result":"APPROVED"}` + "\n"),
-		},
+		output: []byte(`{"type":"result","result":"APPROVED"}` + "\n"),
 	}
 	engRunner := &fakeProcessRunner{
 		output: []byte(`{"type":"result","result":"done"}` + "\n"),

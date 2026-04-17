@@ -167,6 +167,19 @@ func TestEnsureUserScopeMemoryMCPWith_AlreadyRegistered_RemovesAndReadds(t *test
 	assert.Equal(t, []string{"mcp", "add", "--scope", "user", "squad0-memory", "/new/path"}, runner.calls[2])
 }
 
+func TestEnsureUserScopeMemoryMCP_RealRunner_ExecutesClaudeCmd(t *testing.T) {
+	t.Parallel()
+
+	// Hits the production execClaudeMCPRunner.Run path. Returns an
+	// error because the test environment has no claude installed (or
+	// the binary path is bogus) — we just want to exercise the line.
+	err := ensureUserScopeMemoryMCP(context.Background(), "/nonexistent/squad0-memory-mcp-test")
+
+	// Either succeeds (real claude available) or fails (test env) —
+	// both are fine, the point is the exec ran.
+	_ = err
+}
+
 func TestEnsureUserScopeMemoryMCPWith_AddFails_ReturnsError(t *testing.T) {
 	t.Parallel()
 

@@ -246,7 +246,23 @@ func (store *WorkItemStore) OpenWithPR(ctx context.Context) ([]WorkItem, error) 
 		return nil, fmt.Errorf("querying open items with PR: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
+	return scanWorkItems(rows)
+}
 
+// FailedWithPR returns failed items that still have a PR URL —
+// candidates for the "GitHub silently merged this while we'd given
+// up" reconciliation path.
+func (store *WorkItemStore) FailedWithPR(ctx context.Context) ([]WorkItem, error) {
+	rows, err := store.db.QueryContext(ctx, `
+		SELECT id, ticket, engineer, reviewer, stage, pr_url, branch,
+		       review_cycles, started_at, updated_at, finished_at
+		FROM work_items
+		WHERE stage = 'failed' AND pr_url != ''
+		ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("querying failed items with PR: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
 	return scanWorkItems(rows)
 }
 

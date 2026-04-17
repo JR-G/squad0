@@ -268,6 +268,82 @@ func TestOpenWithPR_FailedItemWithPR_Excluded(t *testing.T) {
 	assert.Empty(t, items, "failed items with PR should be excluded from OpenWithPR")
 }
 
+func TestFailedWithPR_OnlyFailedItemsWithPR(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	// Failed with PR: should be returned.
+	failedID, _ := store.Create(ctx, pipeline.WorkItem{
+		Ticket: "JAM-FW1", Engineer: agent.RoleEngineer1, Stage: pipeline.StageWorking,
+	})
+	require.NoError(t, store.SetPRURL(ctx, failedID, "https://github.com/test/pull/1"))
+	require.NoError(t, store.Advance(ctx, failedID, pipeline.StageFailed))
+
+	// Open with PR: should NOT be returned.
+	openID, _ := store.Create(ctx, pipeline.WorkItem{
+		Ticket: "JAM-FW2", Engineer: agent.RoleEngineer1, Stage: pipeline.StageWorking,
+	})
+	require.NoError(t, store.SetPRURL(ctx, openID, "https://github.com/test/pull/2"))
+
+	// Failed without PR: should NOT be returned.
+	noPRID, _ := store.Create(ctx, pipeline.WorkItem{
+		Ticket: "JAM-FW3", Engineer: agent.RoleEngineer1, Stage: pipeline.StageWorking,
+	})
+	require.NoError(t, store.Advance(ctx, noPRID, pipeline.StageFailed))
+
+	items, err := store.FailedWithPR(ctx)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, "JAM-FW1", items[0].Ticket)
+}
+
+func TestAdvanceForce_BypassesValidator(t *testing.T) {
+	t.Parallel()
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	itemID, _ := store.Create(ctx, pipeline.WorkItem{
+		Ticket: "JAM-AF1", Engineer: agent.RoleEngineer1, Stage: pipeline.StageWorking,
+	})
+
+	// working → merged is illegal via Advance, legal via AdvanceForce.
+	err := store.AdvanceForce(ctx, itemID, pipeline.StageMerged, "test setup fast-forward")
+	require.NoError(t, err)
+
+	item, err := store.GetByID(ctx, itemID)
+	require.NoError(t, err)
+	assert.Equal(t, pipeline.StageMerged, item.Stage)
+}
+
+func TestAdvanceForce_EmptyReason_ReturnsError(t *testing.T) {
+	t.Parallel()
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	itemID, _ := store.Create(ctx, pipeline.WorkItem{
+		Ticket: "JAM-AF2", Engineer: agent.RoleEngineer1, Stage: pipeline.StageWorking,
+	})
+
+	err := store.AdvanceForce(ctx, itemID, pipeline.StageMerged, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reason")
+}
+
+func TestFailedWithPR_ClosedDB_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	db := openTestDB(t)
+	store := pipeline.NewWorkItemStore(db)
+	require.NoError(t, store.InitSchema(context.Background()))
+	_ = db.Close()
+
+	_, err := store.FailedWithPR(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "querying failed items")
+}
+
 // ---------------------------------------------------------------------------
 // InitSchema — idempotent when called twice
 // ---------------------------------------------------------------------------
