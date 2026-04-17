@@ -81,7 +81,7 @@ func (orch *Orchestrator) PersistFindings(ctx context.Context, ticket, transcrip
 	prompt := fmt.Sprintf(
 		`Post a comment on Linear ticket %s summarising what was discovered during implementation.
 
-Prefer mcp__squad0_linear__save_comment; fall back to mcp__claude_ai_Linear__save_comment
+Prefer mcp__squad0-linear__save_comment; fall back to mcp__claude_ai_Linear__save_comment
 if squad0's isn't exposed. If the tool schema isn't loaded, first run
 ToolSearch with {"query": "select:<tool-name>", "max_results": 1}.
 

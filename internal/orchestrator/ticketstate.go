@@ -11,7 +11,7 @@ import (
 
 const moveTicketPromptTemplate = `Move Linear ticket %s to "%s" status.
 
-Prefer the squad0-linear MCP tools (mcp__squad0_linear__*). If those
+Prefer the squad0-linear MCP tools (mcp__squad0-linear__*). If those
 aren't exposed, use the managed connector equivalents (mcp__claude_ai_Linear__*).
 If the tool schema isn't pre-loaded, load it first via ToolSearch with
 {"query": "select:<tool-name>", "max_results": 5}.

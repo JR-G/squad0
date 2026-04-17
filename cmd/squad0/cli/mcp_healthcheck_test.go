@@ -123,7 +123,7 @@ func TestAssertLinearHealthy_Squad0LinearConnected_ReturnsNil(t *testing.T) {
 	t.Parallel()
 	init := mcpInitMessage{
 		MCPServers: []mcpServerStatus{{Name: "squad0-linear", Status: "connected"}},
-		Tools:      []string{"mcp__squad0_linear__list_teams"},
+		Tools:      []string{"mcp__squad0-linear__list_teams"},
 	}
 	assert.NoError(t, assertLinearHealthy(init))
 }
@@ -212,7 +212,7 @@ func TestAssertLinearToolInvoked_NoLinearToolUse_ReturnsError(t *testing.T) {
 
 func TestAssertLinearToolInvoked_Squad0LinearToolUse_Accepted(t *testing.T) {
 	t.Parallel()
-	raw := `{"type":"assistant","message":{"content":[{"type":"tool_use","name":"mcp__squad0_linear__list_teams"}]}}`
+	raw := `{"type":"assistant","message":{"content":[{"type":"tool_use","name":"mcp__squad0-linear__list_teams"}]}}`
 	assert.NoError(t, assertLinearToolInvoked(raw))
 }
 

@@ -18,12 +18,12 @@ import (
 const linearSmokeTestPrompt = `Call a Linear tool to confirm the integration is live.
 
 Pick whichever tool name is exposed in this session:
-  - mcp__squad0_linear__list_teams (preferred — bearer auth, no OAuth expiry)
+  - mcp__squad0-linear__list_teams (preferred — bearer auth, no OAuth expiry)
   - mcp__claude_ai_Linear__list_teams (fallback — managed connector)
 
 If the tool is deferred (not pre-loaded), first load its schema with
 ToolSearch, for example:
-  ToolSearch({"query": "select:mcp__squad0_linear__list_teams", "max_results": 1})
+  ToolSearch({"query": "select:mcp__squad0-linear__list_teams", "max_results": 1})
 
 Then call the tool with arguments: {}
 Then reply with just "ok".`
@@ -147,7 +147,7 @@ func realVerifyMCPHealth(ctx context.Context, pmAgent *agent.Agent, model, workD
 // isLinearToolName returns true if the tool name belongs to either
 // the squad0 stdio Linear MCP or the managed claude.ai connector.
 func isLinearToolName(name string) bool {
-	return strings.HasPrefix(name, "mcp__squad0_linear__") ||
+	return strings.HasPrefix(name, "mcp__squad0-linear__") ||
 		strings.HasPrefix(name, "mcp__claude_ai_Linear__")
 }
 
@@ -215,7 +215,7 @@ func assertSquad0LinearHealthy(init mcpInitMessage) error {
 		return fmt.Errorf("squad0-linear status=%q", entry.Status)
 	}
 	for _, name := range init.Tools {
-		if strings.HasPrefix(name, "mcp__squad0_linear__") {
+		if strings.HasPrefix(name, "mcp__squad0-linear__") {
 			return nil
 		}
 	}
