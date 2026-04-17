@@ -69,9 +69,13 @@ func TestRegisterDefaultHandlers_RegistersAllExpectedEvents(t *testing.T) {
 	assert.Equal(t, 0, bus.HandlerCount(orchestrator.EventPRApproved))
 	assert.Equal(t, 0, bus.HandlerCount(orchestrator.EventChangesRequested))
 	assert.Equal(t, 0, bus.HandlerCount(orchestrator.EventFixUpComplete))
-	// MergeFailed and AgentIdle are async — have handlers.
+	// MergeFailed and AgentIdle drive async work.
 	assert.Equal(t, 1, bus.HandlerCount(orchestrator.EventMergeFailed))
 	assert.Equal(t, 1, bus.HandlerCount(orchestrator.EventAgentIdle))
+	// Session-end events trigger immediate re-assignment of idle engineers
+	// instead of waiting for the next tick.
+	assert.Equal(t, 1, bus.HandlerCount(orchestrator.EventSessionComplete))
+	assert.Equal(t, 1, bus.HandlerCount(orchestrator.EventSessionFailed))
 }
 
 func TestRegisterDefaultHandlers_NoHandlersForInfoEvents(t *testing.T) {
@@ -82,9 +86,7 @@ func TestRegisterDefaultHandlers_NoHandlersForInfoEvents(t *testing.T) {
 
 	orch.RegisterDefaultHandlers(bus)
 
-	// Informational events have no default handlers.
-	assert.Equal(t, 0, bus.HandlerCount(orchestrator.EventSessionComplete))
-	assert.Equal(t, 0, bus.HandlerCount(orchestrator.EventSessionFailed))
+	// Pure-informational events have no default handlers.
 	assert.Equal(t, 0, bus.HandlerCount(orchestrator.EventMergeComplete))
 	assert.Equal(t, 0, bus.HandlerCount(orchestrator.EventMergeReady))
 	assert.Equal(t, 0, bus.HandlerCount(orchestrator.EventReviewComplete))
@@ -101,6 +103,26 @@ func TestRegisterDefaultHandlers_CalledTwice_DoubleRegisters(t *testing.T) {
 
 	assert.Equal(t, 2, bus.HandlerCount(orchestrator.EventMergeFailed))
 	assert.Equal(t, 2, bus.HandlerCount(orchestrator.EventAgentIdle))
+	assert.Equal(t, 2, bus.HandlerCount(orchestrator.EventSessionComplete))
+	assert.Equal(t, 2, bus.HandlerCount(orchestrator.EventSessionFailed))
+}
+
+func TestRegisterDefaultHandlers_SessionComplete_WorkDisabled_NoCheckInRead(t *testing.T) {
+	t.Parallel()
+
+	// WorkEnabled=false short-circuits the handler before it touches the
+	// check-in store — verifies the gate is in place so chat-only mode
+	// doesn't try to schedule work it shouldn't.
+	orch := newMinimalOrchestrator(t)
+	bus := orchestrator.NewEventBus()
+	orch.RegisterDefaultHandlers(bus)
+
+	assert.NotPanics(t, func() {
+		bus.EmitSync(context.Background(), orchestrator.Event{
+			Kind:         orchestrator.EventSessionComplete,
+			EngineerRole: agent.RoleEngineer1,
+		})
+	})
 }
 
 func TestEventBus_PRApproved_HandlerReceivesData(t *testing.T) {

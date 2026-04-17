@@ -159,11 +159,17 @@ func (orch *Orchestrator) emitEvent(ctx context.Context, kind EventKind, prURL, 
 	})
 }
 
-// RegisterDefaultHandlers wires up the standard event handlers that
-// connect events to existing orchestrator methods.
-// RegisterDefaultHandlers wires up event handlers for async operations.
-// Note: review → approve → merge is SYNCHRONOUS (not event-driven)
-// to prevent races. These handlers are for genuinely async operations.
+// RegisterDefaultHandlers wires up event handlers for async
+// operations. Note: review → approve → merge is SYNCHRONOUS (not
+// event-driven) to prevent races; the handlers below cover genuinely
+// async transitions plus latency-sensitive scheduling reactions.
+//
+// EventSessionComplete and EventSessionFailed both trigger an
+// immediate assignment attempt for currently-idle engineers — without
+// this, a session ending mid-tick has to wait up to PollInterval for
+// the next tick to discover the freshly-idle engineer. The
+// WorkScheduler's in-flight gate makes this safe to fire repeatedly
+// without thrashing the assigner.
 func (orch *Orchestrator) RegisterDefaultHandlers(bus *EventBus) {
 	bus.On(EventMergeFailed, func(ctx context.Context, event Event) {
 		comments := fetchStructuredComments(ctx, orch.cfg.TargetRepoDir, event.PRURL)
@@ -173,4 +179,25 @@ func (orch *Orchestrator) RegisterDefaultHandlers(bus *EventBus) {
 	bus.On(EventAgentIdle, func(ctx context.Context, event Event) {
 		orch.RunIdleDuties(ctx, []agent.Role{event.EngineerRole})
 	})
+
+	bus.On(EventSessionComplete, orch.scheduleIdleEngineers)
+	bus.On(EventSessionFailed, orch.scheduleIdleEngineers)
+}
+
+// scheduleIdleEngineers reads the current set of idle engineers and
+// kicks the WorkScheduler. Used as an event handler for transitions
+// that just released an engineer back to the pool. Drops silently if
+// no engineers are idle (the engineer that just finished may already
+// be in another stage like reviewing).
+func (orch *Orchestrator) scheduleIdleEngineers(ctx context.Context, _ Event) {
+	if !orch.cfg.WorkEnabled {
+		return
+	}
+	idleRoles, err := orch.checkIns.IdleAgents(ctx)
+	if err != nil {
+		log.Printf("event-driven assign: failed to read idle agents: %v", err)
+		return
+	}
+	idleEngineers := orch.filterByWIP(ctx, orch.filterHealthyEngineers(idleRoles))
+	orch.tryAssignWork(ctx, idleEngineers)
 }
