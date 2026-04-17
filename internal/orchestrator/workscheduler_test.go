@@ -2,6 +2,7 @@ package orchestrator_test
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -11,6 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+var errFakeRunner = errors.New("fake runner failure")
 
 func TestWorkScheduler_EmptyEligible_ReturnsFalse(t *testing.T) {
 	t.Parallel()
@@ -121,6 +124,28 @@ func TestWorkScheduler_AssignmentError_DispatcherCalledWithNil(t *testing.T) {
 	case assignments := <-called:
 		// Garbled response parses to no assignments — not an error,
 		// just an empty result. Dispatcher gets the nil/empty slice.
+		assert.Empty(t, assignments)
+	case <-time.After(2 * time.Second):
+		t.Fatal("dispatcher was never called")
+	}
+}
+
+func TestWorkScheduler_AssignerSessionError_DispatcherCalledWithNil(t *testing.T) {
+	t.Parallel()
+
+	pmRunner := &fakeProcessRunner{err: errFakeRunner, output: []byte("")}
+	pmAgent := setupPMAgent(t, pmRunner)
+	sched := orchestrator.NewWorkScheduler(orchestrator.NewAssigner(pmAgent, "TEST"))
+
+	called := make(chan []orchestrator.Assignment, 1)
+	first := sched.Schedule(context.Background(), []agent.Role{agent.RoleEngineer1},
+		func(_ context.Context, assignments []orchestrator.Assignment, _ []agent.Role) {
+			called <- assignments
+		})
+	require.True(t, first)
+
+	select {
+	case assignments := <-called:
 		assert.Empty(t, assignments)
 	case <-time.After(2 * time.Second):
 		t.Fatal("dispatcher was never called")
