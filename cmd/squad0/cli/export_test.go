@@ -273,3 +273,8 @@ func SeedConversationHistory(
 func AssertMemoryStoresWired(agents map[agent.Role]*agent.Agent) error {
 	return assertMemoryStoresWired(agents)
 }
+
+// BusyCheckerFromCheckIns exports busyCheckerFromCheckIns for testing.
+func BusyCheckerFromCheckIns(store *coordination.CheckInStore) orchestrator.BusyChecker {
+	return busyCheckerFromCheckIns(store)
+}
