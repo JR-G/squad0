@@ -25,12 +25,11 @@ type Orchestrator struct {
 	checkIns     *coordination.CheckInStore
 	bot          *slack.Bot
 	assigner     *Assigner
+	scheduler    *WorkScheduler
 	health       *HealthSupervisor
 	running      bool
 	conversation *ConversationEngine
 	sessions     *SessionTracker
-	assigning    bool
-	assigningMu  sync.Mutex
 
 	roster               map[agent.Role]string
 	pipelineStore        *pipeline.WorkItemStore
@@ -80,6 +79,7 @@ func NewOrchestrator(
 		checkIns:       checkIns,
 		bot:            bot,
 		assigner:       assigner,
+		scheduler:      NewWorkScheduler(assigner),
 		sessions:       NewSessionTracker(),
 		health:         NewHealthSupervisor(nil),
 		followedUp:     make(map[int64]bool),
@@ -171,64 +171,52 @@ func (orch *Orchestrator) tick(ctx context.Context) {
 	orch.RunIdleDuties(ctx, filterIdleDutyRoles(idleRoles))
 }
 
+// tryAssignWork delegates the in-flight gate + Linear fetch to the
+// WorkScheduler, then dispatches each match by spawning a session
+// and emitting idle events for engineers that didn't get a ticket.
+// Dispatch stays on the orchestrator because it touches the agent
+// map, pipeline, and check-in store — none of which the scheduler
+// should know about.
 func (orch *Orchestrator) tryAssignWork(ctx context.Context, idleEngineers []agent.Role) {
 	if len(idleEngineers) == 0 {
 		log.Println("tick: no idle engineers")
 		return
 	}
 
-	orch.assigningMu.Lock()
-	if orch.assigning {
-		orch.assigningMu.Unlock()
-		log.Println("tick: assignment already in progress, skipping")
-		return
-	}
-	orch.assigning = true
-	orch.assigningMu.Unlock()
-
 	log.Printf("tick: requesting assignments for %v", idleEngineers)
 
-	go func() {
-		defer func() {
-			orch.assigningMu.Lock()
-			orch.assigning = false
-			orch.assigningMu.Unlock()
-		}()
+	if !orch.scheduler.Schedule(ctx, idleEngineers, orch.dispatchAssignments) {
+		log.Println("tick: assignment already in progress, skipping")
+	}
+}
 
-		assignments, assignErr := orch.assigner.RequestAssignments(ctx, idleEngineers)
-		if assignErr != nil {
-			log.Printf("tick: assignment failed: %v", assignErr)
-			return
+func (orch *Orchestrator) dispatchAssignments(ctx context.Context, assignments []Assignment, eligible []agent.Role) {
+	log.Printf("tick: got %d assignments", len(assignments))
+
+	if len(assignments) == 0 {
+		// No tickets available — engage idle engineers with PR reviews.
+		for _, role := range eligible {
+			orch.emitEvent(ctx, EventAgentIdle, "", "", 0, role)
 		}
+		orch.RunIdleDuties(ctx, eligible)
+		return
+	}
 
-		log.Printf("tick: got %d assignments", len(assignments))
+	assignedSet := make(map[agent.Role]bool, len(assignments))
+	for _, assignment := range assignments {
+		log.Printf("tick: assigning %s to %s", assignment.Ticket, assignment.Role)
+		orch.startWork(ctx, assignment)
+		assignedSet[assignment.Role] = true
+	}
 
-		if len(assignments) == 0 {
-			// No tickets available — engage idle engineers with PR reviews.
-			for _, role := range idleEngineers {
-				orch.emitEvent(ctx, EventAgentIdle, "", "", 0, role)
-			}
-			orch.RunIdleDuties(ctx, idleEngineers)
-			return
+	unassigned := make([]agent.Role, 0, len(eligible))
+	for _, role := range eligible {
+		if !assignedSet[role] {
+			unassigned = append(unassigned, role)
+			orch.emitEvent(ctx, EventAgentIdle, "", "", 0, role)
 		}
-
-		assignedSet := make(map[agent.Role]bool, len(assignments))
-		for _, assignment := range assignments {
-			log.Printf("tick: assigning %s to %s", assignment.Ticket, assignment.Role)
-			orch.startWork(ctx, assignment)
-			assignedSet[assignment.Role] = true
-		}
-
-		// Engage engineers that didn't get assigned.
-		unassigned := make([]agent.Role, 0, len(idleEngineers))
-		for _, role := range idleEngineers {
-			if !assignedSet[role] {
-				unassigned = append(unassigned, role)
-				orch.emitEvent(ctx, EventAgentIdle, "", "", 0, role)
-			}
-		}
-		orch.RunIdleDuties(ctx, unassigned)
-	}()
+	}
+	orch.RunIdleDuties(ctx, unassigned)
 }
 
 // SetConversationEngine connects the conversation engine to the orchestrator
