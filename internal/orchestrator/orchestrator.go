@@ -25,7 +25,7 @@ type Orchestrator struct {
 	checkIns     *coordination.CheckInStore
 	bot          *slack.Bot
 	assigner     *Assigner
-	monitor      *health.Monitor
+	health       *HealthSupervisor
 	running      bool
 	conversation *ConversationEngine
 	sessions     *SessionTracker
@@ -81,6 +81,7 @@ func NewOrchestrator(
 		bot:            bot,
 		assigner:       assigner,
 		sessions:       NewSessionTracker(),
+		health:         NewHealthSupervisor(nil),
 		followedUp:     make(map[int64]bool),
 		mergeAnnounced: make(map[string]bool),
 	}
@@ -88,7 +89,7 @@ func NewOrchestrator(
 
 // SetHealthMonitor connects the health monitor.
 func (orch *Orchestrator) SetHealthMonitor(monitor *health.Monitor) {
-	orch.monitor = monitor
+	orch.health = NewHealthSupervisor(monitor)
 }
 
 // Run starts the main orchestration loop. Blocks until ctx is cancelled
@@ -434,27 +435,8 @@ func (orch *Orchestrator) registerSessionCancel(role agent.Role, cancel context.
 func (orch *Orchestrator) clearSessionCancel(role agent.Role) { orch.sessions.Clear(role) }
 
 // filterHealthyEngineers returns engineers that are not in a failing
-// health state.
+// health state. Thin forward to HealthSupervisor for callers that
+// already have an Orchestrator handle.
 func (orch *Orchestrator) filterHealthyEngineers(roles []agent.Role) []agent.Role {
-	engineers := filterEngineers(roles)
-
-	if orch.monitor == nil {
-		return engineers
-	}
-
-	healthy := make([]agent.Role, 0, len(engineers))
-	for _, role := range engineers {
-		agentHealth, err := orch.monitor.GetHealth(role)
-		if err != nil {
-			healthy = append(healthy, role)
-			continue
-		}
-		if agentHealth.State == health.StateFailing {
-			log.Printf("tick: skipping %s — health state is failing", role)
-			continue
-		}
-		healthy = append(healthy, role)
-	}
-
-	return healthy
+	return orch.health.FilterHealthyEngineers(roles)
 }

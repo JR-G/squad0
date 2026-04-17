@@ -21,17 +21,11 @@ func (orch *Orchestrator) RecordSessionEndForTest(role agent.Role, ticket string
 }
 
 func (orch *Orchestrator) recordSessionStart(role agent.Role) {
-	if orch.monitor == nil {
-		return
-	}
-	orch.monitor.RecordSessionStart(role)
+	orch.health.RecordSessionStart(role)
 }
 
 func (orch *Orchestrator) recordSessionEnd(role agent.Role, ticket string, success bool) {
-	if orch.monitor == nil {
-		return
-	}
-	orch.monitor.RecordSessionEnd(role, ticket, success)
+	orch.health.RecordSessionEnd(role, ticket, success)
 }
 
 // EnsureAgentMCPConfigForTest exports ensureAgentMCPConfig for testing.
