@@ -206,6 +206,12 @@ func assertLinearHealthy(init mcpInitMessage) error {
 	return fmt.Errorf("no Linear MCP is healthy: neither squad0-linear nor claude.ai Linear is connected with tools exposed")
 }
 
+// assertSquad0LinearHealthy only checks the connection status. We
+// don't scan init.Tools[] because Linear exposes ~30 tools, which
+// claude registers as *deferred* — they're loaded on demand via
+// ToolSearch and never appear in the init payload's tools list.
+// The actual proof that tools work is assertLinearToolInvoked,
+// which scans the smoke-test transcript for a successful tool_use.
 func assertSquad0LinearHealthy(init mcpInitMessage) error {
 	entry := findServer(init, "squad0-linear")
 	if entry == nil {
@@ -214,14 +220,13 @@ func assertSquad0LinearHealthy(init mcpInitMessage) error {
 	if entry.Status != statusConnected {
 		return fmt.Errorf("squad0-linear status=%q", entry.Status)
 	}
-	for _, name := range init.Tools {
-		if strings.HasPrefix(name, "mcp__squad0-linear__") {
-			return nil
-		}
-	}
-	return fmt.Errorf("squad0-linear connected but no tools exposed")
+	return nil
 }
 
+// assertManagedLinearHealthy mirrors assertSquad0LinearHealthy: only
+// the connection status is verified at init time. Linear's tool set
+// is large enough to trigger deferred-tool registration, so init.Tools[]
+// won't list them either.
 func assertManagedLinearHealthy(init mcpInitMessage) error {
 	entry := findServer(init, "claude.ai Linear")
 	if entry == nil {
@@ -230,12 +235,7 @@ func assertManagedLinearHealthy(init mcpInitMessage) error {
 	if entry.Status != statusConnected {
 		return fmt.Errorf("claude.ai Linear MCP status=%q", entry.Status)
 	}
-	for _, name := range init.Tools {
-		if strings.HasPrefix(name, "mcp__claude_ai_Linear__") {
-			return nil
-		}
-	}
-	return fmt.Errorf("claude.ai Linear connected but no tools exposed")
+	return nil
 }
 
 // assertMemoryHealthy accepts either the user-scope name

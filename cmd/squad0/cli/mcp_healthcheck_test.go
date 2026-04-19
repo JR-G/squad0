@@ -106,24 +106,25 @@ func TestAssertLinearHealthy_NotConnected_ReturnsStatusError(t *testing.T) {
 	assert.ErrorContains(t, err, "no Linear MCP is healthy")
 }
 
-func TestAssertLinearHealthy_ConnectedNoTools_ReturnsToolError(t *testing.T) {
+// Connected-but-init.Tools[]-empty is now considered HEALTHY for
+// Linear because Linear's tools are deferred — they don't appear in
+// init.Tools[] regardless. The actual proof that tools work comes
+// from assertLinearToolInvoked, tested separately.
+func TestAssertLinearHealthy_ConnectedDeferredTools_ReturnsNil(t *testing.T) {
 	t.Parallel()
 
 	init := mcpInitMessage{
 		MCPServers: []mcpServerStatus{{Name: "claude.ai Linear", Status: "connected"}},
-		Tools:      []string{"Bash", "Read", "Grep"},
+		Tools:      []string{"Bash", "Read", "Grep"}, // no Linear tools in eager list
 	}
 
-	err := assertLinearHealthy(init)
-
-	assert.ErrorContains(t, err, "no Linear MCP is healthy")
+	assert.NoError(t, assertLinearHealthy(init))
 }
 
 func TestAssertLinearHealthy_Squad0LinearConnected_ReturnsNil(t *testing.T) {
 	t.Parallel()
 	init := mcpInitMessage{
 		MCPServers: []mcpServerStatus{{Name: "squad0-linear", Status: "connected"}},
-		Tools:      []string{"mcp__squad0-linear__list_teams"},
 	}
 	assert.NoError(t, assertLinearHealthy(init))
 }
@@ -135,20 +136,20 @@ func TestAssertLinearHealthy_Squad0LinearFailed_FallsBackToManaged(t *testing.T)
 			{Name: "squad0-linear", Status: "failed"},
 			{Name: "claude.ai Linear", Status: "connected"},
 		},
-		Tools: []string{"mcp__claude_ai_Linear__list_teams"},
 	}
 	assert.NoError(t, assertLinearHealthy(init))
 }
 
-func TestAssertLinearHealthy_ConnectedWithTools_ReturnsNil(t *testing.T) {
+func TestAssertLinearHealthy_BothFailed_ReturnsError(t *testing.T) {
 	t.Parallel()
-
 	init := mcpInitMessage{
-		MCPServers: []mcpServerStatus{{Name: "claude.ai Linear", Status: "connected"}},
-		Tools:      []string{"Bash", "mcp__claude_ai_Linear__list_issues"},
+		MCPServers: []mcpServerStatus{
+			{Name: "squad0-linear", Status: "failed"},
+			{Name: "claude.ai Linear", Status: "failed"},
+		},
 	}
-
-	assert.NoError(t, assertLinearHealthy(init))
+	err := assertLinearHealthy(init)
+	assert.ErrorContains(t, err, "no Linear MCP is healthy")
 }
 
 func TestAssertMemoryHealthy_NotAdvertised_ReturnsError(t *testing.T) {
