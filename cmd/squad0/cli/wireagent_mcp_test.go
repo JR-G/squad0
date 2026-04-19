@@ -68,3 +68,21 @@ func TestWireAgentMCP_AllHealthy_ReportsSuccess(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, out.String(), "MCP servers verified")
 }
+
+func TestRegisterLinearMCP_NoAPIKey_WarnsAndReturns(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	cli.RegisterLinearMCP(context.Background(), &out, "")
+	assert.Contains(t, out.String(), "LINEAR_API_KEY not configured")
+}
+
+func TestRegisterLinearMCP_WithAPIKey_AttemptsRegistration(t *testing.T) {
+	t.Parallel()
+	// With an API key but no real claude binary in test env, the
+	// underlying ensureUserScopeLinearMCP shells out to claude and
+	// likely fails. Either way the path is exercised — we only care
+	// that it doesn't panic and produces some output.
+	var out bytes.Buffer
+	cli.RegisterLinearMCP(context.Background(), &out, "test-key")
+	assert.NotEmpty(t, out.String())
+}

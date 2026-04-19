@@ -50,6 +50,11 @@ func StubVerifyMCPHealthWithResult(result MCPHealthResult) func() {
 	return func() { verifyMCPHealth = previous }
 }
 
+// RegisterLinearMCP exports registerLinearMCP for testing.
+func RegisterLinearMCP(ctx context.Context, out io.Writer, apiKey string) {
+	registerLinearMCP(ctx, out, apiKey)
+}
+
 // WireAgentMCP exports wireAgentMCP for testing branch behaviour.
 func WireAgentMCP(
 	ctx context.Context,
